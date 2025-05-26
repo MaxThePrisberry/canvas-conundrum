@@ -1,0 +1,52 @@
+sequenceDiagram
+    participant C as Client
+    participant S as Server
+    
+    Note over C,S: Setup Phase
+    
+    C->>S: WebSocket Connection
+    S->>C: available_roles (with playerId, roles, bonuses, trivia categories)
+    C->>S: role_selection (with auth wrapper)
+    C->>S: trivia_specialty_selection (with auth wrapper)
+    
+    loop Waiting for Game Start
+        S->>C: game_lobby_status (player count, roles, game starting status)
+    end
+    
+    Note over C,S: Resource Gathering Phase Start
+    
+    S->>C: resource_phase_start (resource hashes)
+    
+    loop For Each Trivia Round
+        alt Client Changes Location
+            C->>S: resource_location_verified (verified hash)
+        end
+        S->>C: trivia_question
+        C->>S: trivia_answer (with auth wrapper)
+    end
+    
+    loop Progress Updates (Independent)
+        S->>C: team_progress_update (questions answered, team tokens)
+    end
+    
+    Note over C,S: Puzzle Assembly Phase
+    
+    S->>C: puzzle_phase_load (imageId, segmentId, gridSize)
+    Note over C: Client loads puzzle assets
+    S->>C: puzzle_phase_start (startTimestamp)
+    
+    C->>S: segment_completed (with auth wrapper)
+    S->>C: segment_completion_ack (gridPosition coordinates)
+    
+    loop Fragment Movement
+        C->>S: fragment_move_request (with auth wrapper)
+        S->>C: fragment_move_response (status, cooldown info)
+        S->>C: central_puzzle_state (updated puzzle state)
+    end
+    
+    Note over C,S: Post-Game
+    
+    S->>C: game_analytics (personal, team, and global stats)
+    S->>C: game_reset (reconnection required)
+    
+    Note over C,S: Players must reconnect to start new game

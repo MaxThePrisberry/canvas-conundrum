@@ -82,8 +82,14 @@ func (gm *GameManager) SetDifficulty(difficulty string) error {
 
 // CanStartGame checks if the game can be started
 func (gm *GameManager) CanStartGame() (bool, string) {
-	connectedPlayers := gm.playerManager.GetConnectedPlayers()
-	readyPlayers := gm.playerManager.GetReadyPlayers()
+	// Check if host is connected
+	if !gm.playerManager.IsHostConnected() {
+		return false, "Host must be connected to start the game"
+	}
+
+	// Get non-host players for game requirements
+	connectedPlayers := gm.playerManager.GetConnectedNonHostPlayers()
+	readyPlayers := gm.playerManager.GetReadyNonHostPlayers()
 
 	if len(connectedPlayers) < constants.MinPlayers {
 		return false, fmt.Sprintf("Need at least %d players (current: %d)", constants.MinPlayers, len(connectedPlayers))
@@ -93,7 +99,7 @@ func (gm *GameManager) CanStartGame() (bool, string) {
 		return false, fmt.Sprintf("All players must be ready (%d/%d ready)", len(readyPlayers), len(connectedPlayers))
 	}
 
-	// Check if all players have selected roles and specialties
+	// Check if all non-host players have selected roles and specialties
 	for _, player := range connectedPlayers {
 		player.mu.RLock()
 		hasRole := player.Role != ""
@@ -111,7 +117,7 @@ func (gm *GameManager) CanStartGame() (bool, string) {
 	return true, ""
 }
 
-// StartGame transitions from setup to resource gathering phase
+// StartGame transitions from setup to resource gathering phase - Updated initialization
 func (gm *GameManager) StartGame() error {
 	gm.mu.Lock()
 	defer gm.mu.Unlock()
@@ -120,8 +126,9 @@ func (gm *GameManager) StartGame() error {
 		return fmt.Errorf("game already started")
 	}
 
-	// Initialize player analytics
-	for _, player := range gm.playerManager.GetAllPlayers() {
+	// Initialize player analytics for NON-HOST players only
+	nonHostPlayers := gm.playerManager.GetConnectedNonHostPlayers()
+	for _, player := range nonHostPlayers {
 		gm.state.PlayerAnalytics[player.ID] = &PlayerAnalytics{
 			PlayerID:        player.ID,
 			PlayerName:      player.Name,
@@ -186,7 +193,7 @@ func (gm *GameManager) runResourceGatheringPhase() {
 	gm.startPuzzlePhase()
 }
 
-// runTriviaRound manages a single trivia round
+// runTriviaRound manages a single trivia round - Updated to only send to non-host players
 func (gm *GameManager) runTriviaRound() {
 	difficultyMod := gm.getDifficultyModifiers()
 	roundDuration := time.Duration(float64(constants.ResourceGatheringRoundDuration)*difficultyMod.TimeLimitModifier) * time.Second
@@ -195,8 +202,8 @@ func (gm *GameManager) runTriviaRound() {
 	roundEnd := time.Now().Add(roundDuration)
 
 	for time.Now().Before(roundEnd) {
-		// Send trivia questions to all connected players
-		players := gm.playerManager.GetConnectedPlayers()
+		// Send trivia questions to all connected NON-HOST players only
+		players := gm.playerManager.GetConnectedNonHostPlayers()
 
 		for _, player := range players {
 			go gm.sendTriviaQuestion(player)
@@ -240,7 +247,7 @@ func (gm *GameManager) sendTriviaQuestion(player *Player) {
 	sendToPlayer(player, MsgTriviaQuestion, question)
 }
 
-// ProcessTriviaAnswer handles a player's trivia answer - IMPLEMENTED ANSWER VALIDATION
+// ProcessTriviaAnswer handles a player's trivia answer - Updated to exclude hosts
 func (gm *GameManager) ProcessTriviaAnswer(playerID, questionID, answer string) error {
 	gm.mu.Lock()
 	defer gm.mu.Unlock()
@@ -256,6 +263,15 @@ func (gm *GameManager) ProcessTriviaAnswer(playerID, questionID, answer string) 
 		return err
 	}
 
+	// Hosts don't participate in trivia
+	player.mu.RLock()
+	isHost := player.IsHost
+	player.mu.RUnlock()
+
+	if isHost {
+		return fmt.Errorf("host does not participate in trivia questions")
+	}
+
 	// Check if player has a location
 	if player.CurrentLocation == "" {
 		return fmt.Errorf("player must be at a resource station")
@@ -267,7 +283,7 @@ func (gm *GameManager) ProcessTriviaAnswer(playerID, questionID, answer string) 
 		return fmt.Errorf("invalid or expired question")
 	}
 
-	// IMPLEMENTED: Validate answer against correct answer
+	// Validate answer against correct answer
 	correct := strings.EqualFold(strings.TrimSpace(answer), strings.TrimSpace(currentQuestion.CorrectAnswer))
 
 	// Update analytics
@@ -296,7 +312,7 @@ func (gm *GameManager) ProcessTriviaAnswer(playerID, questionID, answer string) 
 				tokensAwarded = int(float64(tokensAwarded) * constants.RoleResourceMultiplier)
 			}
 
-			// IMPLEMENTED: Apply specialty point multiplier
+			// Apply specialty point multiplier
 			if isSpecialtyQuestion {
 				tokensAwarded = int(float64(tokensAwarded) * constants.SpecialtyPointMultiplier)
 				analytics.TriviaPerformance.SpecialtyBonus += tokensAwarded - constants.BaseTokensPerCorrectAnswer
@@ -339,30 +355,30 @@ func (gm *GameManager) getTokenTypeForLocation(locationHash string) string {
 	return ""
 }
 
-// startPuzzlePhase transitions to the puzzle assembly phase - IMPLEMENTED TOKEN EFFECTS
+// startPuzzlePhase transitions to the puzzle assembly phase - Updated for non-host players only
 func (gm *GameManager) startPuzzlePhase() {
 	gm.mu.Lock()
 	defer gm.mu.Unlock()
 
 	gm.state.Phase = PhasePuzzleAssembly
 
-	// Calculate grid size based on player count
-	playerCount := gm.playerManager.GetConnectedCount()
+	// Calculate grid size based on NON-HOST player count
+	nonHostPlayers := gm.playerManager.GetConnectedNonHostPlayers()
+	playerCount := len(nonHostPlayers)
 	gridSize := gm.calculateGridSize(playerCount)
 	gm.state.GridSize = gridSize
 
 	// Select random puzzle image
 	gm.state.PuzzleImageID = fmt.Sprintf("masterpiece_%03d", rand.Intn(constants.AvailablePuzzleImages)+1)
 
-	// IMPLEMENTED: Calculate anchor token effects (pre-solved pieces)
+	// Calculate anchor token effects (pre-solved pieces)
 	anchorThresholds := gm.state.TeamTokens.AnchorTokens / (constants.AnchorTokenThresholds * int(gm.getDifficultyModifiers().TokenThresholdModifier))
 	maxPreSolved := min(anchorThresholds, constants.IndividualPuzzlePieces-4) // Leave at least 4 pieces to solve
 
-	// Initialize puzzle fragments
+	// Initialize puzzle fragments for NON-HOST players only
 	gm.state.PuzzleFragments = make(map[string]*PuzzleFragment)
-	players := gm.playerManager.GetConnectedPlayers()
 
-	for i, player := range players {
+	for i, player := range nonHostPlayers {
 		correctPos := gm.calculateCorrectPosition(i, gridSize)
 		fragment := &PuzzleFragment{
 			ID:              fmt.Sprintf("fragment_%s", player.ID),
@@ -380,7 +396,7 @@ func (gm *GameManager) startPuzzlePhase() {
 		gm.state.PuzzleFragments[fragment.ID] = fragment
 	}
 
-	// IMPLEMENTED: Send clarity bonus (image preview)
+	// Send clarity bonus (image preview)
 	clarityThresholds := gm.state.TeamTokens.ClarityTokens / (constants.ClarityTokenThresholds * int(gm.getDifficultyModifiers().TokenThresholdModifier))
 	previewDuration := clarityThresholds * constants.ClarityTimeBonus
 
@@ -394,8 +410,8 @@ func (gm *GameManager) startPuzzlePhase() {
 		}
 	}
 
-	// Send puzzle phase load message
-	for _, player := range players {
+	// Send puzzle phase load message to NON-HOST players only
+	for _, player := range nonHostPlayers {
 		fragment := gm.state.PuzzleFragments[fmt.Sprintf("fragment_%s", player.ID)]
 		segmentID := fmt.Sprintf("segment_%c%d", 'a'+fragment.CorrectPosition.Y, fragment.CorrectPosition.X+1)
 
@@ -404,6 +420,18 @@ func (gm *GameManager) startPuzzlePhase() {
 			"segmentId": segmentID,
 			"gridSize":  gridSize,
 			"preSolved": fragment.PreSolved,
+		})
+	}
+
+	// Send a different message to the host
+	host := gm.playerManager.GetHost()
+	if host != nil {
+		sendToPlayer(host, MsgPuzzlePhaseLoad, map[string]interface{}{
+			"imageId":     gm.state.PuzzleImageID,
+			"gridSize":    gridSize,
+			"isHost":      true,
+			"playerCount": len(nonHostPlayers),
+			"message":     "Puzzle phase started - monitor player progress",
 		})
 	}
 }
@@ -476,13 +504,27 @@ func (gm *GameManager) runPuzzleTimer(duration time.Duration) {
 	}
 }
 
-// ProcessSegmentCompleted handles when a player completes their puzzle segment
+// ProcessSegmentCompleted handles when a player completes their puzzle segment - Updated to exclude hosts
 func (gm *GameManager) ProcessSegmentCompleted(playerID, segmentID string) error {
 	gm.mu.Lock()
 	defer gm.mu.Unlock()
 
 	if gm.state.Phase != PhasePuzzleAssembly {
 		return fmt.Errorf("not in puzzle assembly phase")
+	}
+
+	// Get player and verify they're not the host
+	player, err := gm.playerManager.GetPlayer(playerID)
+	if err != nil {
+		return err
+	}
+
+	player.mu.RLock()
+	isHost := player.IsHost
+	player.mu.RUnlock()
+
+	if isHost {
+		return fmt.Errorf("host does not have puzzle segments to complete")
 	}
 
 	// Find the fragment
@@ -504,16 +546,13 @@ func (gm *GameManager) ProcessSegmentCompleted(playerID, segmentID string) error
 	}
 
 	// Send acknowledgment
-	player, _ := gm.playerManager.GetPlayer(playerID)
-	if player != nil {
-		sendToPlayer(player, MsgSegmentCompletionAck, map[string]interface{}{
-			"status":       "acknowledged",
-			"segmentId":    segmentID,
-			"gridPosition": fragment.Position,
-		})
-	}
+	sendToPlayer(player, MsgSegmentCompletionAck, map[string]interface{}{
+		"status":       "acknowledged",
+		"segmentId":    segmentID,
+		"gridPosition": fragment.Position,
+	})
 
-	// IMPLEMENTED: Send guide token hints if available
+	// Send guide token hints if available
 	gm.sendGuideHints(playerID)
 
 	// Check if all fragments are solved and positioned correctly
@@ -921,20 +960,33 @@ func (gm *GameManager) calculateThresholdsReached() map[string]int {
 	}
 }
 
+// sendTeamProgressUpdate sends progress updates - Updated calculation for non-host players
 func (gm *GameManager) sendTeamProgressUpdate() {
 	gm.mu.RLock()
 	defer gm.mu.RUnlock()
 
 	totalQuestions := 0
-	for _, analytics := range gm.state.PlayerAnalytics {
-		totalQuestions += analytics.TriviaPerformance.TotalQuestions
+	// Only count questions from non-host players
+	for playerID, analytics := range gm.state.PlayerAnalytics {
+		// Verify this player is not a host
+		if player, err := gm.playerManager.GetPlayer(playerID); err == nil {
+			player.mu.RLock()
+			isHost := player.IsHost
+			player.mu.RUnlock()
+
+			if !isHost {
+				totalQuestions += analytics.TriviaPerformance.TotalQuestions
+			}
+		}
 	}
+
+	nonHostPlayerCount := len(gm.playerManager.GetConnectedNonHostPlayers())
 
 	gm.broadcastChan <- BroadcastMessage{
 		Type: MsgTeamProgressUpdate,
 		Payload: map[string]interface{}{
 			"questionsAnswered": totalQuestions,
-			"totalQuestions":    constants.ResourceGatheringRounds * len(gm.playerManager.GetAllPlayers()),
+			"totalQuestions":    constants.ResourceGatheringRounds * nonHostPlayerCount,
 			"teamTokens":        gm.state.TeamTokens,
 		},
 	}
@@ -972,23 +1024,30 @@ func (gm *GameManager) broadcastPuzzleState() {
 	}
 }
 
+// sendHostUpdate updates host with current game status - Enhanced for new host system
 func (gm *GameManager) sendHostUpdate() {
 	gm.mu.RLock()
 
 	playerStatuses := make(map[string]PlayerStatus)
-	for _, player := range gm.playerManager.GetAllPlayers() {
+	allPlayers := gm.playerManager.GetAllPlayers()
+
+	for _, player := range allPlayers {
 		player.mu.RLock()
-		playerStatuses[player.ID] = PlayerStatus{
-			Name:      player.Name,
-			Role:      player.Role,
-			Connected: player.State == StateConnected,
-			Ready:     player.Ready,
-			Location:  player.CurrentLocation,
+
+		// Don't include the host in player statuses
+		if !player.IsHost {
+			playerStatuses[player.ID] = PlayerStatus{
+				Name:      player.Name,
+				Role:      player.Role,
+				Connected: player.State == StateConnected,
+				Ready:     player.Ready,
+				Location:  player.CurrentLocation,
+			}
 		}
 		player.mu.RUnlock()
 	}
 
-	// Calculate progress
+	// Calculate progress based on non-host players
 	var progress float64
 	if gm.state.Phase == PhasePuzzleAssembly {
 		solvedCount := 0
@@ -1012,10 +1071,13 @@ func (gm *GameManager) sendHostUpdate() {
 		}
 	}
 
+	nonHostPlayers := gm.playerManager.GetConnectedNonHostPlayers()
+	readyNonHostPlayers := gm.playerManager.GetReadyNonHostPlayers()
+
 	update := HostUpdate{
 		Phase:            gm.state.Phase.String(),
-		ConnectedPlayers: gm.playerManager.GetConnectedCount(),
-		ReadyPlayers:     gm.playerManager.GetReadyCount(),
+		ConnectedPlayers: len(nonHostPlayers),
+		ReadyPlayers:     len(readyNonHostPlayers),
 		CurrentRound:     gm.state.CurrentRound,
 		TimeRemaining:    timeRemaining,
 		TeamTokens:       gm.state.TeamTokens,

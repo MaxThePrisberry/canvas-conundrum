@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/MaxThePrisberry/canvas-conundrum/server/constants"
+	"github.com/google/uuid"
 )
 
 var (
@@ -25,11 +26,24 @@ var (
 	environment    = flag.String("env", "development", "Environment (development, staging, production)")
 )
 
+// Global host endpoint identifier - generated on server start
+var hostEndpointID string
+
 func main() {
 	flag.Parse()
 
 	log.SetFlags(log.Ldate | log.Ltime | log.Lshortfile)
 	log.Printf("Canvas Conundrum Server starting on %s:%s (env: %s)", *host, *port, *environment)
+
+	// Generate unique host endpoint ID
+	hostEndpointID = uuid.New().String()
+	log.Printf("🎮 HOST ENDPOINT: /ws/host/%s", hostEndpointID)
+	log.Printf("👥 PLAYER ENDPOINT: /ws")
+
+	if *environment == "development" {
+		log.Printf("🔗 Host URL: ws://localhost:%s/ws/host/%s", *port, hostEndpointID)
+		log.Printf("🔗 Player URL: ws://localhost:%s/ws", *port)
+	}
 
 	// Initialize CORS configuration
 	initializeCORS()
@@ -67,10 +81,17 @@ func main() {
 	// Set up HTTP routes
 	mux := http.NewServeMux()
 
-	// WebSocket endpoint
-	mux.HandleFunc("/ws", wsHandler.HandleConnection)
+	// Player WebSocket endpoint (regular players)
+	mux.HandleFunc("/ws", func(w http.ResponseWriter, r *http.Request) {
+		wsHandler.HandleConnection(w, r, false) // false = not host
+	})
 
-	// Health check endpoint with detailed information
+	// Host WebSocket endpoint (host only)
+	mux.HandleFunc("/ws/host/"+hostEndpointID, func(w http.ResponseWriter, r *http.Request) {
+		wsHandler.HandleConnection(w, r, true) // true = is host
+	})
+
+	// Health check endpoint with detailed information including host endpoint
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 
@@ -78,14 +99,20 @@ func main() {
 		connectedPlayers := playerManager.GetConnectedCount()
 		readyPlayers := playerManager.GetReadyCount()
 		phase := gameManager.GetPhase()
+		hasHost := playerManager.GetHost() != nil
 
 		healthStatus := map[string]interface{}{
 			"status":      "healthy",
 			"timestamp":   time.Now().Unix(),
 			"version":     "1.0.0", // Could be set via build flags
 			"environment": *environment,
+			"endpoints": map[string]interface{}{
+				"players": "/ws",
+				"host":    "/ws/host/" + hostEndpointID,
+			},
 			"game": map[string]interface{}{
-				"phase": phase.String(),
+				"phase":   phase.String(),
+				"hasHost": hasHost,
 				"players": map[string]int{
 					"total":     playerManager.GetPlayerCount(),
 					"connected": connectedPlayers,
@@ -127,10 +154,12 @@ func main() {
 				"connected": playerManager.GetConnectedCount(),
 				"ready":     playerManager.GetReadyCount(),
 				"roles":     playerManager.GetRoleDistribution(),
+				"hasHost":   playerManager.GetHost() != nil,
 			},
 			"server": map[string]interface{}{
-				"uptime":      time.Since(startTime).Seconds(),
-				"environment": *environment,
+				"uptime":       time.Since(startTime).Seconds(),
+				"environment":  *environment,
+				"hostEndpoint": "/ws/host/" + hostEndpointID,
 			},
 		}
 		gameManager.mu.RUnlock()
@@ -155,6 +184,15 @@ func main() {
 			json.NewEncoder(w).Encode(map[string]string{
 				"status":  "success",
 				"message": "Trivia questions reloaded",
+			})
+		}))
+
+		// Admin endpoint to get host endpoint (useful for deployment management)
+		mux.HandleFunc("/admin/host-endpoint", adminAuthMiddleware(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]string{
+				"hostEndpoint": "/ws/host/" + hostEndpointID,
+				"hostURL":      fmt.Sprintf("ws://%s:%s/ws/host/%s", *host, *port, hostEndpointID),
 			})
 		}))
 	}

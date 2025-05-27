@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"log"
 	"sync"
 	"time"
 
@@ -23,8 +24,8 @@ func NewPlayerManager() *PlayerManager {
 	}
 }
 
-// CreatePlayer creates a new player with a unique ID
-func (pm *PlayerManager) CreatePlayer(conn *websocket.Conn) *Player {
+// CreatePlayer creates a new player with a unique ID and explicit host status
+func (pm *PlayerManager) CreatePlayer(conn *websocket.Conn, isHost bool) *Player {
 	pm.mu.Lock()
 	defer pm.mu.Unlock()
 
@@ -33,14 +34,23 @@ func (pm *PlayerManager) CreatePlayer(conn *websocket.Conn) *Player {
 		Connection: conn,
 		State:      StateConnected,
 		LastSeen:   time.Now(),
+		IsHost:     isHost, // Explicitly set host status
 	}
 
-	// First player becomes the host
-	if len(pm.players) == 0 {
-		player.IsHost = true
+	// Set player name based on role
+	if isHost {
 		player.Name = "Host"
+		log.Printf("Created new host player: %s", player.ID)
 	} else {
-		player.Name = fmt.Sprintf("Player%d", len(pm.players)+1)
+		// Count existing non-host players for naming
+		nonHostCount := 0
+		for _, p := range pm.players {
+			if !p.IsHost {
+				nonHostCount++
+			}
+		}
+		player.Name = fmt.Sprintf("Player%d", nonHostCount+1)
+		log.Printf("Created new regular player: %s", player.ID)
 	}
 
 	pm.players[player.ID] = player
@@ -149,19 +159,23 @@ func (pm *PlayerManager) GetAvailableRoles() []RoleInfo {
 	pm.mu.RLock()
 	defer pm.mu.RUnlock()
 
-	// Count role selections
+	// Count role selections (excluding host)
 	roleCounts := make(map[string]int)
+	nonHostPlayers := 0
+
 	for _, p := range pm.players {
 		p.mu.RLock()
-		if p.Role != "" {
+		if !p.IsHost && p.Role != "" {
 			roleCounts[p.Role]++
+			nonHostPlayers++
+		} else if !p.IsHost {
+			nonHostPlayers++
 		}
 		p.mu.RUnlock()
 	}
 
-	// Calculate max allowed per role
-	totalPlayers := len(pm.players)
-	maxPerRole := (totalPlayers + 3) / 4 // Ensures even distribution
+	// Calculate max allowed per role based on non-host players
+	maxPerRole := (nonHostPlayers + 3) / 4 // Ensures even distribution
 
 	// Build available roles list
 	roles := []RoleInfo{
@@ -186,6 +200,15 @@ func (pm *PlayerManager) SetPlayerRole(playerID, role string) error {
 
 	if !exists {
 		return fmt.Errorf("player not found")
+	}
+
+	// Hosts cannot select roles
+	player.mu.RLock()
+	isHost := player.IsHost
+	player.mu.RUnlock()
+
+	if isHost {
+		return fmt.Errorf("host cannot select a role")
 	}
 
 	// Validate role
@@ -231,6 +254,15 @@ func (pm *PlayerManager) SetPlayerSpecialties(playerID string, specialties []str
 		return fmt.Errorf("player not found")
 	}
 
+	// Hosts cannot select specialties
+	player.mu.RLock()
+	isHost := player.IsHost
+	player.mu.RUnlock()
+
+	if isHost {
+		return fmt.Errorf("host cannot select specialties")
+	}
+
 	if len(specialties) > constants.MaxSpecialtiesPerPlayer {
 		return fmt.Errorf("too many specialties selected")
 	}
@@ -264,6 +296,15 @@ func (pm *PlayerManager) SetPlayerReady(playerID string, ready bool) error {
 		return fmt.Errorf("player not found")
 	}
 
+	// Hosts are always considered ready and don't need to set ready status
+	player.mu.RLock()
+	isHost := player.IsHost
+	player.mu.RUnlock()
+
+	if isHost {
+		return fmt.Errorf("host ready status is managed automatically")
+	}
+
 	player.mu.Lock()
 	player.Ready = ready
 	player.mu.Unlock()
@@ -284,9 +325,24 @@ func (pm *PlayerManager) GetConnectedCount() int {
 	return len(pm.GetConnectedPlayers())
 }
 
-// GetReadyCount returns the number of ready players
+// GetReadyCount returns the number of ready players (including host if connected)
 func (pm *PlayerManager) GetReadyCount() int {
-	return len(pm.GetReadyPlayers())
+	pm.mu.RLock()
+	defer pm.mu.RUnlock()
+
+	readyCount := 0
+	for _, p := range pm.players {
+		p.mu.RLock()
+		if p.State == StateConnected {
+			// Host is always considered ready if connected
+			if p.IsHost || p.Ready {
+				readyCount++
+			}
+		}
+		p.mu.RUnlock()
+	}
+
+	return readyCount
 }
 
 // GetHost returns the host player
@@ -307,7 +363,7 @@ func (pm *PlayerManager) GetHost() *Player {
 	return nil
 }
 
-// GetRoleDistribution returns the current role distribution
+// GetRoleDistribution returns the current role distribution (excluding host)
 func (pm *PlayerManager) GetRoleDistribution() map[string]int {
 	pm.mu.RLock()
 	defer pm.mu.RUnlock()
@@ -316,7 +372,7 @@ func (pm *PlayerManager) GetRoleDistribution() map[string]int {
 
 	for _, p := range pm.players {
 		p.mu.RLock()
-		if p.Role != "" {
+		if !p.IsHost && p.Role != "" {
 			distribution[p.Role]++
 		}
 		p.mu.RUnlock()
@@ -335,6 +391,15 @@ func (pm *PlayerManager) UpdatePlayerLocation(playerID string, locationHash stri
 		return fmt.Errorf("player not found")
 	}
 
+	// Hosts don't participate in resource gathering
+	player.mu.RLock()
+	isHost := player.IsHost
+	player.mu.RUnlock()
+
+	if isHost {
+		return fmt.Errorf("host does not participate in resource gathering")
+	}
+
 	// Validate location hash
 	validLocation := false
 	for _, hash := range constants.ResourceStationHashes {
@@ -345,7 +410,7 @@ func (pm *PlayerManager) UpdatePlayerLocation(playerID string, locationHash stri
 	}
 
 	if !validLocation {
-		return fmt.Errorf("invalid location hash")
+		return fmt.Errorf("invalid resource station hash")
 	}
 
 	player.mu.Lock()
@@ -370,4 +435,69 @@ func (pm *PlayerManager) GetPlayerLocation(playerID string) (string, error) {
 	player.mu.RUnlock()
 
 	return location, nil
+}
+
+// GetNonHostPlayerCount returns the number of non-host players
+func (pm *PlayerManager) GetNonHostPlayerCount() int {
+	pm.mu.RLock()
+	defer pm.mu.RUnlock()
+
+	count := 0
+	for _, p := range pm.players {
+		p.mu.RLock()
+		if !p.IsHost {
+			count++
+		}
+		p.mu.RUnlock()
+	}
+
+	return count
+}
+
+// GetConnectedNonHostPlayers returns only connected non-host players
+func (pm *PlayerManager) GetConnectedNonHostPlayers() []*Player {
+	pm.mu.RLock()
+	defer pm.mu.RUnlock()
+
+	players := make([]*Player, 0)
+	for _, p := range pm.players {
+		p.mu.RLock()
+		if !p.IsHost && p.State == StateConnected {
+			players = append(players, p)
+		}
+		p.mu.RUnlock()
+	}
+
+	return players
+}
+
+// GetReadyNonHostPlayers returns ready non-host players
+func (pm *PlayerManager) GetReadyNonHostPlayers() []*Player {
+	pm.mu.RLock()
+	defer pm.mu.RUnlock()
+
+	players := make([]*Player, 0)
+	for _, p := range pm.players {
+		p.mu.RLock()
+		if !p.IsHost && p.State == StateConnected && p.Ready {
+			players = append(players, p)
+		}
+		p.mu.RUnlock()
+	}
+
+	return players
+}
+
+// IsHostConnected checks if a host is currently connected
+func (pm *PlayerManager) IsHostConnected() bool {
+	host := pm.GetHost()
+	if host == nil {
+		return false
+	}
+
+	host.mu.RLock()
+	connected := host.State == StateConnected
+	host.mu.RUnlock()
+
+	return connected
 }

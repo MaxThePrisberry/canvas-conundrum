@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
-	"time"
 
 	"github.com/MaxThePrisberry/canvas-conundrum/server/constants"
 )
@@ -29,16 +28,30 @@ func NewEventHandlers(gm *GameManager, pm *PlayerManager, bc chan BroadcastMessa
 func (eh *EventHandlers) HandlePlayerJoin(player *Player, payload json.RawMessage) error {
 	// Player is already created in WebSocket handler
 
-	// Send available roles
-	roles := eh.playerManager.GetAvailableRoles()
+	// Send available roles (only relevant for non-host players)
+	player.mu.RLock()
+	isHost := player.IsHost
+	player.mu.RUnlock()
 
-	response := map[string]interface{}{
-		"playerId":         player.ID,
-		"roles":            roles,
-		"triviaCategories": constants.TriviaCategories,
+	if isHost {
+		// Host gets a different response - no roles or specialties needed
+		response := map[string]interface{}{
+			"playerId": player.ID,
+			"isHost":   true,
+			"message":  "Connected as game host",
+		}
+		return sendToPlayer(player, MsgAvailableRoles, response)
+	} else {
+		// Regular player gets roles and trivia categories
+		roles := eh.playerManager.GetAvailableRoles()
+		response := map[string]interface{}{
+			"playerId":         player.ID,
+			"isHost":           false,
+			"roles":            roles,
+			"triviaCategories": constants.TriviaCategories,
+		}
+		return sendToPlayer(player, MsgAvailableRoles, response)
 	}
-
-	return sendToPlayer(player, MsgAvailableRoles, response)
 }
 
 // HandleRoleSelection handles player role selection
@@ -96,7 +109,7 @@ func (eh *EventHandlers) HandlePlayerReady(playerID string, payload json.RawMess
 		return fmt.Errorf("invalid payload: %v", err)
 	}
 
-	// Set player ready status
+	// Set player ready status (this will fail for hosts, which is intended)
 	if err := eh.playerManager.SetPlayerReady(playerID, data.Ready); err != nil {
 		return err
 	}
@@ -144,7 +157,7 @@ func (eh *EventHandlers) HandleResourceLocationVerified(playerID string, payload
 		return fmt.Errorf("invalid payload: %v", err)
 	}
 
-	// Update player location
+	// Update player location (will fail for hosts, which is intended)
 	return eh.playerManager.UpdatePlayerLocation(playerID, data.VerifiedHash)
 }
 
@@ -160,7 +173,7 @@ func (eh *EventHandlers) HandleTriviaAnswer(playerID string, payload json.RawMes
 		return fmt.Errorf("invalid payload: %v", err)
 	}
 
-	// Process the answer
+	// Process the answer (hosts don't participate in trivia)
 	return eh.gameManager.ProcessTriviaAnswer(playerID, data.QuestionID, data.Answer)
 }
 
@@ -175,7 +188,7 @@ func (eh *EventHandlers) HandleSegmentCompleted(playerID string, payload json.Ra
 		return fmt.Errorf("invalid payload: %v", err)
 	}
 
-	// Process segment completion
+	// Process segment completion (hosts don't have puzzle segments)
 	return eh.gameManager.ProcessSegmentCompleted(playerID, data.SegmentID)
 }
 
@@ -211,7 +224,7 @@ func (eh *EventHandlers) HandleHostStartPuzzle(playerID string, payload json.Raw
 	return eh.gameManager.StartPuzzle()
 }
 
-// IMPLEMENTED: Handle piece recommendation requests
+// HandlePieceRecommendationRequest handles piece recommendation requests
 func (eh *EventHandlers) HandlePieceRecommendationRequest(playerID string, payload json.RawMessage) error {
 	var data struct {
 		ToPlayerID       string  `json:"toPlayerId"`
@@ -243,7 +256,7 @@ func (eh *EventHandlers) HandlePieceRecommendationRequest(playerID string, paylo
 	)
 }
 
-// IMPLEMENTED: Handle piece recommendation responses
+// HandlePieceRecommendationResponse handles piece recommendation responses
 func (eh *EventHandlers) HandlePieceRecommendationResponse(playerID string, payload json.RawMessage) error {
 	var data struct {
 		RecommendationID string `json:"recommendationId"`
@@ -268,9 +281,14 @@ func (eh *EventHandlers) broadcastLobbyStatus() {
 	waitingMessage := ""
 	connectedCount := eh.playerManager.GetConnectedCount()
 	readyCount := eh.playerManager.GetReadyCount()
+	nonHostCount := eh.playerManager.GetConnectedNonHostPlayers()
+	hasHost := eh.playerManager.IsHostConnected()
 
-	if connectedCount < constants.MinPlayers {
-		waitingMessage = fmt.Sprintf("Waiting for %d more players...", constants.MinPlayers-connectedCount)
+	// Check for host
+	if !hasHost {
+		waitingMessage = "Waiting for host to connect..."
+	} else if len(nonHostCount) < constants.MinPlayers {
+		waitingMessage = fmt.Sprintf("Waiting for %d more players...", constants.MinPlayers-len(nonHostCount))
 	} else if readyCount < connectedCount {
 		waitingMessage = fmt.Sprintf("Waiting for all players to be ready (%d/%d)...", readyCount, connectedCount)
 	} else {
@@ -278,13 +296,15 @@ func (eh *EventHandlers) broadcastLobbyStatus() {
 		if !canStart {
 			waitingMessage = reason
 		} else {
-			waitingMessage = "Ready to start!"
+			waitingMessage = "Ready to start! (Host can begin the game)"
 		}
 	}
 
 	status := map[string]interface{}{
 		"currentPlayers": connectedCount,
+		"nonHostPlayers": len(nonHostCount),
 		"playerRoles":    roleDistribution,
+		"hasHost":        hasHost,
 		"gameStarting":   false,
 		"waitingMessage": waitingMessage,
 	}
@@ -300,71 +320,13 @@ func (eh *EventHandlers) broadcastLobbyStatus() {
 
 // shouldStartCountdown checks if automatic countdown should start
 func (eh *EventHandlers) shouldStartCountdown() bool {
-	// Start countdown if minimum players reached and all are ready
-	canStart, _ := eh.gameManager.CanStartGame()
-	return canStart && eh.gameManager.GetPhase() == PhaseSetup
+	// Only start countdown if host manually starts the game
+	// No automatic countdown with the new host system
+	return false
 }
 
-// startGameCountdown starts the automatic game countdown
+// startGameCountdown starts the automatic game countdown (disabled with host system)
 func (eh *EventHandlers) startGameCountdown() {
-	countdown := constants.LobbyCountdownDuration
-
-	// Cancel any existing countdown
-	select {
-	case eh.gameManager.countdownCancel <- struct{}{}:
-	default:
-	}
-
-	ticker := time.NewTicker(1 * time.Second)
-	defer ticker.Stop()
-
-	for countdown > 0 {
-		select {
-		case <-ticker.C:
-			countdown--
-
-			// Send countdown update
-			eh.broadcastChan <- BroadcastMessage{
-				Type: MsgCountdown,
-				Payload: map[string]interface{}{
-					"seconds":  countdown,
-					"message":  fmt.Sprintf("Game starting in %d seconds...", countdown),
-					"canAbort": true,
-				},
-			}
-
-			// Update lobby status
-			status := map[string]interface{}{
-				"currentPlayers": eh.playerManager.GetConnectedCount(),
-				"playerRoles":    eh.playerManager.GetRoleDistribution(),
-				"gameStarting":   true,
-				"waitingMessage": fmt.Sprintf("Game starting in %d seconds...", countdown),
-			}
-
-			eh.broadcastChan <- BroadcastMessage{
-				Type:    MsgGameLobbyStatus,
-				Payload: status,
-			}
-
-		case <-eh.gameManager.countdownCancel:
-			// Countdown cancelled
-			log.Println("Game countdown cancelled")
-			eh.broadcastLobbyStatus()
-			return
-		}
-
-		// Check if we still can start
-		canStart, _ := eh.gameManager.CanStartGame()
-		if !canStart {
-			log.Println("Game start conditions no longer met")
-			eh.broadcastLobbyStatus()
-			return
-		}
-	}
-
-	// Start the game
-	if err := eh.gameManager.StartGame(); err != nil {
-		log.Printf("Error starting game: %v", err)
-		eh.broadcastLobbyStatus()
-	}
+	// This method is now disabled since only hosts can start games
+	log.Println("Automatic countdown disabled - only host can start games")
 }

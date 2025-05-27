@@ -43,8 +43,8 @@ func NewWebSocketHandler(pm *PlayerManager, gm *GameManager, eh *EventHandlers, 
 	}
 }
 
-// HandleConnection handles incoming WebSocket connections with enhanced validation
-func (wsh *WebSocketHandler) HandleConnection(w http.ResponseWriter, r *http.Request) {
+// HandleConnection handles incoming WebSocket connections with host/player distinction
+func (wsh *WebSocketHandler) HandleConnection(w http.ResponseWriter, r *http.Request, isHost bool) {
 	// Enhanced connection validation
 	if !wsh.validateConnectionRequest(r) {
 		http.Error(w, "Invalid connection request", http.StatusBadRequest)
@@ -77,12 +77,12 @@ func (wsh *WebSocketHandler) HandleConnection(w http.ResponseWriter, r *http.Req
 	var player *Player
 
 	// Handle reconnection or new connection
-	if playerID != "" {
-		// Attempt reconnection
+	if playerID != "" && !isHost {
+		// Attempt regular player reconnection
 		if err := wsh.playerManager.ReconnectPlayer(playerID, conn); err != nil {
 			log.Printf("Reconnection failed for player %s: %v", playerID, err)
 			// Create new player if reconnection fails
-			player = wsh.playerManager.CreatePlayer(conn)
+			player = wsh.playerManager.CreatePlayer(conn, false)
 		} else {
 			player, _ = wsh.playerManager.GetPlayer(playerID)
 			log.Printf("Player %s reconnected", playerID)
@@ -90,15 +90,44 @@ func (wsh *WebSocketHandler) HandleConnection(w http.ResponseWriter, r *http.Req
 			// Send current game state on reconnection
 			wsh.sendReconnectionState(player)
 		}
-	} else {
-		// New connection validation
-		if !wsh.canAcceptNewPlayer() {
-			wsh.sendConnectionError(conn, "Cannot join game at this time")
-			return
+	} else if playerID != "" && isHost {
+		// Attempt host reconnection
+		existingPlayer, err := wsh.playerManager.GetPlayer(playerID)
+		if err != nil || !existingPlayer.IsHost {
+			log.Printf("Host reconnection failed for player %s: %v", playerID, err)
+			// Create new host if reconnection fails or player wasn't a host
+			player = wsh.playerManager.CreatePlayer(conn, true)
+		} else {
+			// Reconnect existing host
+			if err := wsh.playerManager.ReconnectPlayer(playerID, conn); err != nil {
+				log.Printf("Host reconnection failed for player %s: %v", playerID, err)
+				player = wsh.playerManager.CreatePlayer(conn, true)
+			} else {
+				player = existingPlayer
+				log.Printf("Host %s reconnected", playerID)
+				wsh.sendReconnectionState(player)
+			}
 		}
-
-		player = wsh.playerManager.CreatePlayer(conn)
-		log.Printf("New player connected: %s", player.ID)
+	} else {
+		// New connection
+		if isHost {
+			// Check if there's already a host
+			existingHost := wsh.playerManager.GetHost()
+			if existingHost != nil {
+				wsh.sendConnectionError(conn, "A host is already connected to this game")
+				return
+			}
+			player = wsh.playerManager.CreatePlayer(conn, true)
+			log.Printf("New host connected: %s", player.ID)
+		} else {
+			// New regular player connection validation
+			if !wsh.canAcceptNewPlayer() {
+				wsh.sendConnectionError(conn, "Cannot join game at this time")
+				return
+			}
+			player = wsh.playerManager.CreatePlayer(conn, false)
+			log.Printf("New player connected: %s", player.ID)
+		}
 	}
 
 	// Set up enhanced ping/pong handlers
@@ -447,7 +476,7 @@ func (wsh *WebSocketHandler) sendValidationError(player *Player, err error) {
 	sendToPlayer(player, MsgError, errorResponse)
 }
 
-// handleDisconnection handles player disconnection with enhanced cleanup
+// handleDisconnection handles player disconnection with REMOVED host transfer logic
 func (wsh *WebSocketHandler) handleDisconnection(player *Player) {
 	log.Printf("Player %s disconnected", player.ID)
 
@@ -492,22 +521,18 @@ func (wsh *WebSocketHandler) handleDisconnection(player *Player) {
 		// No special handling needed
 	}
 
-	// Update host if needed
+	// REMOVED: Host transfer logic
+	// Host disconnections are now handled differently - no automatic transfer
 	if player.IsHost {
-		// Transfer host to another connected player
-		players := wsh.playerManager.GetConnectedPlayers()
-		if len(players) > 0 {
-			newHost := players[0]
-			newHost.mu.Lock()
-			newHost.IsHost = true
-			newHost.mu.Unlock()
+		log.Printf("Host %s disconnected - no host transfer, waiting for reconnection to host endpoint", player.ID)
 
-			log.Printf("Host transferred to player %s", newHost.ID)
-
-			// Notify new host
-			sendToPlayer(newHost, MsgHostUpdate, map[string]interface{}{
-				"message": "You are now the host",
-			})
+		// Optionally notify players that host disconnected
+		wsh.broadcastChan <- BroadcastMessage{
+			Type: MsgError,
+			Payload: map[string]interface{}{
+				"error": "Host disconnected - game may be paused until host reconnects",
+				"type":  "host_disconnected",
+			},
 		}
 	}
 }

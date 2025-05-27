@@ -9,35 +9,50 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/MaxThePrisberry/canvas-conundrum/server/constants"
 )
 
-// TriviaManager handles loading and serving trivia questions
+// TriviaManager handles loading and serving trivia questions with enhanced cycling
 type TriviaManager struct {
-	questions map[string]map[string][]TriviaQuestion // category -> difficulty -> questions
-	mu        sync.RWMutex
+	questions         map[string]map[string][]TriviaQuestion // category -> difficulty -> questions
+	questionPools     map[string]map[string][]int            // category -> difficulty -> available question indices
+	questionHistory   map[string]time.Time                   // questionID -> last asked time
+	poolResetCounters map[string]map[string]int              // category -> difficulty -> reset counter
+	mu                sync.RWMutex
 }
 
 // NewTriviaManager creates and initializes a new trivia manager
 func NewTriviaManager() *TriviaManager {
 	tm := &TriviaManager{
-		questions: make(map[string]map[string][]TriviaQuestion),
+		questions:         make(map[string]map[string][]TriviaQuestion),
+		questionPools:     make(map[string]map[string][]int),
+		questionHistory:   make(map[string]time.Time),
+		poolResetCounters: make(map[string]map[string]int),
 	}
 
 	if err := tm.loadAllQuestions(); err != nil {
 		log.Printf("Error loading trivia questions: %v", err)
 	}
 
+	// Initialize question pools
+	tm.initializeQuestionPools()
+
+	// Start cleanup routine for question history
+	go tm.cleanupQuestionHistory()
+
 	return tm
 }
 
-// loadAllQuestions loads all trivia questions from the filesystem
+// loadAllQuestions loads all trivia questions from the filesystem with enhanced error handling
 func (tm *TriviaManager) loadAllQuestions() error {
 	tm.mu.Lock()
 	defer tm.mu.Unlock()
 
 	difficulties := []string{"easy", "medium", "hard"}
+	totalLoaded := 0
+	errors := make([]string, 0)
 
 	for _, category := range constants.TriviaCategories {
 		if tm.questions[category] == nil {
@@ -48,19 +63,35 @@ func (tm *TriviaManager) loadAllQuestions() error {
 			filename := filepath.Join("trivia", category, fmt.Sprintf("%s.json", difficulty))
 			questions, err := tm.loadQuestionsFromFile(filename, category, difficulty)
 			if err != nil {
-				log.Printf("Warning: Could not load %s: %v", filename, err)
+				errorMsg := fmt.Sprintf("Could not load %s: %v", filename, err)
+				log.Printf("Warning: %s", errorMsg)
+				errors = append(errors, errorMsg)
 				continue
 			}
 
 			tm.questions[category][difficulty] = questions
+			totalLoaded += len(questions)
 			log.Printf("Loaded %d %s %s questions", len(questions), difficulty, category)
+		}
+	}
+
+	log.Printf("Total questions loaded: %d", totalLoaded)
+
+	if totalLoaded == 0 {
+		return fmt.Errorf("no trivia questions loaded")
+	}
+
+	if len(errors) > 0 {
+		log.Printf("Encountered %d errors during loading:", len(errors))
+		for _, err := range errors {
+			log.Printf("  - %s", err)
 		}
 	}
 
 	return nil
 }
 
-// loadQuestionsFromFile loads questions from a single JSON file
+// loadQuestionsFromFile loads questions from a single JSON file with enhanced validation
 func (tm *TriviaManager) loadQuestionsFromFile(filename, category, difficulty string) ([]TriviaQuestion, error) {
 	data, err := ioutil.ReadFile(filename)
 	if err != nil {
@@ -73,20 +104,53 @@ func (tm *TriviaManager) loadQuestionsFromFile(filename, category, difficulty st
 	}
 
 	if err := json.Unmarshal(data, &response); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("invalid JSON format: %v", err)
+	}
+
+	if response.ResponseCode != 0 {
+		return nil, fmt.Errorf("API response error code: %d", response.ResponseCode)
+	}
+
+	if len(response.Results) == 0 {
+		return nil, fmt.Errorf("no questions found in file")
 	}
 
 	questions := make([]TriviaQuestion, 0, len(response.Results))
 	for i, q := range response.Results {
+		// Validate question data
+		if err := tm.validateQuestionData(q); err != nil {
+			log.Printf("Skipping invalid question %d in %s: %v", i, filename, err)
+			continue
+		}
+
 		// Clean HTML entities from question text
 		questionText := cleanHTMLEntities(q.Question)
 		correctAnswer := cleanHTMLEntities(q.CorrectAnswer)
 
+		// Validate cleaned text
+		if questionText == "" || correctAnswer == "" {
+			log.Printf("Skipping question %d in %s: empty text after cleaning", i, filename)
+			continue
+		}
+
 		// Create options array
 		options := make([]string, 0, len(q.IncorrectAnswers)+1)
 		options = append(options, correctAnswer)
+
+		// Clean and validate incorrect answers
+		validIncorrectAnswers := make([]string, 0, len(q.IncorrectAnswers))
 		for _, incorrect := range q.IncorrectAnswers {
-			options = append(options, cleanHTMLEntities(incorrect))
+			cleaned := cleanHTMLEntities(incorrect)
+			if cleaned != "" && cleaned != correctAnswer {
+				options = append(options, cleaned)
+				validIncorrectAnswers = append(validIncorrectAnswers, cleaned)
+			}
+		}
+
+		// Ensure we have enough options
+		if len(options) < 2 {
+			log.Printf("Skipping question %d in %s: insufficient valid options", i, filename)
+			continue
 		}
 
 		// Shuffle options
@@ -94,33 +158,107 @@ func (tm *TriviaManager) loadQuestionsFromFile(filename, category, difficulty st
 			options[i], options[j] = options[j], options[i]
 		})
 
+		// Create unique ID that includes timestamp to prevent conflicts
 		questions = append(questions, TriviaQuestion{
-			ID:               fmt.Sprintf("%s_%s_%d", category, difficulty, i),
+			ID:               fmt.Sprintf("%s_%s_%d_%d", category, difficulty, i, time.Now().UnixNano()%1000000),
 			Text:             questionText,
 			Category:         category,
 			Difficulty:       difficulty,
 			TimeLimit:        constants.TriviaAnswerTimeout,
 			Options:          options,
 			CorrectAnswer:    correctAnswer,
-			IncorrectAnswers: q.IncorrectAnswers,
+			IncorrectAnswers: validIncorrectAnswers,
 			IsSpecialty:      false, // Will be set when served as specialty
 		})
+	}
+
+	if len(questions) == 0 {
+		return nil, fmt.Errorf("no valid questions after processing")
 	}
 
 	return questions, nil
 }
 
-// ENHANCED: GetQuestion with proper difficulty modifiers and specialty marking
-func (tm *TriviaManager) GetQuestion(gameDifficulty string, playerSpecialties []string, askedQuestions map[string]bool) (*TriviaQuestion, error) {
-	tm.mu.RLock()
-	defer tm.mu.RUnlock()
+// validateQuestionData validates the basic structure of question data
+func (tm *TriviaManager) validateQuestionData(q TriviaQuestionJSON) error {
+	if q.Question == "" {
+		return fmt.Errorf("empty question text")
+	}
 
-	// Determine question difficulty and specialty based on game difficulty
+	if q.CorrectAnswer == "" {
+		return fmt.Errorf("empty correct answer")
+	}
+
+	if len(q.IncorrectAnswers) == 0 {
+		return fmt.Errorf("no incorrect answers provided")
+	}
+
+	if len(q.Question) > 500 {
+		return fmt.Errorf("question text too long")
+	}
+
+	if len(q.CorrectAnswer) > 200 {
+		return fmt.Errorf("correct answer too long")
+	}
+
+	// Check for duplicate answers
+	allAnswers := append([]string{q.CorrectAnswer}, q.IncorrectAnswers...)
+	seen := make(map[string]bool)
+	for _, answer := range allAnswers {
+		normalized := strings.ToLower(strings.TrimSpace(answer))
+		if seen[normalized] {
+			return fmt.Errorf("duplicate answers detected")
+		}
+		seen[normalized] = true
+	}
+
+	return nil
+}
+
+// initializeQuestionPools initializes the question pools for cycling
+func (tm *TriviaManager) initializeQuestionPools() {
+	tm.mu.Lock()
+	defer tm.mu.Unlock()
+
+	for category, difficulties := range tm.questions {
+		if tm.questionPools[category] == nil {
+			tm.questionPools[category] = make(map[string][]int)
+		}
+		if tm.poolResetCounters[category] == nil {
+			tm.poolResetCounters[category] = make(map[string]int)
+		}
+
+		for difficulty, questions := range difficulties {
+			// Create index pool
+			pool := make([]int, len(questions))
+			for i := range pool {
+				pool[i] = i
+			}
+
+			// Shuffle the initial pool
+			rand.Shuffle(len(pool), func(i, j int) {
+				pool[i], pool[j] = pool[j], pool[i]
+			})
+
+			tm.questionPools[category][difficulty] = pool
+			tm.poolResetCounters[category][difficulty] = 0
+
+			log.Printf("Initialized question pool for %s %s: %d questions", category, difficulty, len(pool))
+		}
+	}
+}
+
+// GetQuestion retrieves a question with enhanced cycling and validation
+func (tm *TriviaManager) GetQuestion(gameDifficulty string, playerSpecialties []string, askedQuestions map[string]bool) (*TriviaQuestion, error) {
+	tm.mu.Lock()
+	defer tm.mu.Unlock()
+
+	// Determine question parameters
 	var questionDifficulty string
 	var isSpecialty bool
 	var category string
 
-	// IMPLEMENTED: Apply difficulty modifiers for specialty chance
+	// Apply difficulty modifiers for specialty chance
 	specialtyChance := 0.3 // Base 30% chance
 	switch gameDifficulty {
 	case "easy":
@@ -132,22 +270,32 @@ func (tm *TriviaManager) GetQuestion(gameDifficulty string, playerSpecialties []
 	// Check if we should ask a specialty question
 	if len(playerSpecialties) > 0 && rand.Float32() < float32(specialtyChance) {
 		isSpecialty = true
-		category = playerSpecialties[rand.Intn(len(playerSpecialties))]
-
-		// IMPLEMENTED: Specialty questions are harder based on game difficulty
-		switch gameDifficulty {
-		case "easy":
-			questionDifficulty = "medium"
-		case "medium":
-			questionDifficulty = "hard"
-		case "hard":
-			questionDifficulty = "hard" // Already at max
+		// Select from player's specialties
+		availableSpecialties := tm.getAvailableSpecialtyCategories(playerSpecialties, gameDifficulty)
+		if len(availableSpecialties) > 0 {
+			category = availableSpecialties[rand.Intn(len(availableSpecialties))]
+		} else {
+			// Fallback to regular question if no specialty questions available
+			isSpecialty = false
 		}
-	} else {
+
+		if isSpecialty {
+			// Specialty questions are harder based on game difficulty
+			switch gameDifficulty {
+			case "easy":
+				questionDifficulty = "medium"
+			case "medium":
+				questionDifficulty = "hard"
+			case "hard":
+				questionDifficulty = "hard"
+			}
+		}
+	}
+
+	if !isSpecialty {
 		// Regular questions - apply difficulty modifiers
 		diffMod := tm.getDifficultyModifiersForTrivia(gameDifficulty)
 
-		// Choose difficulty based on game settings and modifiers
 		if diffMod.TriviaModifier <= 0.8 {
 			questionDifficulty = "easy"
 		} else if diffMod.TriviaModifier >= 1.2 {
@@ -156,86 +304,306 @@ func (tm *TriviaManager) GetQuestion(gameDifficulty string, playerSpecialties []
 			questionDifficulty = "medium"
 		}
 
-		// Random category from all available
-		categories := make([]string, 0, len(tm.questions))
-		for cat := range tm.questions {
-			if len(tm.questions[cat][questionDifficulty]) > 0 {
-				categories = append(categories, cat)
-			}
+		// Select category from available categories with questions
+		availableCategories := tm.getAvailableCategories(questionDifficulty)
+		if len(availableCategories) == 0 {
+			return nil, fmt.Errorf("no categories available for difficulty %s", questionDifficulty)
 		}
-		if len(categories) == 0 {
-			// Fallback to medium if requested difficulty not available
-			questionDifficulty = "medium"
-			for cat := range tm.questions {
-				if len(tm.questions[cat][questionDifficulty]) > 0 {
-					categories = append(categories, cat)
-				}
-			}
-		}
-		if len(categories) == 0 {
-			return nil, fmt.Errorf("no categories available for any difficulty")
-		}
-		category = categories[rand.Intn(len(categories))]
+		category = availableCategories[rand.Intn(len(availableCategories))]
 	}
 
-	// Get questions for this category and difficulty
-	if tm.questions[category] == nil || tm.questions[category][questionDifficulty] == nil {
-		return nil, fmt.Errorf("no questions available for category %s difficulty %s", category, questionDifficulty)
+	// Get question from pool with cycling
+	question, err := tm.getQuestionFromPool(category, questionDifficulty, askedQuestions)
+	if err != nil {
+		return nil, err
 	}
 
-	availableQuestions := tm.questions[category][questionDifficulty]
-	if len(availableQuestions) == 0 {
-		return nil, fmt.Errorf("no questions in pool for category %s difficulty %s", category, questionDifficulty)
-	}
-
-	// Find an unasked question
-	unaskedQuestions := make([]TriviaQuestion, 0)
-	for _, q := range availableQuestions {
-		if !askedQuestions[q.ID] {
-			unaskedQuestions = append(unaskedQuestions, q)
-		}
-	}
-
-	// If all questions have been asked, reset and use any question
-	if len(unaskedQuestions) == 0 {
-		unaskedQuestions = availableQuestions
-		// Clear asked questions for this category and difficulty
-		for id := range askedQuestions {
-			for _, q := range availableQuestions {
-				if q.ID == id {
-					delete(askedQuestions, id)
-					break
-				}
-			}
-		}
-		log.Printf("Reset question pool for category %s difficulty %s", category, questionDifficulty)
-	}
-
-	// Select random question
-	selected := unaskedQuestions[rand.Intn(len(unaskedQuestions))]
-
-	// IMPLEMENTED: Mark as specialty and adjust time limit
-	selected.IsSpecialty = isSpecialty
+	// Configure question settings
+	question.IsSpecialty = isSpecialty
 	if isSpecialty {
 		// Specialty questions get more time
-		selected.TimeLimit = int(float64(constants.TriviaAnswerTimeout) * 1.5)
+		question.TimeLimit = int(float64(constants.TriviaAnswerTimeout) * 1.5)
 		// Add specialty indicator to category display
-		selected.Category = selected.Category + " (Specialty)"
+		question.Category = question.Category + " (Specialty)"
 	}
 
 	// Apply difficulty-based time modifiers
 	diffMod := tm.getDifficultyModifiersForTrivia(gameDifficulty)
-	selected.TimeLimit = int(float64(selected.TimeLimit) * diffMod.TimeLimitModifier)
+	question.TimeLimit = int(float64(question.TimeLimit) * diffMod.TimeLimitModifier)
 
 	// Ensure minimum time limit
-	if selected.TimeLimit < 10 {
-		selected.TimeLimit = 10
+	if question.TimeLimit < 10 {
+		question.TimeLimit = 10
 	}
 
-	return &selected, nil
+	// Record when this question was asked
+	tm.questionHistory[question.ID] = time.Now()
+
+	return question, nil
 }
 
-// IMPLEMENTED: Get difficulty modifiers for trivia
+// getAvailableSpecialtyCategories returns specialty categories that have questions
+func (tm *TriviaManager) getAvailableSpecialtyCategories(specialties []string, gameDifficulty string) []string {
+	var available []string
+
+	// Determine what difficulty to look for
+	var targetDifficulty string
+	switch gameDifficulty {
+	case "easy":
+		targetDifficulty = "medium"
+	case "medium":
+		targetDifficulty = "hard"
+	case "hard":
+		targetDifficulty = "hard"
+	}
+
+	for _, specialty := range specialties {
+		if tm.questions[specialty] != nil &&
+			tm.questions[specialty][targetDifficulty] != nil &&
+			len(tm.questions[specialty][targetDifficulty]) > 0 {
+			available = append(available, specialty)
+		}
+	}
+
+	return available
+}
+
+// getQuestionFromPool gets a question from the cycling pool
+func (tm *TriviaManager) getQuestionFromPool(category, difficulty string, recentlyAsked map[string]bool) (*TriviaQuestion, error) {
+	// Check if category and difficulty exist
+	if tm.questions[category] == nil || tm.questions[category][difficulty] == nil {
+		return nil, fmt.Errorf("no questions available for category %s difficulty %s", category, difficulty)
+	}
+
+	questions := tm.questions[category][difficulty]
+	if len(questions) == 0 {
+		return nil, fmt.Errorf("no questions in pool for category %s difficulty %s", category, difficulty)
+	}
+
+	pool := tm.questionPools[category][difficulty]
+
+	// If pool is empty, automatically reset it (AUTOMATIC CYCLING)
+	if len(pool) == 0 {
+		tm.resetQuestionPool(category, difficulty)
+		pool = tm.questionPools[category][difficulty]
+		log.Printf("Automatically cycled question pool for %s %s (cycle #%d) - questions will repeat with new order",
+			category, difficulty, tm.poolResetCounters[category][difficulty])
+	}
+
+	// Find a question that hasn't been recently asked
+	var selectedIndex int
+	var selectedQuestion *TriviaQuestion
+	attempts := 0
+	maxAttempts := min(len(pool), 10) // Limit attempts to prevent infinite loop
+
+	for attempts < maxAttempts {
+		// Take question from front of pool
+		selectedIndex = pool[0]
+		pool = pool[1:] // Remove from pool
+
+		question := questions[selectedIndex]
+
+		// Check if this question was recently asked
+		if !recentlyAsked[question.ID] {
+			selectedQuestion = &question
+			break
+		}
+
+		// If recently asked, put it at the back of the pool and try next
+		pool = append(pool, selectedIndex)
+		attempts++
+	}
+
+	// Update the pool
+	tm.questionPools[category][difficulty] = pool
+
+	// If we couldn't find an unasked question, use the first available
+	// This ensures we always return a question even if all were recently asked
+	if selectedQuestion == nil {
+		if len(pool) == 0 {
+			// Pool was emptied during search, reset and try again
+			tm.resetQuestionPool(category, difficulty)
+			pool = tm.questionPools[category][difficulty]
+			if len(pool) == 0 {
+				return nil, fmt.Errorf("no questions available after reset for %s %s", category, difficulty)
+			}
+		}
+
+		selectedIndex = pool[0]
+		pool = pool[1:]
+		tm.questionPools[category][difficulty] = pool
+		question := questions[selectedIndex]
+		selectedQuestion = &question
+		log.Printf("All questions in %s %s recently asked, reusing question (automatic cycling active)", category, difficulty)
+	}
+
+	// Return a copy to prevent modification of the original
+	questionCopy := *selectedQuestion
+	return &questionCopy, nil
+}
+
+// resetQuestionPool resets a question pool for automatic cycling
+func (tm *TriviaManager) resetQuestionPool(category, difficulty string) {
+	questions := tm.questions[category][difficulty]
+	if len(questions) == 0 {
+		log.Printf("ERROR: Cannot reset pool for %s %s - no questions available", category, difficulty)
+		return
+	}
+
+	pool := make([]int, len(questions))
+	for i := range pool {
+		pool[i] = i
+	}
+
+	// Shuffle the pool for variety in question order
+	rand.Shuffle(len(pool), func(i, j int) {
+		pool[i], pool[j] = pool[j], pool[i]
+	})
+
+	tm.questionPools[category][difficulty] = pool
+	tm.poolResetCounters[category][difficulty]++
+
+	log.Printf("Reset question pool for %s %s with %d questions (cycle #%d)",
+		category, difficulty, len(pool), tm.poolResetCounters[category][difficulty])
+}
+
+// getAvailableCategories returns categories that have questions for the given difficulty
+func (tm *TriviaManager) getAvailableCategories(difficulty string) []string {
+	var available []string
+	for category, difficulties := range tm.questions {
+		if difficulties[difficulty] != nil && len(difficulties[difficulty]) > 0 {
+			available = append(available, category)
+		}
+	}
+	return available
+}
+
+// cleanupQuestionHistory removes old question history entries
+func (tm *TriviaManager) cleanupQuestionHistory() {
+	ticker := time.NewTicker(10 * time.Minute) // Cleanup every 10 minutes
+	defer ticker.Stop()
+
+	for range ticker.C {
+		tm.mu.Lock()
+		cutoff := time.Now().Add(-30 * time.Minute) // Remove entries older than 30 minutes
+		cleaned := 0
+		for questionID, askTime := range tm.questionHistory {
+			if askTime.Before(cutoff) {
+				delete(tm.questionHistory, questionID)
+				cleaned++
+			}
+		}
+		if cleaned > 0 {
+			log.Printf("Cleaned up %d old question history entries", cleaned)
+		}
+		tm.mu.Unlock()
+	}
+}
+
+// ValidateAnswer validates an answer against stored correct answer with enhanced matching
+func (tm *TriviaManager) ValidateAnswer(questionID, playerAnswer string) (bool, error) {
+	tm.mu.RLock()
+	defer tm.mu.RUnlock()
+
+	// Find the question
+	for _, difficulties := range tm.questions {
+		for _, questions := range difficulties {
+			for _, question := range questions {
+				if question.ID == questionID {
+					return tm.compareAnswers(question.CorrectAnswer, playerAnswer), nil
+				}
+			}
+		}
+	}
+
+	return false, fmt.Errorf("question not found: %s", questionID)
+}
+
+// compareAnswers provides enhanced answer comparison
+func (tm *TriviaManager) compareAnswers(correct, player string) bool {
+	// Normalize both answers
+	correctNorm := tm.normalizeAnswer(correct)
+	playerNorm := tm.normalizeAnswer(player)
+
+	// Exact match after normalization
+	if correctNorm == playerNorm {
+		return true
+	}
+
+	// Check for common variations
+	return tm.checkAnswerVariations(correctNorm, playerNorm)
+}
+
+// normalizeAnswer normalizes an answer for comparison
+func (tm *TriviaManager) normalizeAnswer(answer string) string {
+	// Convert to lowercase
+	norm := strings.ToLower(answer)
+
+	// Remove extra whitespace
+	norm = strings.TrimSpace(norm)
+	norm = strings.Join(strings.Fields(norm), " ")
+
+	// Remove common punctuation
+	norm = strings.ReplaceAll(norm, ".", "")
+	norm = strings.ReplaceAll(norm, ",", "")
+	norm = strings.ReplaceAll(norm, "!", "")
+	norm = strings.ReplaceAll(norm, "?", "")
+	norm = strings.ReplaceAll(norm, "'", "")
+	norm = strings.ReplaceAll(norm, "\"", "")
+	norm = strings.ReplaceAll(norm, "(", "")
+	norm = strings.ReplaceAll(norm, ")", "")
+
+	return norm
+}
+
+// checkAnswerVariations checks for common answer variations
+func (tm *TriviaManager) checkAnswerVariations(correct, player string) bool {
+	// Check if player answer is contained in correct answer or vice versa
+	// This helps with answers like "The United States" vs "United States"
+	if len(correct) > len(player) && strings.Contains(correct, player) && len(player) > 3 {
+		return true
+	}
+	if len(player) > len(correct) && strings.Contains(player, correct) && len(correct) > 3 {
+		return true
+	}
+
+	// Check for common abbreviations and variations
+	variations := map[string][]string{
+		"united states":  {"usa", "us", "america", "united states of america"},
+		"united kingdom": {"uk", "britain", "great britain", "england"},
+		"soviet union":   {"ussr", "russia"},
+		"world war":      {"ww", "world war i", "world war ii", "wwi", "wwii"},
+		"doctor":         {"dr", "doc"},
+		"mount":          {"mt"},
+		"saint":          {"st"},
+		"president":      {"pres"},
+		"association":    {"assoc"},
+		"corporation":    {"corp"},
+		"company":        {"co"},
+		"incorporated":   {"inc"},
+		"limited":        {"ltd"},
+	}
+
+	for canonical, vars := range variations {
+		if strings.Contains(correct, canonical) {
+			for _, variant := range vars {
+				if strings.Contains(player, variant) {
+					return true
+				}
+			}
+		}
+		// Check reverse too
+		for _, variant := range vars {
+			if strings.Contains(correct, variant) && strings.Contains(player, canonical) {
+				return true
+			}
+		}
+	}
+
+	return false
+}
+
+// getDifficultyModifiersForTrivia gets difficulty modifiers for trivia
 func (tm *TriviaManager) getDifficultyModifiersForTrivia(gameDifficulty string) constants.DifficultyModifiers {
 	switch gameDifficulty {
 	case "easy":
@@ -247,29 +615,7 @@ func (tm *TriviaManager) getDifficultyModifiersForTrivia(gameDifficulty string) 
 	}
 }
 
-// IMPLEMENTED: Validate answer against stored correct answer
-func (tm *TriviaManager) ValidateAnswer(questionID, playerAnswer string) (bool, error) {
-	tm.mu.RLock()
-	defer tm.mu.RUnlock()
-
-	// Find the question
-	for _, difficulties := range tm.questions {
-		for _, questions := range difficulties {
-			for _, question := range questions {
-				if question.ID == questionID {
-					// Case-insensitive comparison, trimmed
-					correctAnswer := strings.TrimSpace(strings.ToLower(question.CorrectAnswer))
-					playerAnswerClean := strings.TrimSpace(strings.ToLower(playerAnswer))
-					return correctAnswer == playerAnswerClean, nil
-				}
-			}
-		}
-	}
-
-	return false, fmt.Errorf("question not found: %s", questionID)
-}
-
-// IMPLEMENTED: Get question by ID for validation
+// GetQuestionByID retrieves a question by ID with enhanced error handling
 func (tm *TriviaManager) GetQuestionByID(questionID string) (*TriviaQuestion, error) {
 	tm.mu.RLock()
 	defer tm.mu.RUnlock()
@@ -289,55 +635,305 @@ func (tm *TriviaManager) GetQuestionByID(questionID string) (*TriviaQuestion, er
 	return nil, fmt.Errorf("question not found: %s", questionID)
 }
 
-// cleanHTMLEntities removes common HTML entities from text
+// GetCategoryStats returns enhanced statistics about available questions
+func (tm *TriviaManager) GetCategoryStats() map[string]map[string]int {
+	tm.mu.RLock()
+	defer tm.mu.RUnlock()
+
+	stats := make(map[string]map[string]int)
+
+	for category, difficulties := range tm.questions {
+		stats[category] = make(map[string]int)
+		for difficulty, questions := range difficulties {
+			stats[category][difficulty] = len(questions)
+		}
+	}
+
+	return stats
+}
+
+// GetPoolStats returns statistics about question pools
+func (tm *TriviaManager) GetPoolStats() map[string]interface{} {
+	tm.mu.RLock()
+	defer tm.mu.RUnlock()
+
+	poolStats := make(map[string]interface{})
+
+	for category, difficulties := range tm.questionPools {
+		categoryStats := make(map[string]interface{})
+		for difficulty, pool := range difficulties {
+			total := 0
+			if tm.questions[category] != nil && tm.questions[category][difficulty] != nil {
+				total = len(tm.questions[category][difficulty])
+			}
+
+			categoryStats[difficulty] = map[string]interface{}{
+				"remaining":   len(pool),
+				"total":       total,
+				"used":        total - len(pool),
+				"cycles":      tm.poolResetCounters[category][difficulty],
+				"utilization": float64(total-len(pool)) / float64(max(total, 1)),
+			}
+		}
+		poolStats[category] = categoryStats
+	}
+
+	return poolStats
+}
+
+// ReloadQuestions reloads questions from filesystem with enhanced error handling
+func (tm *TriviaManager) ReloadQuestions() error {
+	log.Println("Reloading trivia questions...")
+
+	// Create new structures
+	newQuestions := make(map[string]map[string][]TriviaQuestion)
+	newPools := make(map[string]map[string][]int)
+	newCounters := make(map[string]map[string]int)
+
+	difficulties := []string{"easy", "medium", "hard"}
+	totalLoaded := 0
+
+	for _, category := range constants.TriviaCategories {
+		newQuestions[category] = make(map[string][]TriviaQuestion)
+		newPools[category] = make(map[string][]int)
+		newCounters[category] = make(map[string]int)
+
+		for _, difficulty := range difficulties {
+			filename := filepath.Join("trivia", category, fmt.Sprintf("%s.json", difficulty))
+			questions, err := tm.loadQuestionsFromFile(filename, category, difficulty)
+			if err != nil {
+				log.Printf("Warning: Could not reload %s: %v", filename, err)
+				continue
+			}
+
+			newQuestions[category][difficulty] = questions
+			totalLoaded += len(questions)
+
+			// Initialize new pool
+			pool := make([]int, len(questions))
+			for i := range pool {
+				pool[i] = i
+			}
+			rand.Shuffle(len(pool), func(i, j int) {
+				pool[i], pool[j] = pool[j], pool[i]
+			})
+
+			newPools[category][difficulty] = pool
+			newCounters[category][difficulty] = 0
+
+			log.Printf("Reloaded %d %s %s questions", len(questions), difficulty, category)
+		}
+	}
+
+	if totalLoaded == 0 {
+		return fmt.Errorf("no questions loaded during reload")
+	}
+
+	// Replace old data atomically
+	tm.mu.Lock()
+	tm.questions = newQuestions
+	tm.questionPools = newPools
+	tm.poolResetCounters = newCounters
+	// Clear question history to avoid stale references
+	tm.questionHistory = make(map[string]time.Time)
+	tm.mu.Unlock()
+
+	log.Printf("Trivia questions reloaded successfully: %d total questions", totalLoaded)
+	return nil
+}
+
+// GetSummaryStats returns comprehensive statistics
+func (tm *TriviaManager) GetSummaryStats() map[string]interface{} {
+	tm.mu.RLock()
+	defer tm.mu.RUnlock()
+
+	totalQuestions := 0
+	categoryCounts := make(map[string]int)
+	difficultyCounts := make(map[string]int)
+
+	for category, difficulties := range tm.questions {
+		categoryTotal := 0
+		for difficulty, questions := range difficulties {
+			count := len(questions)
+			totalQuestions += count
+			categoryTotal += count
+			difficultyCounts[difficulty] += count
+		}
+		categoryCounts[category] = categoryTotal
+	}
+
+	return map[string]interface{}{
+		"totalQuestions":      totalQuestions,
+		"categoryCounts":      categoryCounts,
+		"difficultyCounts":    difficultyCounts,
+		"supportedCategories": constants.TriviaCategories,
+		"historySize":         len(tm.questionHistory),
+		"poolStats":           tm.GetPoolStats(),
+		"cycling": map[string]interface{}{
+			"enabled":     true,
+			"automatic":   true,
+			"cycleCount":  tm.getTotalCycles(),
+			"description": "Questions automatically cycle when pools are exhausted - no manual refresh needed",
+		},
+	}
+}
+
+// getTotalCycles returns the total number of cycles across all categories
+func (tm *TriviaManager) getTotalCycles() int {
+	total := 0
+	for _, difficulties := range tm.poolResetCounters {
+		for _, count := range difficulties {
+			total += count
+		}
+	}
+	return total
+}
+
+// Utility methods
+
+func (tm *TriviaManager) GetQuestionsCount(category, difficulty string) int {
+	tm.mu.RLock()
+	defer tm.mu.RUnlock()
+
+	if tm.questions[category] == nil || tm.questions[category][difficulty] == nil {
+		return 0
+	}
+
+	return len(tm.questions[category][difficulty])
+}
+
+func (tm *TriviaManager) ValidateQuestion(questionID string) bool {
+	tm.mu.RLock()
+	defer tm.mu.RUnlock()
+
+	for _, difficulties := range tm.questions {
+		for _, questions := range difficulties {
+			for _, question := range questions {
+				if question.ID == questionID {
+					return true
+				}
+			}
+		}
+	}
+	return false
+}
+
+func (tm *TriviaManager) GetTotalQuestionsCount() int {
+	tm.mu.RLock()
+	defer tm.mu.RUnlock()
+
+	total := 0
+	for _, difficulties := range tm.questions {
+		for _, questions := range difficulties {
+			total += len(questions)
+		}
+	}
+	return total
+}
+
+func (tm *TriviaManager) GetQuestionsByCategory(category, difficulty string) []TriviaQuestion {
+	tm.mu.RLock()
+	defer tm.mu.RUnlock()
+
+	if tm.questions[category] == nil || tm.questions[category][difficulty] == nil {
+		return []TriviaQuestion{}
+	}
+
+	// Return a copy to prevent external modification
+	questions := make([]TriviaQuestion, len(tm.questions[category][difficulty]))
+	copy(questions, tm.questions[category][difficulty])
+	return questions
+}
+
+func (tm *TriviaManager) IsCategorySupported(category string) bool {
+	tm.mu.RLock()
+	defer tm.mu.RUnlock()
+
+	_, exists := tm.questions[category]
+	return exists
+}
+
+func (tm *TriviaManager) GetAvailableCategories() []string {
+	tm.mu.RLock()
+	defer tm.mu.RUnlock()
+
+	categories := make([]string, 0, len(tm.questions))
+	for category := range tm.questions {
+		categories = append(categories, category)
+	}
+	return categories
+}
+
+// Utility functions
+
+// cleanHTMLEntities removes HTML entities from text
 func cleanHTMLEntities(text string) string {
 	replacements := map[string]string{
-		"&amp;":    "&",
-		"&lt;":     "<",
-		"&gt;":     ">",
-		"&quot;":   "\"",
-		"&#039;":   "'",
-		"&rsquo;":  "'",
-		"&lsquo;":  "'",
-		"&rdquo;":  "\"",
-		"&ldquo;":  "\"",
-		"&ouml;":   "ö",
-		"&auml;":   "ä",
-		"&uuml;":   "ü",
-		"&Ouml;":   "Ö",
-		"&Auml;":   "Ä",
-		"&Uuml;":   "Ü",
-		"&szlig;":  "ß",
-		"&eacute;": "é",
-		"&egrave;": "è",
-		"&ecirc;":  "ê",
-		"&euml;":   "ë",
-		"&aacute;": "á",
-		"&agrave;": "à",
-		"&acirc;":  "â",
-		"&iacute;": "í",
-		"&igrave;": "ì",
-		"&icirc;":  "î",
-		"&iuml;":   "ï",
-		"&oacute;": "ó",
-		"&ograve;": "ò",
-		"&ocirc;":  "ô",
-		"&otilde;": "õ",
-		"&uacute;": "ú",
-		"&ugrave;": "ù",
-		"&ucirc;":  "û",
-		"&ccedil;": "ç",
-		"&ntilde;": "ñ",
-		"&nbsp;":   " ",
-		"&hellip;": "...",
-		"&mdash;":  "—",
-		"&ndash;":  "–",
-		"&laquo;":  "«",
-		"&raquo;":  "»",
-		"&deg;":    "°",
-		"&copy;":   "©",
-		"&reg;":    "®",
-		"&trade;":  "™",
+		"&amp;":     "&",
+		"&lt;":      "<",
+		"&gt;":      ">",
+		"&quot;":    "\"",
+		"&#039;":    "'",
+		"&rsquo;":   "'",
+		"&lsquo;":   "'",
+		"&rdquo;":   "\"",
+		"&ldquo;":   "\"",
+		"&ouml;":    "ö",
+		"&auml;":    "ä",
+		"&uuml;":    "ü",
+		"&Ouml;":    "Ö",
+		"&Auml;":    "Ä",
+		"&Uuml;":    "Ü",
+		"&szlig;":   "ß",
+		"&eacute;":  "é",
+		"&egrave;":  "è",
+		"&ecirc;":   "ê",
+		"&euml;":    "ë",
+		"&aacute;":  "á",
+		"&agrave;":  "à",
+		"&acirc;":   "â",
+		"&iacute;":  "í",
+		"&igrave;":  "ì",
+		"&icirc;":   "î",
+		"&iuml;":    "ï",
+		"&oacute;":  "ó",
+		"&ograve;":  "ò",
+		"&ocirc;":   "ô",
+		"&otilde;":  "õ",
+		"&uacute;":  "ú",
+		"&ugrave;":  "ù",
+		"&ucirc;":   "û",
+		"&ccedil;":  "ç",
+		"&ntilde;":  "ñ",
+		"&nbsp;":    " ",
+		"&hellip;":  "...",
+		"&mdash;":   "—",
+		"&ndash;":   "–",
+		"&laquo;":   "«",
+		"&raquo;":   "»",
+		"&deg;":     "°",
+		"&copy;":    "©",
+		"&reg;":     "®",
+		"&trade;":   "™",
+		"&frac12;":  "½",
+		"&frac14;":  "¼",
+		"&frac34;":  "¾",
+		"&plusmn;":  "±",
+		"&times;":   "×",
+		"&divide;":  "÷",
+		"&micro;":   "μ",
+		"&alpha;":   "α",
+		"&beta;":    "β",
+		"&gamma;":   "γ",
+		"&delta;":   "δ",
+		"&epsilon;": "ε",
+		"&theta;":   "θ",
+		"&lambda;":  "λ",
+		"&mu;":      "μ",
+		"&pi;":      "π",
+		"&sigma;":   "σ",
+		"&phi;":     "φ",
+		"&omega;":   "ω",
 	}
 
 	result := text
@@ -391,161 +987,4 @@ func normalizeCategory(category string) string {
 
 	// Default to general if we don't recognize the category
 	return "general"
-}
-
-// GetCategoryStats returns statistics about available questions
-func (tm *TriviaManager) GetCategoryStats() map[string]map[string]int {
-	tm.mu.RLock()
-	defer tm.mu.RUnlock()
-
-	stats := make(map[string]map[string]int)
-
-	for category, difficulties := range tm.questions {
-		stats[category] = make(map[string]int)
-		for difficulty, questions := range difficulties {
-			stats[category][difficulty] = len(questions)
-		}
-	}
-
-	return stats
-}
-
-// IMPLEMENTED: Get questions by difficulty and category for validation
-func (tm *TriviaManager) GetQuestionsCount(category, difficulty string) int {
-	tm.mu.RLock()
-	defer tm.mu.RUnlock()
-
-	if tm.questions[category] == nil || tm.questions[category][difficulty] == nil {
-		return 0
-	}
-
-	return len(tm.questions[category][difficulty])
-}
-
-// IMPLEMENTED: Validate if a question ID exists
-func (tm *TriviaManager) ValidateQuestion(questionID string) bool {
-	tm.mu.RLock()
-	defer tm.mu.RUnlock()
-
-	for _, difficulties := range tm.questions {
-		for _, questions := range difficulties {
-			for _, question := range questions {
-				if question.ID == questionID {
-					return true
-				}
-			}
-		}
-	}
-	return false
-}
-
-// IMPLEMENTED: Get total questions count across all categories and difficulties
-func (tm *TriviaManager) GetTotalQuestionsCount() int {
-	tm.mu.RLock()
-	defer tm.mu.RUnlock()
-
-	total := 0
-	for _, difficulties := range tm.questions {
-		for _, questions := range difficulties {
-			total += len(questions)
-		}
-	}
-	return total
-}
-
-// IMPLEMENTED: Get questions for a specific category and difficulty
-func (tm *TriviaManager) GetQuestionsByCategory(category, difficulty string) []TriviaQuestion {
-	tm.mu.RLock()
-	defer tm.mu.RUnlock()
-
-	if tm.questions[category] == nil || tm.questions[category][difficulty] == nil {
-		return []TriviaQuestion{}
-	}
-
-	// Return a copy to prevent external modification
-	questions := make([]TriviaQuestion, len(tm.questions[category][difficulty]))
-	copy(questions, tm.questions[category][difficulty])
-	return questions
-}
-
-// IMPLEMENTED: Check if category is supported
-func (tm *TriviaManager) IsCategorySupported(category string) bool {
-	tm.mu.RLock()
-	defer tm.mu.RUnlock()
-
-	_, exists := tm.questions[category]
-	return exists
-}
-
-// IMPLEMENTED: Get all available categories
-func (tm *TriviaManager) GetAvailableCategories() []string {
-	tm.mu.RLock()
-	defer tm.mu.RUnlock()
-
-	categories := make([]string, 0, len(tm.questions))
-	for category := range tm.questions {
-		categories = append(categories, category)
-	}
-	return categories
-}
-
-// IMPLEMENTED: Reload questions from filesystem (useful for updates without restart)
-func (tm *TriviaManager) ReloadQuestions() error {
-	log.Println("Reloading trivia questions...")
-
-	// Create new questions map
-	newQuestions := make(map[string]map[string][]TriviaQuestion)
-	difficulties := []string{"easy", "medium", "hard"}
-
-	for _, category := range constants.TriviaCategories {
-		newQuestions[category] = make(map[string][]TriviaQuestion)
-
-		for _, difficulty := range difficulties {
-			filename := filepath.Join("trivia", category, fmt.Sprintf("%s.json", difficulty))
-			questions, err := tm.loadQuestionsFromFile(filename, category, difficulty)
-			if err != nil {
-				log.Printf("Warning: Could not reload %s: %v", filename, err)
-				continue
-			}
-
-			newQuestions[category][difficulty] = questions
-			log.Printf("Reloaded %d %s %s questions", len(questions), difficulty, category)
-		}
-	}
-
-	// Replace old questions with new ones atomically
-	tm.mu.Lock()
-	tm.questions = newQuestions
-	tm.mu.Unlock()
-
-	log.Println("Trivia questions reloaded successfully")
-	return nil
-}
-
-// IMPLEMENTED: Get summary statistics
-func (tm *TriviaManager) GetSummaryStats() map[string]interface{} {
-	tm.mu.RLock()
-	defer tm.mu.RUnlock()
-
-	totalQuestions := 0
-	categoryCounts := make(map[string]int)
-	difficultyCounts := make(map[string]int)
-
-	for category, difficulties := range tm.questions {
-		categoryTotal := 0
-		for difficulty, questions := range difficulties {
-			count := len(questions)
-			totalQuestions += count
-			categoryTotal += count
-			difficultyCounts[difficulty] += count
-		}
-		categoryCounts[category] = categoryTotal
-	}
-
-	return map[string]interface{}{
-		"totalQuestions":      totalQuestions,
-		"categoryCounts":      categoryCounts,
-		"difficultyCounts":    difficultyCounts,
-		"supportedCategories": constants.TriviaCategories,
-	}
 }

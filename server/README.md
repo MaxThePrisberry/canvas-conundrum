@@ -24,126 +24,155 @@ go mod download
 mkdir -p trivia/{general,geography,history,music,science,video_games}/{easy,medium,hard}
 ```
 
-4. Add trivia questions JSON files to the appropriate directories. The format should match the provided `medium.json` example.
+4. Add trivia questions JSON files to each directory. The format should match the provided `medium.json` example.
 
 ## Running the Server
 
-### Basic Usage
+### Development
 ```bash
+# Basic development server (allows localhost origins)
 go run .
+
+# Custom port
+go run . -port=3000
 ```
 
-### With Custom Options
+### Production
 ```bash
-# Run on a different port
-go run . -port=9090
+# With HTTPS and custom origins
+go run . -env=production -cert=cert.pem -key=key.pem -origins="https://yourdomain.com"
 
-# Run with HTTPS
-go run . -cert=cert.pem -key=key.pem
-
-# Run on specific host
-go run . -host=localhost -port=8080
-```
-
-### Building for Production
-```bash
-# Build the binary
+# Build and run binary
 go build -o canvas-conundrum-server
-
-# Run the binary
-./canvas-conundrum-server -port=8080
+./canvas-conundrum-server -env=production
 ```
-
-## API Endpoints
-
-### WebSocket Endpoint
-- **URL**: `/ws`
-- **Query Parameters**:
-  - `playerId` (optional): For reconnecting existing players
-
-### Health Check
-- **URL**: `/health`
-- **Method**: GET
-- **Response**: JSON with server status and player counts
-
-### Game Statistics
-- **URL**: `/stats`
-- **Method**: GET
-- **Response**: JSON with current game state and statistics
-
-## WebSocket Protocol
-
-See `websocket-events.md` for detailed protocol documentation.
 
 ## Configuration
 
-Game balance constants can be adjusted in `constants/game_balance.go`:
-- Player limits (4-64 players)
-- Time durations for each phase
-- Token thresholds and bonuses
-- Trivia question intervals
-- Puzzle mechanics
-
-## Features
-
-- **Multi-phase gameplay**: Setup → Resource Gathering → Puzzle Assembly → Post-Game
-- **Host control**: First player becomes host with special privileges
-- **Automatic game progression**: Countdown timer when all players ready
-- **Reconnection support**: Players can reconnect during phases 1 and 2
-- **Real-time updates**: All game state changes broadcast to connected players
-- **Role-based bonuses**: Different character roles provide resource collection bonuses
-- **Dynamic grid scaling**: Puzzle grid size adjusts based on player count
-- **Comprehensive analytics**: Detailed performance tracking for individuals and teams
-
-## Development
-
-### Project Structure
-```
-server/
-├── main.go                 # Entry point and HTTP server setup
-├── websocket_handlers.go   # WebSocket connection handling
-├── event_handlers.go       # Game event processing
-├── game_manager.go         # Core game logic
-├── player_manager.go       # Player state management
-├── trivia_manager.go       # Trivia question loading and serving
-├── types.go               # Type definitions
-├── utils.go               # Utility functions
-├── constants/
-│   └── game_balance.go    # Game configuration constants
-└── trivia/                # Trivia questions directory
-    ├── general/
-    ├── geography/
-    ├── history/
-    ├── music/
-    ├── science/
-    └── video_games/
+### Command Line Options
+```bash
+  -env string
+        Environment: development, staging, production (default "development")
+  -port string
+        Server port (default "8080")
+  -host string
+        Server host (default "0.0.0.0")
+  -origins string
+        Comma-separated allowed CORS origins (auto-configured for development)
+  -cert string
+        TLS certificate file
+  -key string
+        TLS key file
 ```
 
-### Adding New Features
+### Environment Variables
+```bash
+# CORS origins (required for production)
+ALLOWED_ORIGINS="https://yourdomain.com,https://www.yourdomain.com"
 
-1. **New WebSocket Events**: Add to `types.go` constants and implement handler in `event_handlers.go`
-2. **Game Logic**: Modify `game_manager.go` for core game mechanics
-3. **Player Features**: Update `player_manager.go` for player-specific functionality
-4. **Balance Changes**: Adjust values in `constants/game_balance.go`
+# Admin token (optional, enables admin endpoints)
+ADMIN_TOKEN="your-secure-token"
+```
+
+## Game Configuration
+
+Adjust game balance in `constants/game_balance.go`:
+- Player limits, time durations, token thresholds
+- Trivia question intervals and scoring
+- Puzzle mechanics and grid scaling
+
+## API Endpoints
+
+- `GET /health` - Server health check
+- `GET /stats` - Game statistics
+- `GET /ws` - WebSocket connection (with optional `?playerId=<id>` for reconnection)
+- `POST /admin/reload-trivia` - Reload trivia questions (requires admin token)
+
+## Trivia Questions
+
+The server automatically cycles through trivia questions:
+- Questions are shuffled into pools per category/difficulty
+- When a pool is exhausted, it automatically resets and reshuffles
+- No manual intervention required - questions will never run out
+
+### Question File Format
+```json
+{
+  "response_code": 0,
+  "results": [
+    {
+      "type": "multiple",
+      "difficulty": "medium",
+      "category": "General Knowledge",
+      "question": "What is the capital of France?",
+      "correct_answer": "Paris",
+      "incorrect_answers": ["London", "Berlin", "Madrid"]
+    }
+  ]
+}
+```
+
+## Deployment
+
+### Development
+```bash
+go run . -env=development
+```
+- Automatically allows localhost origins
+- HTTP only
+- Verbose logging
+
+### Production
+```bash
+export ALLOWED_ORIGINS="https://yourdomain.com"
+export ADMIN_TOKEN="$(openssl rand -base64 32)"
+
+./canvas-conundrum-server \
+  -env=production \
+  -cert=cert.pem \
+  -key=key.pem \
+  -port=8080
+```
+- Requires explicit CORS origins
+- HTTPS recommended
+- Security headers enabled
+
+## Game Features
+
+- **Multi-phase gameplay**: Setup → Resource Gathering → Puzzle Assembly → Analytics
+- **Dynamic scaling**: Supports 4-64 players with auto-adjusting puzzle grids
+- **Reconnection support**: Players can rejoin during active games
+- **Real-time updates**: All game state synchronized via WebSocket
+- **Comprehensive analytics**: Individual and team performance tracking
 
 ## Troubleshooting
 
 ### Common Issues
+- **"Cannot load trivia questions"**: Check that JSON files exist in all `trivia/{category}/{difficulty}/` directories
+- **"WebSocket connection failed"**: Verify CORS origins are configured correctly
+- **"CORS origin rejected"**: Add your frontend domain to `ALLOWED_ORIGINS`
 
-1. **"Cannot load trivia questions"**: Ensure trivia JSON files are in the correct directory structure
-2. **"WebSocket connection failed"**: Check CORS settings and ensure client is connecting to correct URL
-3. **"Game is full"**: Maximum 64 players supported by default
+### Development Tips
+- Use `-env=development` for automatic localhost CORS handling
+- Check `/health` endpoint for server status and trivia question counts
+- Monitor server logs for detailed error messages
 
-### Debug Mode
-Enable verbose logging by modifying log statements in `utils.go`.
-
-## Production Deployment
-
-1. Use HTTPS in production by providing certificate files
-2. Configure proper CORS origins in `corsMiddleware`
-3. Consider using a reverse proxy (nginx, Caddy) for additional security
-4. Monitor resource usage as player count scales
-5. Implement proper logging and monitoring
+## Project Structure
+```
+server/
+├── main.go                    # Server entry point
+├── websocket_handlers.go      # WebSocket connection handling
+├── event_handlers.go          # Game event processing
+├── game_manager.go            # Core game logic
+├── trivia_manager.go          # Question loading and cycling
+├── player_manager.go          # Player state management
+├── validation.go              # Input validation
+├── constants/game_balance.go  # Game configuration
+└── trivia/                    # Question files
+    ├── general/{easy,medium,hard}.json
+    ├── geography/{easy,medium,hard}.json
+    └── ...
+```
 
 ## License
 

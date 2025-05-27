@@ -7,7 +7,7 @@ import (
 	"net/http"
 	"time"
 
-	"canvas-conundrum/server/constants"
+	"github.com/MaxThePrisberry/canvas-conundrum/server/constants"
 	"github.com/gorilla/websocket"
 )
 

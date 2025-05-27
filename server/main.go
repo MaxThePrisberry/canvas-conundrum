@@ -12,7 +12,7 @@ import (
 	"syscall"
 	"time"
 
-	"canvas-conundrum/server/constants"
+	"github.com/MaxThePrisberry/canvas-conundrum/server/constants"
 )
 
 var (

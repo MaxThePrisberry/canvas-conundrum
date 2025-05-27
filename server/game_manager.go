@@ -8,7 +8,7 @@ import (
 	"sync"
 	"time"
 
-	"canvas-conundrum/server/constants"
+	"github.com/MaxThePrisberry/canvas-conundrum/server/constants"
 )
 
 // GameManager handles the core game logic and state

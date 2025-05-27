@@ -10,7 +10,7 @@ import (
 	"strings"
 	"sync"
 
-	"canvas-conundrum/server/constants"
+	"github.com/MaxThePrisberry/canvas-conundrum/server/constants"
 )
 
 // TriviaManager handles loading and serving trivia questions

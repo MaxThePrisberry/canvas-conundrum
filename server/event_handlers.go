@@ -6,7 +6,7 @@ import (
 	"log"
 	"time"
 
-	"canvas-conundrum/server/constants"
+	"github.com/MaxThePrisberry/canvas-conundrum/server/constants"
 )
 
 // EventHandlers contains all WebSocket event handler functions

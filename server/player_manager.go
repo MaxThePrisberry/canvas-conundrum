@@ -5,7 +5,7 @@ import (
 	"sync"
 	"time"
 
-	"canvas-conundrum/server/constants"
+	"github.com/MaxThePrisberry/canvas-conundrum/server/constants"
 	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
 )

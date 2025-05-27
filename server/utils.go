@@ -3,8 +3,6 @@ package main
 import (
 	"encoding/json"
 	"log"
-
-	"github.com/gorilla/websocket"
 )
 
 // sendToPlayer sends a message to a specific player

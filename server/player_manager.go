@@ -5,6 +5,7 @@ import (
 	"sync"
 	"time"
 
+	"canvas-conundrum/server/constants"
 	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
 )
@@ -164,10 +165,10 @@ func (pm *PlayerManager) GetAvailableRoles() []RoleInfo {
 
 	// Build available roles list
 	roles := []RoleInfo{
-		{Role: RoleArtEnthusiast, ResourceBonus: RoleResourceMultiplier},
-		{Role: RoleDetective, ResourceBonus: RoleResourceMultiplier},
-		{Role: RoleTourist, ResourceBonus: RoleResourceMultiplier},
-		{Role: RoleJanitor, ResourceBonus: RoleResourceMultiplier},
+		{Role: constants.RoleArtEnthusiast, ResourceBonus: constants.RoleResourceMultiplier},
+		{Role: constants.RoleDetective, ResourceBonus: constants.RoleResourceMultiplier},
+		{Role: constants.RoleTourist, ResourceBonus: constants.RoleResourceMultiplier},
+		{Role: constants.RoleJanitor, ResourceBonus: constants.RoleResourceMultiplier},
 	}
 
 	for i := range roles {
@@ -189,10 +190,10 @@ func (pm *PlayerManager) SetPlayerRole(playerID, role string) error {
 
 	// Validate role
 	validRoles := map[string]bool{
-		RoleArtEnthusiast: true,
-		RoleDetective:     true,
-		RoleTourist:       true,
-		RoleJanitor:       true,
+		constants.RoleArtEnthusiast: true,
+		constants.RoleDetective:     true,
+		constants.RoleTourist:       true,
+		constants.RoleJanitor:       true,
 	}
 
 	if !validRoles[role] {
@@ -230,13 +231,13 @@ func (pm *PlayerManager) SetPlayerSpecialties(playerID string, specialties []str
 		return fmt.Errorf("player not found")
 	}
 
-	if len(specialties) > MaxSpecialtiesPerPlayer {
+	if len(specialties) > constants.MaxSpecialtiesPerPlayer {
 		return fmt.Errorf("too many specialties selected")
 	}
 
 	// Validate specialties
 	validCategories := make(map[string]bool)
-	for _, cat := range TriviaCategories {
+	for _, cat := range constants.TriviaCategories {
 		validCategories[cat] = true
 	}
 
@@ -336,7 +337,7 @@ func (pm *PlayerManager) UpdatePlayerLocation(playerID string, locationHash stri
 
 	// Validate location hash
 	validLocation := false
-	for _, hash := range ResourceStationHashes {
+	for _, hash := range constants.ResourceStationHashes {
 		if hash == locationHash {
 			validLocation = true
 			break

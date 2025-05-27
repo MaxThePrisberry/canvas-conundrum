@@ -700,8 +700,6 @@ func (gm *GameManager) sendPuzzleProgress() {
 		}
 	}
 
-	progress := float64(solvedCount) / float64(len(gm.state.PuzzleFragments))
-
 	// This is primarily for the host
 	gm.sendHostUpdate()
 }

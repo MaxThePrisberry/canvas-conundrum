@@ -9,7 +9,8 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
-	"time"
+
+	"canvas-conundrum/server/constants"
 )
 
 // TriviaManager handles loading and serving trivia questions
@@ -38,7 +39,7 @@ func (tm *TriviaManager) loadAllQuestions() error {
 
 	difficulties := []string{"easy", "medium", "hard"}
 
-	for _, category := range TriviaCategories {
+	for _, category := range constants.TriviaCategories {
 		if tm.questions[category] == nil {
 			tm.questions[category] = make(map[string][]TriviaQuestion)
 		}
@@ -98,7 +99,7 @@ func (tm *TriviaManager) loadQuestionsFromFile(filename string) ([]TriviaQuestio
 			Text:             questionText,
 			Category:         normalizeCategory(q.Category),
 			Difficulty:       q.Difficulty,
-			TimeLimit:        TriviaAnswerTimeout,
+			TimeLimit:        constants.TriviaAnswerTimeout,
 			Options:          options,
 			CorrectAnswer:    correctAnswer,
 			IncorrectAnswers: q.IncorrectAnswers,

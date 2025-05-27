@@ -26,7 +26,7 @@ All client-to-server events after initial connection use wrapper structure:
 ### 1. Setup Phase
 
 #### Client to Server Events
-- `player_join`: 
+- `player_join`:
   - Initial connection request (no auth wrapper needed)
 
 #### Server to Client Events
@@ -41,12 +41,12 @@ All client-to-server events after initial connection use wrapper structure:
         "available": true
       },
       {
-        "role": "detective", 
-        "resourceBonus": 1.3,
+        "role": "detective",
+        "resourceBonus": 1.5,
         "available": false
       }
     ],
-    "triviaCategories": ["tech", "art", "history", "science"]
+    "triviaCategories": ["general", "geography", "history", "music", "science", "video_games"]
   }
   ```
 
@@ -69,7 +69,7 @@ All client-to-server events after initial connection use wrapper structure:
       "playerId": "uuid-generated-by-server"
     },
     "payload": {
-      "specialties": ["tech", "art"]
+      "specialties": ["science", "history"]
     }
   }
   ```
@@ -89,6 +89,15 @@ All client-to-server events after initial connection use wrapper structure:
   }
   ```
 
+- `countdown`:
+  ```json
+  {
+    "seconds": 25,
+    "message": "Game starting in 25 seconds...",
+    "canAbort": true
+  }
+  ```
+
 ### 2. Resource Gathering Phase
 
 #### Server to Client Events (Phase Start)
@@ -96,10 +105,10 @@ All client-to-server events after initial connection use wrapper structure:
   ```json
   {
     "resourceHashes": {
-      "anchor": "hash_anchor_station",
-      "chronos": "hash_chronos_station", 
-      "guide": "hash_guide_station",
-      "clarity": "hash_clarity_station"
+      "anchor": "HASH_ANCHOR_STATION_2025",
+      "chronos": "HASH_CHRONOS_STATION_2025",
+      "guide": "HASH_GUIDE_STATION_2025",
+      "clarity": "HASH_CLARITY_STATION_2025"
     }
   }
   ```
@@ -107,24 +116,39 @@ All client-to-server events after initial connection use wrapper structure:
 - `trivia_question`:
   ```json
   {
-    "questionId": "q123",
-    "text": "Question text",
-    "category": "tech",
+    "questionId": "general_medium_42",
+    "text": "What is the capital of France?",
+    "category": "geography",
     "difficulty": "medium",
-    "timeLimit": 60
+    "timeLimit": 30,
+    "options": ["Paris", "London", "Berlin", "Madrid"],
+    "isSpecialty": false
+  }
+  ```
+
+  **Specialty Question Example:**
+  ```json
+  {
+    "questionId": "science_hard_15",
+    "text": "What is the speed of light in vacuum?",
+    "category": "science (Specialty)",
+    "difficulty": "hard",
+    "timeLimit": 45,
+    "options": ["299,792,458 m/s", "300,000,000 m/s", "186,000 mi/s", "3.0 × 10^8 m/s"],
+    "isSpecialty": true
   }
   ```
 
 - `team_progress_update`:
   ```json
   {
-    "questionsAnswered": 15,
+    "questionsAnswered": 28,
     "totalQuestions": 40,
     "teamTokens": {
-      "anchorTokens": 3,
-      "chronosTokens": 2,
-      "guideTokens": 1,
-      "clarityTokens": 1
+      "anchorTokens": 45,
+      "chronosTokens": 32,
+      "guideTokens": 28,
+      "clarityTokens": 38
     }
   }
   ```
@@ -137,11 +161,11 @@ All client-to-server events after initial connection use wrapper structure:
       "playerId": "uuid-generated-by-server"
     },
     "payload": {
-      "verifiedHash": "hash_anchor_station"
+      "verifiedHash": "HASH_ANCHOR_STATION_2025"
     }
   }
   ```
-  
+
   **Note**: Clients only need to send this event when changing locations. If staying at the same location between rounds, no reverification is required.
 
 - `trivia_answer`:
@@ -151,8 +175,8 @@ All client-to-server events after initial connection use wrapper structure:
       "playerId": "uuid-generated-by-server"
     },
     "payload": {
-      "questionId": "q123",
-      "answer": "selected_answer",
+      "questionId": "general_medium_42",
+      "answer": "Paris",
       "timestamp": 1234567890
     }
   }
@@ -161,31 +185,42 @@ All client-to-server events after initial connection use wrapper structure:
 ### 3. Puzzle Assembly Phase
 
 #### Server to Client Events (Phase Start)
+
+- `image_preview`:
+  ```json
+  {
+    "imageId": "masterpiece_001",
+    "duration": 3
+  }
+  ```
+
 - `puzzle_phase_load`:
   ```json
   {
     "imageId": "masterpiece_001",
     "segmentId": "segment_a5",
-    "gridSize": 4
+    "gridSize": 4,
+    "preSolved": false
   }
   ```
 
 - `puzzle_phase_start`:
   ```json
   {
-    "startTimestamp": 1234567890
+    "startTimestamp": 1234567890,
+    "totalTime": 340
   }
   ```
 
 #### Grid Configuration Management
 - Dynamic grid sizing algorithm:
   ```
-  Grid Size = Ceil(Sqrt(Total Players))
-  Total Fragments = Grid Size²
+  Grid Size = Based on player count breakpoints
+  1-9 players: 3x3, 10-16 players: 4x4, etc.
   ```
 
 #### Fragment Movement Protocol
-- Movement Cooldown: 1 second
+- Movement Cooldown: 1000ms
 - Prevents race conditions
 - Ignores rapid successive move requests
 
@@ -210,9 +245,39 @@ All client-to-server events after initial connection use wrapper structure:
       "playerId": "uuid-generated-by-server"
     },
     "payload": {
-      "fragmentId": "unique_identifier",
-      "newPosition": {"x": 0, "y": 0},
+      "fragmentId": "fragment_player-uuid",
+      "newPosition": {"x": 2, "y": 1},
       "timestamp": 1234567890
+    }
+  }
+  ```
+
+- `piece_recommendation_request`:
+  ```json
+  {
+    "auth": {
+      "playerId": "uuid-generated-by-server"
+    },
+    "payload": {
+      "toPlayerId": "target-player-uuid",
+      "fromFragmentId": "fragment_sender-uuid",
+      "toFragmentId": "fragment_target-uuid",
+      "suggestedFromPos": {"x": 1, "y": 2},
+      "suggestedToPos": {"x": 3, "y": 0},
+      "message": "I think your piece goes in the top right corner"
+    }
+  }
+  ```
+
+- `piece_recommendation_response`:
+  ```json
+  {
+    "auth": {
+      "playerId": "uuid-generated-by-server"
+    },
+    "payload": {
+      "recommendationId": "recommendation-uuid",
+      "accepted": true
     }
   }
   ```
@@ -230,17 +295,63 @@ All client-to-server events after initial connection use wrapper structure:
 - `fragment_move_response`:
   ```json
   {
-    "status": "success" | "ignored" | "invalid",
-    "reason": "cooldown" | "out_of_bounds" | null,
-    "fragment": { /* fragment details */ },
-    "nextMoveAvailable": 1234567890
+    "status": "success",
+    "fragment": {
+      "id": "fragment_player-uuid",
+      "playerId": "player-uuid",
+      "position": {"x": 2, "y": 1},
+      "solved": true,
+      "correctPosition": {"x": 2, "y": 1},
+      "preSolved": false
+    },
+    "nextMoveAvailable": 1234567891
+  }
+  ```
+
+- `piece_recommendation`:
+  ```json
+  {
+    "id": "recommendation-uuid",
+    "fromPlayerId": "sender-uuid",
+    "toPlayerId": "receiver-uuid",
+    "fromFragmentId": "fragment_sender-uuid",
+    "toFragmentId": "fragment_receiver-uuid",
+    "suggestedFromPos": {"x": 1, "y": 2},
+    "suggestedToPos": {"x": 3, "y": 0},
+    "message": "I think your piece goes in the top right corner",
+    "timestamp": "2025-05-26T10:30:00Z"
+  }
+  ```
+
+  **Guide Hints (Guide Token Effect):**
+  ```json
+  {
+    "type": "guide_hint",
+    "hints": [
+      "Exact position: (2, 3)",
+      "Column is correct!",
+      "Row needs adjustment"
+    ]
   }
   ```
 
 - `central_puzzle_state`:
-  - Complete puzzle configuration
-  - Fragment locations
-  - Player progress
+  ```json
+  {
+    "fragments": [
+      {
+        "id": "fragment_player1-uuid",
+        "playerId": "player1-uuid",
+        "position": {"x": 0, "y": 0},
+        "solved": true,
+        "correctPosition": {"x": 0, "y": 0},
+        "preSolved": false
+      }
+    ],
+    "gridSize": 4,
+    "playerDisconnected": "disconnected-player-uuid"
+  }
+  ```
 
 #### Disconnection Handling
 - Immediate fragment auto-solve
@@ -253,25 +364,75 @@ All client-to-server events after initial connection use wrapper structure:
 - `game_analytics`:
   ```json
   {
-    "personalAnalytics": {
-      "playerId": "uuid-generated-by-server",
-      "tokenCollection": { /* token stats */ },
-      "triviaPerformance": { /* trivia stats */ },
-      "puzzleSolvingMetrics": { /* puzzle stats */ }
-    },
+    "personalAnalytics": [
+      {
+        "playerId": "uuid",
+        "playerName": "Player1",
+        "tokenCollection": {
+          "anchor": 12,
+          "chronos": 8,
+          "guide": 15,
+          "clarity": 10
+        },
+        "triviaPerformance": {
+          "totalQuestions": 20,
+          "correctAnswers": 16,
+          "accuracyByCategory": {
+            "general": 0.85,
+            "science": 0.90
+          },
+          "specialtyBonus": 40,
+          "specialtyCorrect": 4,
+          "specialtyTotal": 5
+        },
+        "puzzleSolvingMetrics": {
+          "fragmentSolveTime": 180,
+          "movesContributed": 8,
+          "successfulMoves": 7,
+          "recommendationsSent": 3,
+          "recommendationsReceived": 2,
+          "recommendationsAccepted": 1
+        }
+      }
+    ],
     "teamAnalytics": {
-      "overallPerformance": { /* team stats */ },
-      "collaborationScores": { /* team coordination */ },
-      "resourceEfficiency": { /* resource allocation */ }
+      "overallPerformance": {
+        "totalTime": 1200,
+        "completionRate": 1.0,
+        "totalScore": 2500
+      },
+      "collaborationScores": {
+        "averageResponseTime": 12.5,
+        "communicationScore": 0.85,
+        "coordinationScore": 0.80,
+        "totalRecommendations": 15,
+        "acceptedRecommendations": 8
+      },
+      "resourceEfficiency": {
+        "tokensPerRound": 25.6,
+        "tokenDistribution": {
+          "anchor": 45.0,
+          "chronos": 32.0,
+          "guide": 28.0,
+          "clarity": 38.0
+        },
+        "thresholdsReached": {
+          "anchor": 2,
+          "chronos": 1,
+          "guide": 1,
+          "clarity": 2
+        }
+      }
     },
     "globalLeaderboard": [
       {
         "playerId": "uuid",
-        "playerName": "Player1", 
-        "totalScore": 1250,
+        "playerName": "Player1",
+        "totalScore": 1850,
         "rank": 1
       }
-    ]
+    ],
+    "gameSuccess": true
   }
   ```
 
@@ -283,114 +444,117 @@ All client-to-server events after initial connection use wrapper structure:
   }
   ```
 
+## Host-Specific Events
+
+- `host_update`:
+  ```json
+  {
+    "phase": "puzzle_assembly",
+    "connectedPlayers": 8,
+    "readyPlayers": 8,
+    "currentRound": 3,
+    "timeRemaining": 120,
+    "teamTokens": {
+      "anchorTokens": 45,
+      "chronosTokens": 32,
+      "guideTokens": 28,
+      "clarityTokens": 38
+    },
+    "playerStatuses": {
+      "player1-uuid": {
+        "name": "Alice",
+        "role": "detective",
+        "connected": true,
+        "ready": true,
+        "location": "HASH_GUIDE_STATION_2025"
+      }
+    },
+    "puzzleProgress": 0.625
+  }
+  ```
+
+## Token Effect Implementations
+
+### Anchor Tokens
+- **Effect**: Pre-solve puzzle pieces to reduce individual workload
+- **Calculation**: `thresholds = tokens / (5 * difficultyModifier)`
+- **Maximum**: Up to 12 pieces pre-solved (leaving minimum 4 to solve)
+
+### Chronos Tokens
+- **Effect**: Extend puzzle assembly time
+- **Calculation**: `bonus = (tokens / 5) * 20 seconds * difficultyModifier`
+- **Applied**: Added to base 300-second puzzle timer
+
+### Guide Tokens
+- **Effect**: Provide piece placement hints after segment completion
+- **Levels**:
+  - Level 1: General positioning feedback
+  - Level 2: Exact row or column hints
+  - Level 3: Exact coordinates
+- **Sent via**: `piece_recommendation` event with `type: "guide_hint"`
+
+### Clarity Tokens
+- **Effect**: Show complete puzzle image preview at start of puzzle phase
+- **Duration**: `seconds = (tokens / 5) * 1 second * difficultyModifier`
+- **Sent via**: `image_preview` event before puzzle phase starts
+
+## Difficulty Scaling
+
+### Easy Mode (0.7x / 1.3x / 0.8x)
+- Easier trivia questions
+- 30% more time for all phases
+- 20% fewer tokens needed for thresholds
+- 20% specialty question chance
+
+### Medium Mode (1.0x / 1.0x / 1.0x)
+- Normal difficulty baseline
+- Standard time limits
+- Standard token requirements
+- 30% specialty question chance
+
+### Hard Mode (1.4x / 0.7x / 1.3x)
+- Harder trivia questions
+- 30% less time for all phases
+- 30% more tokens needed for thresholds
+- 40% specialty question chance
+
 ## Error Handling and Edge Cases
-- Robust error detection
-- Graceful degradation
-- Comprehensive logging
-- Invalid authentication handling
+- Robust error detection with specific error messages
+- Graceful degradation when features unavailable
+- Comprehensive logging for debugging
+- Invalid authentication handled with clear messages
+- Question pool exhaustion handled with reset mechanism
 
 ## Performance Considerations
-- Efficient data serialization
-- Minimal payload size
-- Rate limiting
-- Connection state management
+- Efficient data serialization with minimal payload sizes
+- Rate limiting on fragment movements (1000ms cooldown)
+- Connection state management with ping/pong heartbeats
+- Batched progress updates every 5 seconds during puzzle phase
 
 ## Security Measures
-- Secure WebSocket connection
-- UUID-based authentication
-- Input validation
-- Anti-cheat mechanisms
+- Secure WebSocket connections in production
+- UUID-based player authentication for all events
+- Input validation on all client messages
+- Anti-cheat mechanisms for trivia answers and fragment movements
+- Host privilege verification for administrative actions
 
 ## Technical Specifications
-- Minimum Grid: 3x3 (1-9 players)
-- Maximum Dynamic Grid Scaling
-- Consistent 1-second movement cooldown
-- Robust error handling
-- Prevent race conditions
+- Dynamic Grid Scaling: 3×3 to 8×8 based on player count
+- Fragment Movement Cooldown: 1000ms consistently applied
+- Question Pool Management: Auto-reset when exhausted
+- Specialty Question Handling: Increased difficulty and time limits
+- Collaboration Tracking: Full recommendation system with accept/reject
 
-### Grid Size Progression
-- 1-9 players: 3x3 (9 fragments)
-- 10-16 players: 4x4 (16 fragments)  
-- 17-25 players: 5x5 (25 fragments)
-- Continues with n² grid sizes
+## Real-Time Features
+- Live puzzle state synchronization
+- Instant piece recommendation delivery
+- Real-time progress tracking for host
+- Immediate feedback on all player actions
+- Collaborative hint system through guide tokens
 
-### Disconnection Workflow
-1. Detect WebSocket communication failure
-2. Mark player as disconnected
-3. Auto-solve player's fragment
-4. Randomly place fragment
-5. Notify all players
-6. Continue game progression
-
-## Technical Considerations
-- WebSocket connection maintained throughout game
-- Fallback to polling if WebSocket connection fails
-- Secure authentication for each game session
-- Encryption of sensitive game state information
-
-## Performance Optimization
-- Minimal payload size
-- Efficient data serialization
-- Rate limiting on event frequency
-- Batch updates where possible
-
-## Error Handling
-- Graceful degradation of features
-- Clear error messages
-- Automatic reconnection attempts
-- Fallback mechanisms for critical game events
-
-```mermaid
-sequenceDiagram
-    participant C as Client
-    participant S as Server
-    
-    Note over C,S: Setup Phase
-    
-    C->>S: WebSocket Connection
-    S->>C: available_roles (with playerId, roles, bonuses, trivia categories)
-    C->>S: role_selection (with auth wrapper)
-    C->>S: trivia_specialty_selection (with auth wrapper)
-    
-    loop Waiting for Game Start
-        S->>C: game_lobby_status (player count, roles, game starting status)
-    end
-    
-    Note over C,S: Resource Gathering Phase Start
-    
-    S->>C: resource_phase_start (resource hashes)
-    
-    loop For Each Trivia Round
-        alt Client Changes Location
-            C->>S: resource_location_verified (verified hash)
-        end
-        S->>C: trivia_question
-        C->>S: trivia_answer (with auth wrapper)
-    end
-    
-    loop Progress Updates (Independent)
-        S->>C: team_progress_update (questions answered, team tokens)
-    end
-    
-    Note over C,S: Puzzle Assembly Phase
-    
-    S->>C: puzzle_phase_load (imageId, segmentId, gridSize)
-    Note over C: Client loads puzzle assets
-    S->>C: puzzle_phase_start (startTimestamp)
-    
-    C->>S: segment_completed (with auth wrapper)
-    S->>C: segment_completion_ack (gridPosition coordinates)
-    
-    loop Fragment Movement
-        C->>S: fragment_move_request (with auth wrapper)
-        S->>C: fragment_move_response (status, cooldown info)
-        S->>C: central_puzzle_state (updated puzzle state)
-    end
-    
-    Note over C,S: Post-Game
-    
-    S->>C: game_analytics (personal, team, and global stats)
-    S->>C: game_reset (reconnection required)
-    
-    Note over C,S: Players must reconnect to start new game
-```
+## Reconnection Support
+- Automatic state restoration based on current game phase
+- Fragment ownership maintained across disconnections
+- Auto-solve and relocation for disconnected players during puzzle phase
+- Host transfer mechanism when host disconnects
+- Session continuity with proper state synchronization

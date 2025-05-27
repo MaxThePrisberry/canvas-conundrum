@@ -44,20 +44,24 @@ const (
 	MsgError                = "error"
 	MsgHostUpdate           = "host_update"
 	MsgCountdown            = "countdown"
+	MsgPieceRecommendation  = "piece_recommendation"
+	MsgImagePreview         = "image_preview"
 )
 
 // WebSocket Message Types - Client to Server
 const (
-	MsgPlayerJoin               = "player_join"
-	MsgRoleSelection            = "role_selection"
-	MsgTriviaSpecialtySelection = "trivia_specialty_selection"
-	MsgResourceLocationVerified = "resource_location_verified"
-	MsgTriviaAnswer             = "trivia_answer"
-	MsgSegmentCompleted         = "segment_completed"
-	MsgFragmentMoveRequest      = "fragment_move_request"
-	MsgPlayerReady              = "player_ready"
-	MsgHostStartGame            = "host_start_game"
-	MsgHostStartPuzzle          = "host_start_puzzle"
+	MsgPlayerJoin                  = "player_join"
+	MsgRoleSelection               = "role_selection"
+	MsgTriviaSpecialtySelection    = "trivia_specialty_selection"
+	MsgResourceLocationVerified    = "resource_location_verified"
+	MsgTriviaAnswer                = "trivia_answer"
+	MsgSegmentCompleted            = "segment_completed"
+	MsgFragmentMoveRequest         = "fragment_move_request"
+	MsgPlayerReady                 = "player_ready"
+	MsgHostStartGame               = "host_start_game"
+	MsgHostStartPuzzle             = "host_start_puzzle"
+	MsgPieceRecommendationRequest  = "piece_recommendation_request"
+	MsgPieceRecommendationResponse = "piece_recommendation_response"
 )
 
 // Base message structure for all communications
@@ -108,6 +112,7 @@ type TriviaQuestion struct {
 	Options          []string `json:"options,omitempty"`
 	CorrectAnswer    string   `json:"-"`
 	IncorrectAnswers []string `json:"-"`
+	IsSpecialty      bool     `json:"isSpecialty"`
 }
 
 // Trivia Question from JSON
@@ -130,17 +135,32 @@ type TeamTokens struct {
 
 // Puzzle Fragment
 type PuzzleFragment struct {
-	ID        string    `json:"id"`
-	PlayerID  string    `json:"playerId"`
-	Position  GridPos   `json:"position"`
-	Solved    bool      `json:"solved"`
-	LastMoved time.Time `json:"-"`
+	ID              string    `json:"id"`
+	PlayerID        string    `json:"playerId"`
+	Position        GridPos   `json:"position"`
+	Solved          bool      `json:"solved"`
+	LastMoved       time.Time `json:"-"`
+	CorrectPosition GridPos   `json:"correctPosition"`
+	PreSolved       bool      `json:"preSolved"` // From anchor tokens
 }
 
 // Grid Position
 type GridPos struct {
 	X int `json:"x"`
 	Y int `json:"y"`
+}
+
+// Piece Recommendation
+type PieceRecommendation struct {
+	ID               string    `json:"id"`
+	FromPlayerID     string    `json:"fromPlayerId"`
+	ToPlayerID       string    `json:"toPlayerId"`
+	FromFragmentID   string    `json:"fromFragmentId"`
+	ToFragmentID     string    `json:"toFragmentId"`
+	SuggestedFromPos GridPos   `json:"suggestedFromPos"`
+	SuggestedToPos   GridPos   `json:"suggestedToPos"`
+	Message          string    `json:"message,omitempty"`
+	Timestamp        time.Time `json:"timestamp"`
 }
 
 // Player Analytics
@@ -157,12 +177,17 @@ type TriviaPerformance struct {
 	CorrectAnswers     int                `json:"correctAnswers"`
 	AccuracyByCategory map[string]float64 `json:"accuracyByCategory"`
 	SpecialtyBonus     int                `json:"specialtyBonus"`
+	SpecialtyCorrect   int                `json:"specialtyCorrect"`
+	SpecialtyTotal     int                `json:"specialtyTotal"`
 }
 
 type PuzzleSolvingMetrics struct {
-	FragmentSolveTime int `json:"fragmentSolveTime"`
-	MovesContributed  int `json:"movesContributed"`
-	SuccessfulMoves   int `json:"successfulMoves"`
+	FragmentSolveTime       int `json:"fragmentSolveTime"`
+	MovesContributed        int `json:"movesContributed"`
+	SuccessfulMoves         int `json:"successfulMoves"`
+	RecommendationsSent     int `json:"recommendationsSent"`
+	RecommendationsReceived int `json:"recommendationsReceived"`
+	RecommendationsAccepted int `json:"recommendationsAccepted"`
 }
 
 // Team Analytics
@@ -179,9 +204,11 @@ type TeamPerformance struct {
 }
 
 type CollaborationMetrics struct {
-	AverageResponseTime float64 `json:"averageResponseTime"`
-	CommunicationScore  float64 `json:"communicationScore"`
-	CoordinationScore   float64 `json:"coordinationScore"`
+	AverageResponseTime     float64 `json:"averageResponseTime"`
+	CommunicationScore      float64 `json:"communicationScore"`
+	CoordinationScore       float64 `json:"coordinationScore"`
+	TotalRecommendations    int     `json:"totalRecommendations"`
+	AcceptedRecommendations int     `json:"acceptedRecommendations"`
 }
 
 type ResourceMetrics struct {
@@ -220,20 +247,22 @@ type PlayerStatus struct {
 
 // Game State
 type GameState struct {
-	Phase               GamePhase
-	Difficulty          string
-	Players             map[string]*Player
-	TeamTokens          TeamTokens
-	CurrentRound        int
-	RoundStartTime      time.Time
-	PuzzleStartTime     time.Time
-	PuzzleFragments     map[string]*PuzzleFragment
-	GridSize            int
-	PuzzleImageID       string
-	QuestionHistory     map[string]map[string]bool // playerID -> questionID -> answered
-	PlayerAnalytics     map[string]*PlayerAnalytics
-	FragmentMoveHistory []FragmentMove
-	mu                  sync.RWMutex
+	Phase                GamePhase
+	Difficulty           string
+	Players              map[string]*Player
+	TeamTokens           TeamTokens
+	CurrentRound         int
+	RoundStartTime       time.Time
+	PuzzleStartTime      time.Time
+	PuzzleFragments      map[string]*PuzzleFragment
+	GridSize             int
+	PuzzleImageID        string
+	QuestionHistory      map[string]map[string]bool // playerID -> questionID -> answered
+	PlayerAnalytics      map[string]*PlayerAnalytics
+	FragmentMoveHistory  []FragmentMove
+	PieceRecommendations map[string]*PieceRecommendation // recommendationID -> recommendation
+	CurrentQuestions     map[string]*TriviaQuestion      // playerID -> current question
+	mu                   sync.RWMutex
 }
 
 type FragmentMove struct {

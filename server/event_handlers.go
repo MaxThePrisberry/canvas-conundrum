@@ -211,6 +211,53 @@ func (eh *EventHandlers) HandleHostStartPuzzle(playerID string, payload json.Raw
 	return eh.gameManager.StartPuzzle()
 }
 
+// IMPLEMENTED: Handle piece recommendation requests
+func (eh *EventHandlers) HandlePieceRecommendationRequest(playerID string, payload json.RawMessage) error {
+	var data struct {
+		ToPlayerID       string  `json:"toPlayerId"`
+		FromFragmentID   string  `json:"fromFragmentId"`
+		ToFragmentID     string  `json:"toFragmentId"`
+		SuggestedFromPos GridPos `json:"suggestedFromPos"`
+		SuggestedToPos   GridPos `json:"suggestedToPos"`
+		Message          string  `json:"message"`
+	}
+
+	if err := json.Unmarshal(payload, &data); err != nil {
+		return fmt.Errorf("invalid payload: %v", err)
+	}
+
+	// Validate that target player exists
+	if _, err := eh.playerManager.GetPlayer(data.ToPlayerID); err != nil {
+		return fmt.Errorf("target player not found")
+	}
+
+	// Process the recommendation
+	return eh.gameManager.ProcessPieceRecommendation(
+		playerID,
+		data.ToPlayerID,
+		data.Message,
+		data.FromFragmentID,
+		data.ToFragmentID,
+		data.SuggestedFromPos,
+		data.SuggestedToPos,
+	)
+}
+
+// IMPLEMENTED: Handle piece recommendation responses
+func (eh *EventHandlers) HandlePieceRecommendationResponse(playerID string, payload json.RawMessage) error {
+	var data struct {
+		RecommendationID string `json:"recommendationId"`
+		Accepted         bool   `json:"accepted"`
+	}
+
+	if err := json.Unmarshal(payload, &data); err != nil {
+		return fmt.Errorf("invalid payload: %v", err)
+	}
+
+	// Process the response
+	return eh.gameManager.ProcessPieceRecommendationResponse(playerID, data.RecommendationID, data.Accepted)
+}
+
 // Helper functions
 
 // broadcastLobbyStatus sends lobby status to all players

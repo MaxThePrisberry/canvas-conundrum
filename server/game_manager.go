@@ -5,10 +5,12 @@ import (
 	"log"
 	"math"
 	"math/rand"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/MaxThePrisberry/canvas-conundrum/server/constants"
+	"github.com/google/uuid"
 )
 
 // GameManager handles the core game logic and state
@@ -26,12 +28,14 @@ type GameManager struct {
 func NewGameManager(playerManager *PlayerManager, triviaManager *TriviaManager, broadcastChan chan BroadcastMessage) *GameManager {
 	gm := &GameManager{
 		state: &GameState{
-			Phase:           PhaseSetup,
-			Difficulty:      "medium",
-			Players:         make(map[string]*Player),
-			TeamTokens:      TeamTokens{},
-			QuestionHistory: make(map[string]map[string]bool),
-			PlayerAnalytics: make(map[string]*PlayerAnalytics),
+			Phase:                PhaseSetup,
+			Difficulty:           "medium",
+			Players:              make(map[string]*Player),
+			TeamTokens:           TeamTokens{},
+			QuestionHistory:      make(map[string]map[string]bool),
+			PlayerAnalytics:      make(map[string]*PlayerAnalytics),
+			PieceRecommendations: make(map[string]*PieceRecommendation),
+			CurrentQuestions:     make(map[string]*TriviaQuestion),
 		},
 		playerManager:   playerManager,
 		triviaManager:   triviaManager,
@@ -153,8 +157,12 @@ func (gm *GameManager) runResourceGatheringPhase() {
 		},
 	}
 
+	// Apply difficulty modifiers
+	difficultyMod := gm.getDifficultyModifiers()
+
 	// Run rounds
-	for round := 1; round <= constants.ResourceGatheringRounds; round++ {
+	totalRounds := int(float64(constants.ResourceGatheringRounds) * difficultyMod.TimeLimitModifier)
+	for round := 1; round <= totalRounds; round++ {
 		gm.mu.Lock()
 		gm.state.CurrentRound = round
 		gm.state.RoundStartTime = time.Now()
@@ -180,7 +188,8 @@ func (gm *GameManager) runResourceGatheringPhase() {
 
 // runTriviaRound manages a single trivia round
 func (gm *GameManager) runTriviaRound() {
-	roundDuration := time.Duration(constants.ResourceGatheringRoundDuration) * time.Second
+	difficultyMod := gm.getDifficultyModifiers()
+	roundDuration := time.Duration(float64(constants.ResourceGatheringRoundDuration)*difficultyMod.TimeLimitModifier) * time.Second
 	questionInterval := time.Duration(constants.TriviaQuestionInterval) * time.Second
 
 	roundEnd := time.Now().Add(roundDuration)
@@ -224,13 +233,14 @@ func (gm *GameManager) sendTriviaQuestion(player *Player) {
 	// Mark question as asked
 	gm.mu.Lock()
 	gm.state.QuestionHistory[player.ID][question.ID] = true
+	gm.state.CurrentQuestions[player.ID] = question
 	gm.mu.Unlock()
 
 	// Send question to player
 	sendToPlayer(player, MsgTriviaQuestion, question)
 }
 
-// ProcessTriviaAnswer handles a player's trivia answer
+// ProcessTriviaAnswer handles a player's trivia answer - IMPLEMENTED ANSWER VALIDATION
 func (gm *GameManager) ProcessTriviaAnswer(playerID, questionID, answer string) error {
 	gm.mu.Lock()
 	defer gm.mu.Unlock()
@@ -251,16 +261,30 @@ func (gm *GameManager) ProcessTriviaAnswer(playerID, questionID, answer string) 
 		return fmt.Errorf("player must be at a resource station")
 	}
 
-	// TODO: Validate answer against question
-	// For now, simulate 70% correct answer rate
-	correct := rand.Float32() < 0.7
+	// Get the current question for this player
+	currentQuestion, exists := gm.state.CurrentQuestions[playerID]
+	if !exists || currentQuestion.ID != questionID {
+		return fmt.Errorf("invalid or expired question")
+	}
+
+	// IMPLEMENTED: Validate answer against correct answer
+	correct := strings.EqualFold(strings.TrimSpace(answer), strings.TrimSpace(currentQuestion.CorrectAnswer))
 
 	// Update analytics
 	analytics := gm.state.PlayerAnalytics[playerID]
 	analytics.TriviaPerformance.TotalQuestions++
 
+	// Check if this is a specialty question
+	isSpecialtyQuestion := currentQuestion.IsSpecialty
+	if isSpecialtyQuestion {
+		analytics.TriviaPerformance.SpecialtyTotal++
+	}
+
 	if correct {
 		analytics.TriviaPerformance.CorrectAnswers++
+		if isSpecialtyQuestion {
+			analytics.TriviaPerformance.SpecialtyCorrect++
+		}
 
 		// Award tokens based on player location
 		tokenType := gm.getTokenTypeForLocation(player.CurrentLocation)
@@ -271,6 +295,16 @@ func (gm *GameManager) ProcessTriviaAnswer(playerID, questionID, answer string) 
 			if bonusToken, ok := constants.RoleTokenBonuses[player.Role]; ok && bonusToken == tokenType {
 				tokensAwarded = int(float64(tokensAwarded) * constants.RoleResourceMultiplier)
 			}
+
+			// IMPLEMENTED: Apply specialty point multiplier
+			if isSpecialtyQuestion {
+				tokensAwarded = int(float64(tokensAwarded) * constants.SpecialtyPointMultiplier)
+				analytics.TriviaPerformance.SpecialtyBonus += tokensAwarded - constants.BaseTokensPerCorrectAnswer
+			}
+
+			// Apply difficulty modifiers
+			difficultyMod := gm.getDifficultyModifiers()
+			tokensAwarded = int(float64(tokensAwarded) * difficultyMod.TokenThresholdModifier)
 
 			// Add tokens to team total
 			switch tokenType {
@@ -289,6 +323,9 @@ func (gm *GameManager) ProcessTriviaAnswer(playerID, questionID, answer string) 
 		}
 	}
 
+	// Remove current question
+	delete(gm.state.CurrentQuestions, playerID)
+
 	return nil
 }
 
@@ -302,7 +339,7 @@ func (gm *GameManager) getTokenTypeForLocation(locationHash string) string {
 	return ""
 }
 
-// startPuzzlePhase transitions to the puzzle assembly phase
+// startPuzzlePhase transitions to the puzzle assembly phase - IMPLEMENTED TOKEN EFFECTS
 func (gm *GameManager) startPuzzlePhase() {
 	gm.mu.Lock()
 	defer gm.mu.Unlock()
@@ -317,34 +354,69 @@ func (gm *GameManager) startPuzzlePhase() {
 	// Select random puzzle image
 	gm.state.PuzzleImageID = fmt.Sprintf("masterpiece_%03d", rand.Intn(constants.AvailablePuzzleImages)+1)
 
+	// IMPLEMENTED: Calculate anchor token effects (pre-solved pieces)
+	anchorThresholds := gm.state.TeamTokens.AnchorTokens / (constants.AnchorTokenThresholds * int(gm.getDifficultyModifiers().TokenThresholdModifier))
+	maxPreSolved := min(anchorThresholds, constants.IndividualPuzzlePieces-4) // Leave at least 4 pieces to solve
+
 	// Initialize puzzle fragments
 	gm.state.PuzzleFragments = make(map[string]*PuzzleFragment)
 	players := gm.playerManager.GetConnectedPlayers()
 
 	for i, player := range players {
+		correctPos := gm.calculateCorrectPosition(i, gridSize)
 		fragment := &PuzzleFragment{
-			ID:       fmt.Sprintf("fragment_%s", player.ID),
-			PlayerID: player.ID,
-			Position: GridPos{X: i % gridSize, Y: i / gridSize},
-			Solved:   false,
+			ID:              fmt.Sprintf("fragment_%s", player.ID),
+			PlayerID:        player.ID,
+			Position:        GridPos{X: i % gridSize, Y: i / gridSize}, // Start at distributed positions
+			CorrectPosition: correctPos,
+			Solved:          false,
+			PreSolved:       i < maxPreSolved, // Pre-solve based on anchor tokens
 		}
+
+		if fragment.PreSolved {
+			fragment.Solved = true
+		}
+
 		gm.state.PuzzleFragments[fragment.ID] = fragment
+	}
+
+	// IMPLEMENTED: Send clarity bonus (image preview)
+	clarityThresholds := gm.state.TeamTokens.ClarityTokens / (constants.ClarityTokenThresholds * int(gm.getDifficultyModifiers().TokenThresholdModifier))
+	previewDuration := clarityThresholds * constants.ClarityTimeBonus
+
+	if previewDuration > 0 {
+		gm.broadcastChan <- BroadcastMessage{
+			Type: MsgImagePreview,
+			Payload: map[string]interface{}{
+				"imageId":  gm.state.PuzzleImageID,
+				"duration": previewDuration,
+			},
+		}
 	}
 
 	// Send puzzle phase load message
 	for _, player := range players {
 		fragment := gm.state.PuzzleFragments[fmt.Sprintf("fragment_%s", player.ID)]
-		segmentID := fmt.Sprintf("segment_%c%d", 'a'+fragment.Position.Y, fragment.Position.X+1)
+		segmentID := fmt.Sprintf("segment_%c%d", 'a'+fragment.CorrectPosition.Y, fragment.CorrectPosition.X+1)
 
 		sendToPlayer(player, MsgPuzzlePhaseLoad, map[string]interface{}{
 			"imageId":   gm.state.PuzzleImageID,
 			"segmentId": segmentID,
 			"gridSize":  gridSize,
+			"preSolved": fragment.PreSolved,
 		})
 	}
 }
 
-// StartPuzzle begins the puzzle solving timer
+// calculateCorrectPosition determines the correct position for a fragment
+func (gm *GameManager) calculateCorrectPosition(playerIndex, gridSize int) GridPos {
+	return GridPos{
+		X: playerIndex % gridSize,
+		Y: playerIndex / gridSize,
+	}
+}
+
+// StartPuzzle begins the puzzle solving timer - IMPLEMENTED CHRONOS TOKEN EFFECTS
 func (gm *GameManager) StartPuzzle() error {
 	gm.mu.Lock()
 
@@ -356,9 +428,13 @@ func (gm *GameManager) StartPuzzle() error {
 	gm.state.PuzzleStartTime = time.Now()
 	gm.mu.Unlock()
 
-	// Calculate total time with bonuses
-	baseTime := constants.PuzzleAssemblyBaseTime
-	chronosBonus := (gm.state.TeamTokens.ChronosTokens / constants.ChronosTokenThresholds) * constants.ChronosTimeBonus
+	// IMPLEMENTED: Calculate total time with chronos bonuses and difficulty modifiers
+	difficultyMod := gm.getDifficultyModifiers()
+	baseTime := int(float64(constants.PuzzleAssemblyBaseTime) * difficultyMod.TimeLimitModifier)
+
+	chronosThresholds := gm.state.TeamTokens.ChronosTokens / (constants.ChronosTokenThresholds * int(difficultyMod.TokenThresholdModifier))
+	chronosBonus := chronosThresholds * constants.ChronosTimeBonus
+
 	totalTime := baseTime + chronosBonus
 
 	// Send puzzle phase start
@@ -415,6 +491,10 @@ func (gm *GameManager) ProcessSegmentCompleted(playerID, segmentID string) error
 		return fmt.Errorf("fragment not found")
 	}
 
+	if fragment.PreSolved {
+		return fmt.Errorf("fragment was pre-solved by anchor tokens")
+	}
+
 	// Mark as solved
 	fragment.Solved = true
 
@@ -433,12 +513,52 @@ func (gm *GameManager) ProcessSegmentCompleted(playerID, segmentID string) error
 		})
 	}
 
-	// Check if all fragments are solved
+	// IMPLEMENTED: Send guide token hints if available
+	gm.sendGuideHints(playerID)
+
+	// Check if all fragments are solved and positioned correctly
 	if gm.checkPuzzleComplete() {
 		gm.endGame(true)
 	}
 
 	return nil
+}
+
+// IMPLEMENTED: Send guide token hints for piece placement
+func (gm *GameManager) sendGuideHints(playerID string) {
+	guideThresholds := gm.state.TeamTokens.GuideTokens / (constants.GuideTokenThresholds * int(gm.getDifficultyModifiers().TokenThresholdModifier))
+
+	if guideThresholds > 0 {
+		fragment := gm.state.PuzzleFragments[fmt.Sprintf("fragment_%s", playerID)]
+		if fragment != nil {
+			// Provide hints based on guide token level
+			hintLevel := min(guideThresholds, 3) // Max 3 levels of hints
+
+			hints := make([]string, 0)
+			switch hintLevel {
+			case 3:
+				hints = append(hints, fmt.Sprintf("Exact position: (%d, %d)", fragment.CorrectPosition.X, fragment.CorrectPosition.Y))
+			case 2:
+				hints = append(hints, fmt.Sprintf("Correct row: %d", fragment.CorrectPosition.Y))
+				hints = append(hints, fmt.Sprintf("Correct column: %d", fragment.CorrectPosition.X))
+			case 1:
+				if fragment.Position.X == fragment.CorrectPosition.X {
+					hints = append(hints, "Column is correct!")
+				} else if fragment.Position.Y == fragment.CorrectPosition.Y {
+					hints = append(hints, "Row is correct!")
+				} else {
+					hints = append(hints, "Position needs adjustment")
+				}
+			}
+
+			if player, _ := gm.playerManager.GetPlayer(playerID); player != nil {
+				sendToPlayer(player, MsgPieceRecommendation, map[string]interface{}{
+					"type":  "guide_hint",
+					"hints": hints,
+				})
+			}
+		}
+	}
 }
 
 // ProcessFragmentMove handles a fragment move request
@@ -456,13 +576,14 @@ func (gm *GameManager) ProcessFragmentMove(playerID, fragmentID string, newPos G
 	}
 
 	// Check cooldown
-	if time.Since(fragment.LastMoved) < time.Duration(constants.FragmentMovementCooldown)*time.Millisecond {
+	cooldownDuration := time.Duration(constants.FragmentMovementCooldown) * time.Millisecond
+	if time.Since(fragment.LastMoved) < cooldownDuration {
 		player, _ := gm.playerManager.GetPlayer(playerID)
 		if player != nil {
 			sendToPlayer(player, MsgFragmentMoveResponse, map[string]interface{}{
 				"status":            "ignored",
 				"reason":            "cooldown",
-				"nextMoveAvailable": fragment.LastMoved.Add(time.Duration(constants.FragmentMovementCooldown) * time.Millisecond).Unix(),
+				"nextMoveAvailable": fragment.LastMoved.Add(cooldownDuration).Unix(),
 			})
 		}
 		return nil
@@ -482,11 +603,12 @@ func (gm *GameManager) ProcessFragmentMove(playerID, fragmentID string, newPos G
 		}
 	}
 
+	oldPos := fragment.Position
 	if targetFragment != nil {
 		// Swap positions
-		oldPos := fragment.Position
 		fragment.Position = newPos
 		targetFragment.Position = oldPos
+		targetFragment.LastMoved = time.Now()
 	} else {
 		// Just move to empty position
 		fragment.Position = newPos
@@ -497,6 +619,7 @@ func (gm *GameManager) ProcessFragmentMove(playerID, fragmentID string, newPos G
 	// Record move
 	gm.state.FragmentMoveHistory = append(gm.state.FragmentMoveHistory, FragmentMove{
 		FragmentID: fragmentID,
+		FromPos:    oldPos,
 		ToPos:      newPos,
 		PlayerID:   playerID,
 		Timestamp:  time.Now(),
@@ -520,10 +643,15 @@ func (gm *GameManager) ProcessFragmentMove(playerID, fragmentID string, newPos G
 	// Broadcast updated puzzle state
 	gm.broadcastPuzzleState()
 
+	// Check if puzzle is complete after move
+	if gm.checkPuzzleComplete() {
+		gm.endGame(true)
+	}
+
 	return nil
 }
 
-// checkPuzzleComplete checks if the puzzle is complete
+// IMPLEMENTED: Comprehensive puzzle completion check
 func (gm *GameManager) checkPuzzleComplete() bool {
 	// Check if all fragments are solved
 	for _, fragment := range gm.state.PuzzleFragments {
@@ -532,11 +660,99 @@ func (gm *GameManager) checkPuzzleComplete() bool {
 		}
 	}
 
-	// Check if fragments are in correct positions
-	// For now, we'll assume any complete configuration is valid
-	// In a real implementation, you'd check against the correct solution
+	// IMPLEMENTED: Check if fragments are in correct positions
+	for _, fragment := range gm.state.PuzzleFragments {
+		if fragment.Position.X != fragment.CorrectPosition.X || fragment.Position.Y != fragment.CorrectPosition.Y {
+			return false
+		}
+	}
 
 	return true
+}
+
+// IMPLEMENTED: Piece recommendation system
+func (gm *GameManager) ProcessPieceRecommendation(fromPlayerID, toPlayerID, message string, fromFragmentID, toFragmentID string, suggestedFromPos, suggestedToPos GridPos) error {
+	gm.mu.Lock()
+	defer gm.mu.Unlock()
+
+	if gm.state.Phase != PhasePuzzleAssembly {
+		return fmt.Errorf("not in puzzle assembly phase")
+	}
+
+	// Create recommendation
+	recommendation := &PieceRecommendation{
+		ID:               uuid.New().String(),
+		FromPlayerID:     fromPlayerID,
+		ToPlayerID:       toPlayerID,
+		FromFragmentID:   fromFragmentID,
+		ToFragmentID:     toFragmentID,
+		SuggestedFromPos: suggestedFromPos,
+		SuggestedToPos:   suggestedToPos,
+		Message:          message,
+		Timestamp:        time.Now(),
+	}
+
+	gm.state.PieceRecommendations[recommendation.ID] = recommendation
+
+	// Update analytics
+	if analytics, ok := gm.state.PlayerAnalytics[fromPlayerID]; ok {
+		analytics.PuzzleMetrics.RecommendationsSent++
+	}
+	if analytics, ok := gm.state.PlayerAnalytics[toPlayerID]; ok {
+		analytics.PuzzleMetrics.RecommendationsReceived++
+	}
+
+	// Send recommendation to target player
+	if toPlayer, err := gm.playerManager.GetPlayer(toPlayerID); err == nil {
+		sendToPlayer(toPlayer, MsgPieceRecommendation, recommendation)
+	}
+
+	return nil
+}
+
+// Process piece recommendation response
+func (gm *GameManager) ProcessPieceRecommendationResponse(playerID, recommendationID string, accepted bool) error {
+	gm.mu.Lock()
+	defer gm.mu.Unlock()
+
+	recommendation, exists := gm.state.PieceRecommendations[recommendationID]
+	if !exists {
+		return fmt.Errorf("recommendation not found")
+	}
+
+	if recommendation.ToPlayerID != playerID {
+		return fmt.Errorf("not authorized to respond to this recommendation")
+	}
+
+	if accepted {
+		// Execute the recommended moves
+		if fromFragment, exists := gm.state.PuzzleFragments[recommendation.FromFragmentID]; exists {
+			fromFragment.Position = recommendation.SuggestedFromPos
+			fromFragment.LastMoved = time.Now()
+		}
+		if toFragment, exists := gm.state.PuzzleFragments[recommendation.ToFragmentID]; exists {
+			toFragment.Position = recommendation.SuggestedToPos
+			toFragment.LastMoved = time.Now()
+		}
+
+		// Update analytics
+		if analytics, ok := gm.state.PlayerAnalytics[playerID]; ok {
+			analytics.PuzzleMetrics.RecommendationsAccepted++
+		}
+
+		// Broadcast updated puzzle state
+		gm.broadcastPuzzleState()
+
+		// Check if puzzle is complete
+		if gm.checkPuzzleComplete() {
+			gm.endGame(true)
+		}
+	}
+
+	// Remove recommendation
+	delete(gm.state.PieceRecommendations, recommendationID)
+
+	return nil
 }
 
 // endGame handles game completion
@@ -564,22 +780,28 @@ func (gm *GameManager) endGame(success bool) {
 	}()
 }
 
-// calculateFinalAnalytics generates the final game analytics
+// IMPLEMENTED: Enhanced analytics calculations
 func (gm *GameManager) calculateFinalAnalytics(success bool) map[string]interface{} {
 	gm.mu.RLock()
 	defer gm.mu.RUnlock()
 
 	// Individual analytics
 	personalAnalytics := make([]PlayerAnalytics, 0)
+	totalRecommendations := 0
+	acceptedRecommendations := 0
+
 	for _, analytics := range gm.state.PlayerAnalytics {
 		// Calculate category accuracies
-		// This is simplified - in reality you'd track by actual categories
 		if analytics.TriviaPerformance.TotalQuestions > 0 {
 			accuracy := float64(analytics.TriviaPerformance.CorrectAnswers) / float64(analytics.TriviaPerformance.TotalQuestions)
 			for _, cat := range constants.TriviaCategories {
 				analytics.TriviaPerformance.AccuracyByCategory[cat] = accuracy
 			}
 		}
+
+		totalRecommendations += analytics.PuzzleMetrics.RecommendationsSent
+		acceptedRecommendations += analytics.PuzzleMetrics.RecommendationsAccepted
+
 		personalAnalytics = append(personalAnalytics, *analytics)
 	}
 
@@ -589,6 +811,13 @@ func (gm *GameManager) calculateFinalAnalytics(success bool) map[string]interfac
 		totalTime = int(time.Since(gm.state.PuzzleStartTime).Seconds())
 	}
 
+	// Calculate collaboration score based on recommendations
+	collaborationScore := 0.5 // Base score
+	if totalRecommendations > 0 {
+		acceptanceRate := float64(acceptedRecommendations) / float64(totalRecommendations)
+		collaborationScore = 0.3 + (acceptanceRate * 0.7) // 0.3-1.0 range
+	}
+
 	teamAnalytics := TeamAnalytics{
 		OverallPerformance: TeamPerformance{
 			TotalTime:      totalTime,
@@ -596,9 +825,11 @@ func (gm *GameManager) calculateFinalAnalytics(success bool) map[string]interfac
 			TotalScore:     0,
 		},
 		CollaborationScores: CollaborationMetrics{
-			AverageResponseTime: 15.0, // Placeholder
-			CommunicationScore:  0.8,  // Placeholder
-			CoordinationScore:   0.75, // Placeholder
+			AverageResponseTime:     15.0, // Placeholder - could calculate from move history
+			CommunicationScore:      collaborationScore,
+			CoordinationScore:       collaborationScore * 0.9, // Slightly lower than communication
+			TotalRecommendations:    totalRecommendations,
+			AcceptedRecommendations: acceptedRecommendations,
 		},
 		ResourceEfficiency: ResourceMetrics{
 			TokensPerRound: float64(gm.getTotalTokens()) / float64(constants.ResourceGatheringRounds),
@@ -617,14 +848,21 @@ func (gm *GameManager) calculateFinalAnalytics(success bool) map[string]interfac
 		teamAnalytics.OverallPerformance.TotalScore = 1000 - totalTime*5 // Simple scoring
 	}
 
-	// Leaderboard
+	// Enhanced leaderboard with multiple scoring factors
 	leaderboard := make([]LeaderboardEntry, 0)
 	for i, analytics := range personalAnalytics {
 		score := analytics.TriviaPerformance.CorrectAnswers * 10
+		score += analytics.TriviaPerformance.SpecialtyBonus * 2 // Bonus for specialty questions
 		if analytics.PuzzleMetrics.FragmentSolveTime > 0 {
-			score += 100
+			score += 100 // Completion bonus
+			// Time bonus (faster = better)
+			if analytics.PuzzleMetrics.FragmentSolveTime < 300 { // Under 5 minutes
+				score += (300 - analytics.PuzzleMetrics.FragmentSolveTime)
+			}
 		}
 		score += analytics.PuzzleMetrics.SuccessfulMoves * 5
+		score += analytics.PuzzleMetrics.RecommendationsSent * 3
+		score += analytics.PuzzleMetrics.RecommendationsAccepted * 8 // Collaboration bonus
 
 		leaderboard = append(leaderboard, LeaderboardEntry{
 			PlayerID:   analytics.PlayerID,
@@ -639,6 +877,18 @@ func (gm *GameManager) calculateFinalAnalytics(success bool) map[string]interfac
 		"teamAnalytics":     teamAnalytics,
 		"globalLeaderboard": leaderboard,
 		"gameSuccess":       success,
+	}
+}
+
+// IMPLEMENTED: Get difficulty modifiers
+func (gm *GameManager) getDifficultyModifiers() constants.DifficultyModifiers {
+	switch gm.state.Difficulty {
+	case "easy":
+		return constants.EasyMode
+	case "hard":
+		return constants.HardMode
+	default:
+		return constants.MediumMode
 	}
 }
 
@@ -662,11 +912,12 @@ func (gm *GameManager) getTotalTokens() int {
 }
 
 func (gm *GameManager) calculateThresholdsReached() map[string]int {
+	difficultyMod := gm.getDifficultyModifiers()
 	return map[string]int{
-		constants.TokenAnchor:  gm.state.TeamTokens.AnchorTokens / constants.AnchorTokenThresholds,
-		constants.TokenChronos: gm.state.TeamTokens.ChronosTokens / constants.ChronosTokenThresholds,
-		constants.TokenGuide:   gm.state.TeamTokens.GuideTokens / constants.GuideTokenThresholds,
-		constants.TokenClarity: gm.state.TeamTokens.ClarityTokens / constants.ClarityTokenThresholds,
+		constants.TokenAnchor:  gm.state.TeamTokens.AnchorTokens / (constants.AnchorTokenThresholds * int(difficultyMod.TokenThresholdModifier)),
+		constants.TokenChronos: gm.state.TeamTokens.ChronosTokens / (constants.ChronosTokenThresholds * int(difficultyMod.TokenThresholdModifier)),
+		constants.TokenGuide:   gm.state.TeamTokens.GuideTokens / (constants.GuideTokenThresholds * int(difficultyMod.TokenThresholdModifier)),
+		constants.TokenClarity: gm.state.TeamTokens.ClarityTokens / (constants.ClarityTokenThresholds * int(difficultyMod.TokenThresholdModifier)),
 	}
 }
 
@@ -796,12 +1047,14 @@ func (gm *GameManager) resetGame() {
 
 	// Reset state
 	gm.state = &GameState{
-		Phase:           PhaseSetup,
-		Difficulty:      "medium",
-		Players:         make(map[string]*Player),
-		TeamTokens:      TeamTokens{},
-		QuestionHistory: make(map[string]map[string]bool),
-		PlayerAnalytics: make(map[string]*PlayerAnalytics),
+		Phase:                PhaseSetup,
+		Difficulty:           "medium",
+		Players:              make(map[string]*Player),
+		TeamTokens:           TeamTokens{},
+		QuestionHistory:      make(map[string]map[string]bool),
+		PlayerAnalytics:      make(map[string]*PlayerAnalytics),
+		PieceRecommendations: make(map[string]*PieceRecommendation),
+		CurrentQuestions:     make(map[string]*TriviaQuestion),
 	}
 }
 
@@ -819,4 +1072,12 @@ func (p GamePhase) String() string {
 	default:
 		return "unknown"
 	}
+}
+
+// Utility function for min
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
 }

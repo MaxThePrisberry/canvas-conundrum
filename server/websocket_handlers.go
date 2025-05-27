@@ -153,7 +153,8 @@ func (wsh *WebSocketHandler) handlePlayerMessages(player *Player) {
 		switch baseMsg.Type {
 		case MsgRoleSelection, MsgTriviaSpecialtySelection, MsgResourceLocationVerified,
 			MsgTriviaAnswer, MsgSegmentCompleted, MsgFragmentMoveRequest,
-			MsgPlayerReady, MsgHostStartGame, MsgHostStartPuzzle:
+			MsgPlayerReady, MsgHostStartGame, MsgHostStartPuzzle,
+			MsgPieceRecommendationRequest, MsgPieceRecommendationResponse:
 
 			// These messages require authentication
 			var authWrapper AuthWrapper
@@ -208,6 +209,12 @@ func (wsh *WebSocketHandler) routeAuthenticatedMessage(playerID string, msgType 
 
 	case MsgHostStartPuzzle:
 		err = wsh.eventHandlers.HandleHostStartPuzzle(playerID, payload)
+
+	case MsgPieceRecommendationRequest:
+		err = wsh.eventHandlers.HandlePieceRecommendationRequest(playerID, payload)
+
+	case MsgPieceRecommendationResponse:
+		err = wsh.eventHandlers.HandlePieceRecommendationResponse(playerID, payload)
 	}
 
 	if err != nil {
@@ -243,8 +250,11 @@ func (wsh *WebSocketHandler) handleDisconnection(player *Player) {
 		fragmentID := fmt.Sprintf("fragment_%s", player.ID)
 		if fragment, exists := wsh.gameManager.state.PuzzleFragments[fragmentID]; exists {
 			fragment.Solved = true
-			// Randomly relocate fragment
-			// This is simplified - you might want more sophisticated logic
+			// Randomly relocate fragment to maintain grid integrity
+			fragment.Position = GridPos{
+				X: len(wsh.gameManager.state.PuzzleFragments) % wsh.gameManager.state.GridSize,
+				Y: len(wsh.gameManager.state.PuzzleFragments) / wsh.gameManager.state.GridSize,
+			}
 		}
 		wsh.gameManager.mu.Unlock()
 
@@ -313,7 +323,7 @@ func (wsh *WebSocketHandler) sendReconnectionState(player *Player) {
 		fragment := wsh.gameManager.state.PuzzleFragments[fragmentID]
 		segmentID := ""
 		if fragment != nil {
-			segmentID = fmt.Sprintf("segment_%c%d", 'a'+fragment.Position.Y, fragment.Position.X+1)
+			segmentID = fmt.Sprintf("segment_%c%d", 'a'+fragment.CorrectPosition.Y, fragment.CorrectPosition.X+1)
 		}
 		imageID := wsh.gameManager.state.PuzzleImageID
 		gridSize := wsh.gameManager.state.GridSize
@@ -323,6 +333,7 @@ func (wsh *WebSocketHandler) sendReconnectionState(player *Player) {
 			"imageId":   imageID,
 			"segmentId": segmentID,
 			"gridSize":  gridSize,
+			"preSolved": fragment != nil && fragment.PreSolved,
 		})
 
 		// Send current puzzle state

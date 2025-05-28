@@ -1,15 +1,34 @@
 # Canvas Conundrum - WebSocket Communication Specification
 
-## Connection Lifecycle
+## Connection System Overview
+
+Canvas Conundrum uses a dual-connection system with dedicated host and player endpoints for reliable game management.
+
+### Host vs Player System
+
+**Host Connection:**
+- **Endpoint**: `/ws/host/{unique-uuid}` (UUID generated fresh each server start)
+- **Role**: Game moderator and controller
+- **Capabilities**: Start games, monitor progress, control game flow, view analytics
+- **Limitations**: Cannot participate in trivia or puzzle solving
+- **Reconnection**: Can reconnect using same endpoint + player ID
+
+**Player Connection:**
+- **Endpoint**: `/ws`
+- **Role**: Game participants
+- **Capabilities**: Answer trivia, collect tokens, solve puzzles, select roles/specialties
+- **Requirements**: Host must be present to start games
+- **Reconnection**: Can reconnect using player ID
+
+## Authentication System
 
 ### Initial Connection
 - Establish secure WebSocket connection
-- Server generates unique player identifier
-- Client authentication via generated UUID
-- Game session initialization
+- Server generates unique player identifier (UUID v4)
+- All subsequent messages require authentication wrapper
 
-## Authentication Format
-All client-to-server events after initial connection use wrapper structure:
+### Authentication Format
+All client-to-server events after initial connection use this wrapper:
 ```json
 {
   "auth": {
@@ -21,323 +40,485 @@ All client-to-server events after initial connection use wrapper structure:
 }
 ```
 
+**Validation Rules:**
+- Player ID must be valid UUID v4 format
+- Player ID must match the connection's assigned ID
+- Payload must be valid JSON
+- Message size limited to 8KB
+- Comprehensive input validation on all fields
+
 ## Game Phases and Events
 
 ### 1. Setup Phase
 
-#### Client to Server Events
-- `player_join`:
-  - Initial connection request (no auth wrapper needed)
+#### Initial Connection Flow
+
+**Player Connection:**
+1. Client connects to `/ws`
+2. Server generates UUID and creates player
+3. Server sends `available_roles` with player ID and options
+
+**Host Connection:**
+1. Client connects to `/ws/host/{uuid}` (UUID from server logs/API)
+2. Server validates no existing host
+3. Server creates host player and sends confirmation
 
 #### Server to Client Events
-- `available_roles`:
-  ```json
-  {
-    "playerId": "uuid-generated-by-server",
-    "roles": [
-      {
-        "role": "art_enthusiast",
-        "resourceBonus": 1.5,
-        "available": true
-      },
-      {
-        "role": "detective",
-        "resourceBonus": 1.5,
-        "available": false
-      }
-    ],
-    "triviaCategories": ["general", "geography", "history", "music", "science", "video_games"]
-  }
-  ```
 
-- `role_selection`:
-  ```json
-  {
-    "auth": {
-      "playerId": "uuid-generated-by-server"
+**Available Roles (Sent to Players):**
+```json
+{
+  "playerId": "uuid-generated-by-server",
+  "isHost": false,
+  "roles": [
+    {
+      "role": "art_enthusiast",
+      "resourceBonus": 1.5,
+      "available": true
     },
-    "payload": {
-      "role": "art_enthusiast"
+    {
+      "role": "detective",
+      "resourceBonus": 1.5,
+      "available": false
+    },
+    {
+      "role": "tourist",
+      "resourceBonus": 1.5,
+      "available": true
+    },
+    {
+      "role": "janitor",
+      "resourceBonus": 1.5,
+      "available": true
+    }
+  ],
+  "triviaCategories": ["general", "geography", "history", "music", "science", "video_games"]
+}
+```
+
+**Available Roles (Sent to Host):**
+```json
+{
+  "playerId": "uuid-generated-by-server",
+  "isHost": true,
+  "message": "Connected as game host"
+}
+```
+
+**Game Lobby Status:**
+```json
+{
+  "currentPlayers": 6,
+  "nonHostPlayers": 5,
+  "playerRoles": {
+    "art_enthusiast": 2,
+    "detective": 1,
+    "tourist": 1,
+    "janitor": 1
+  },
+  "hasHost": true,
+  "gameStarting": false,
+  "waitingMessage": "Ready to start! (Host can begin the game)"
+}
+```
+
+**Host Update (Host Only):**
+```json
+{
+  "phase": "setup",
+  "connectedPlayers": 5,
+  "readyPlayers": 4,
+  "teamTokens": {
+    "anchorTokens": 0,
+    "chronosTokens": 0,
+    "guideTokens": 0,
+    "clarityTokens": 0
+  },
+  "playerStatuses": {
+    "player1-uuid": {
+      "name": "Player1",
+      "role": "detective",
+      "connected": true,
+      "ready": true,
+      "location": ""
     }
   }
-  ```
+}
+```
 
-- `trivia_specialty_selection`:
-  ```json
-  {
-    "auth": {
-      "playerId": "uuid-generated-by-server"
-    },
-    "payload": {
-      "specialties": ["science", "history"]
-    }
-  }
-  ```
+#### Client to Server Events
 
-- `game_lobby_status`:
-  ```json
-  {
-    "currentPlayers": 6,
-    "playerRoles": {
-      "art_enthusiast": 2,
-      "detective": 1,
-      "tourist": 2,
-      "janitor": 1
-    },
-    "gameStarting": false,
-    "waitingMessage": "Waiting for more players..."
+**Role Selection (Players Only):**
+```json
+{
+  "auth": {
+    "playerId": "uuid-generated-by-server"
+  },
+  "payload": {
+    "role": "art_enthusiast"
   }
-  ```
+}
+```
 
-- `countdown`:
-  ```json
-  {
-    "seconds": 25,
-    "message": "Game starting in 25 seconds...",
-    "canAbort": true
+**Trivia Specialty Selection (Players Only):**
+```json
+{
+  "auth": {
+    "playerId": "uuid-generated-by-server"
+  },
+  "payload": {
+    "specialties": ["science", "history"]
   }
-  ```
+}
+```
+*Note: Players are automatically marked ready after selecting specialties*
+
+**Host Start Game (Host Only):**
+```json
+{
+  "auth": {
+    "playerId": "host-uuid"
+  },
+  "payload": {}
+}
+```
 
 ### 2. Resource Gathering Phase
 
-#### Server to Client Events (Phase Start)
-- `resource_phase_start`:
-  ```json
-  {
-    "resourceHashes": {
-      "anchor": "HASH_ANCHOR_STATION_2025",
-      "chronos": "HASH_CHRONOS_STATION_2025",
-      "guide": "HASH_GUIDE_STATION_2025",
-      "clarity": "HASH_CLARITY_STATION_2025"
-    }
+#### Phase Start
+**Resource Phase Start (All Players):**
+```json
+{
+  "resourceHashes": {
+    "anchor": "HASH_ANCHOR_STATION_2025",
+    "chronos": "HASH_CHRONOS_STATION_2025",
+    "guide": "HASH_GUIDE_STATION_2025",
+    "clarity": "HASH_CLARITY_STATION_2025"
   }
-  ```
+}
+```
 
-- `trivia_question`:
-  ```json
-  {
-    "questionId": "general_medium_42",
-    "text": "What is the capital of France?",
-    "category": "geography",
-    "difficulty": "medium",
-    "timeLimit": 30,
-    "options": ["Paris", "London", "Berlin", "Madrid"],
-    "isSpecialty": false
-  }
-  ```
+#### Trivia System
 
-  **Specialty Question Example:**
-  ```json
-  {
-    "questionId": "science_hard_15",
-    "text": "What is the speed of light in vacuum?",
-    "category": "science (Specialty)",
-    "difficulty": "hard",
-    "timeLimit": 45,
-    "options": ["299,792,458 m/s", "300,000,000 m/s", "186,000 mi/s", "3.0 × 10^8 m/s"],
-    "isSpecialty": true
-  }
-  ```
+**Trivia Question (Players Only):**
+```json
+{
+  "questionId": "general_medium_42_1234567",
+  "text": "What is the capital of France?",
+  "category": "geography",
+  "difficulty": "medium",
+  "timeLimit": 30,
+  "options": ["Paris", "London", "Berlin", "Madrid"],
+  "isSpecialty": false
+}
+```
 
-- `team_progress_update`:
-  ```json
-  {
-    "questionsAnswered": 28,
-    "totalQuestions": 40,
-    "teamTokens": {
-      "anchorTokens": 45,
-      "chronosTokens": 32,
-      "guideTokens": 28,
-      "clarityTokens": 38
-    }
+**Specialty Question Example (Players Only):**
+```json
+{
+  "questionId": "science_hard_15_7654321",
+  "text": "What is the speed of light in vacuum?",
+  "category": "science (Specialty)",
+  "difficulty": "hard",
+  "timeLimit": 30,
+  "options": ["299,792,458 m/s", "300,000,000 m/s", "186,000 mi/s", "3.0 × 10^8 m/s"],
+  "isSpecialty": true
+}
+```
+*Note: Specialty questions have same time limit as regular questions*
+
+**Team Progress Update (All):**
+```json
+{
+  "questionsAnswered": 28,
+  "totalQuestions": 40,
+  "teamTokens": {
+    "anchorTokens": 45,
+    "chronosTokens": 32,
+    "guideTokens": 28,
+    "clarityTokens": 38
   }
-  ```
+}
+```
 
 #### Client to Server Events
-- `resource_location_verified`:
-  ```json
-  {
-    "auth": {
-      "playerId": "uuid-generated-by-server"
-    },
-    "payload": {
-      "verifiedHash": "HASH_ANCHOR_STATION_2025"
-    }
-  }
-  ```
 
-  **Note**: Clients only need to send this event when changing locations. If staying at the same location between rounds, no reverification is required.
-
-- `trivia_answer`:
-  ```json
-  {
-    "auth": {
-      "playerId": "uuid-generated-by-server"
-    },
-    "payload": {
-      "questionId": "general_medium_42",
-      "answer": "Paris",
-      "timestamp": 1234567890
-    }
+**Resource Location Verified (Players Only):**
+```json
+{
+  "auth": {
+    "playerId": "uuid-generated-by-server"
+  },
+  "payload": {
+    "verifiedHash": "HASH_ANCHOR_STATION_2025"
   }
-  ```
+}
+```
+*Note: Only required when changing locations between rounds*
+
+**Trivia Answer (Players Only):**
+```json
+{
+  "auth": {
+    "playerId": "uuid-generated-by-server"
+  },
+  "payload": {
+    "questionId": "general_medium_42_1234567",
+    "answer": "Paris",
+    "timestamp": 1640995200
+  }
+}
+```
 
 ### 3. Puzzle Assembly Phase
 
-#### Server to Client Events (Phase Start)
+#### Phase Initialization
 
-- `image_preview`:
-  ```json
-  {
-    "imageId": "masterpiece_001",
-    "duration": 3
-  }
-  ```
+**Image Preview (All Players):**
+```json
+{
+  "imageId": "masterpiece_001",
+  "duration": 3
+}
+```
+*Duration based on clarity tokens earned*
 
-- `puzzle_phase_load`:
-  ```json
-  {
-    "imageId": "masterpiece_001",
-    "segmentId": "segment_a5",
-    "gridSize": 4,
-    "preSolved": false
-  }
-  ```
+**Puzzle Phase Load (Players):**
+```json
+{
+  "imageId": "masterpiece_001",
+  "segmentId": "segment_a5",
+  "gridSize": 4,
+  "preSolved": false
+}
+```
+**CRITICAL**: This loads the player's individual 16-piece puzzle segment that they must solve privately. This segment has NO connection to the central shared puzzle grid until completion.
 
-- `puzzle_phase_start`:
-  ```json
-  {
-    "startTimestamp": 1234567890,
-    "totalTime": 340
-  }
-  ```
+**Puzzle Phase Load (Host):**
+```json
+{
+  "imageId": "masterpiece_001",
+  "gridSize": 4,
+  "isHost": true,
+  "playerCount": 8,
+  "message": "Puzzle phase started - monitor player progress"
+}
+```
 
-#### Grid Configuration Management
-- Dynamic grid sizing algorithm:
-  ```
-  Grid Size = Based on player count breakpoints
-  1-9 players: 3x3, 10-16 players: 4x4, etc.
-  ```
+**Puzzle Phase Start (All):**
+```json
+{
+  "startTimestamp": 1640995200,
+  "totalTime": 340
+}
+```
+*Total time includes chronos token bonuses*
 
-#### Fragment Movement Protocol
-- Movement Cooldown: 1000ms
-- Prevents race conditions
-- Ignores rapid successive move requests
+#### Individual vs Central Puzzle System
+
+**CRITICAL DISTINCTION**: Canvas Conundrum operates with two completely separate puzzle systems:
+
+1. **Individual Player Puzzles** (Private, Invisible to Others):
+   - Each player receives a unique 16-piece puzzle segment to solve privately
+   - These individual puzzles are completely separate from the central grid
+   - No visibility on shared screens until completion
+   - No space reserved on central grid until completion
+   - Players work on these individually without affecting the shared game state
+
+2. **Central Shared Puzzle Grid** (Public, Collaborative):
+   - Only activated when players complete their individual puzzles
+   - Each completed individual puzzle becomes one movable fragment on the shared grid
+   - Collaborative space where players move their completed fragments to correct positions
+   - Visible to all players and host for coordination
+
+#### Grid and Fragment Management
+
+**Dynamic Grid Sizing:**
+- 1-9 players: 3×3 grid (9 fragments)
+- 10-16 players: 4×4 grid (16 fragments)
+- 17-25 players: 5×5 grid (25 fragments)
+- Continues scaling to 8×8 maximum
+
+**Fragment Lifecycle:**
+1. **Invisible Phase**: Player works on individual 16-piece puzzle (not visible to others)
+2. **Completion Trigger**: Player completes individual puzzle and sends completion message
+3. **Activation Phase**: Individual puzzle becomes one fragment on central shared grid
+4. **Collaborative Phase**: Fragment becomes visible and movable on shared puzzle grid
+
+**Fragment Movement Protocol:**
+- Movement cooldown: 1000ms consistently applied
+- Prevents race conditions and rapid successive moves
+- Cooldown applies to all fragments regardless of type
 
 #### Client to Server Events
-- `segment_completed`:
-  ```json
-  {
-    "auth": {
-      "playerId": "uuid-generated-by-server"
-    },
-    "payload": {
-      "segmentId": "segment_a5",
-      "completionTimestamp": 1234567890
-    }
-  }
-  ```
 
-- `fragment_move_request`:
-  ```json
-  {
-    "auth": {
-      "playerId": "uuid-generated-by-server"
-    },
-    "payload": {
-      "fragmentId": "fragment_player-uuid",
-      "newPosition": {"x": 2, "y": 1},
-      "timestamp": 1234567890
-    }
+**Segment Completed (Players Only):**
+```json
+{
+  "auth": {
+    "playerId": "uuid-generated-by-server"
+  },
+  "payload": {
+    "segmentId": "segment_a5",
+    "completionTimestamp": 1640995200
   }
-  ```
+}
+```
+**CRITICAL**: This event transforms the player's individual puzzle into a fragment on the central shared grid. Before this event, the individual puzzle work is completely invisible to other players and the central grid.
 
-- `piece_recommendation_request`:
-  ```json
-  {
-    "auth": {
-      "playerId": "uuid-generated-by-server"
-    },
-    "payload": {
-      "toPlayerId": "target-player-uuid",
-      "fromFragmentId": "fragment_sender-uuid",
-      "toFragmentId": "fragment_target-uuid",
-      "suggestedFromPos": {"x": 1, "y": 2},
-      "suggestedToPos": {"x": 3, "y": 0},
-      "message": "I think your piece goes in the top right corner"
-    }
+**Fragment Move Request (All Players):**
+```json
+{
+  "auth": {
+    "playerId": "uuid-generated-by-server"
+  },
+  "payload": {
+    "fragmentId": "fragment_player-uuid",
+    "newPosition": {"x": 2, "y": 1},
+    "timestamp": 1640995200
   }
-  ```
+}
+```
+**Note**: Only applies to fragments on the central shared grid, not individual puzzles
 
-- `piece_recommendation_response`:
-  ```json
-  {
-    "auth": {
-      "playerId": "uuid-generated-by-server"
-    },
-    "payload": {
-      "recommendationId": "recommendation-uuid",
-      "accepted": true
-    }
-  }
-  ```
+**Host Start Puzzle Timer (Host Only):**
+```json
+{
+  "auth": {
+    "playerId": "host-uuid"
+  },
+  "payload": {}
+}
+```
 
 #### Server to Client Events
-- `segment_completion_ack`:
-  ```json
-  {
-    "status": "acknowledged",
-    "segmentId": "segment_a5",
-    "gridPosition": {"x": 2, "y": 3}
-  }
-  ```
 
-- `fragment_move_response`:
-  ```json
-  {
-    "status": "success",
-    "fragment": {
-      "id": "fragment_player-uuid",
-      "playerId": "player-uuid",
-      "position": {"x": 2, "y": 1},
+**Segment Completion Acknowledgment (Players):**
+```json
+{
+  "status": "acknowledged",
+  "segmentId": "segment_a5",
+  "gridPosition": {"x": 2, "y": 3}
+}
+```
+**CRITICAL**: This confirms that the player's individual puzzle has been converted to a fragment on the central shared grid at the specified position.
+
+**Fragment Move Response:**
+```json
+{
+  "status": "success",
+  "fragment": {
+    "id": "fragment_player-uuid",
+    "playerId": "player-uuid",
+    "position": {"x": 2, "y": 1},
+    "solved": true,
+    "correctPosition": {"x": 2, "y": 1},
+    "preSolved": false
+  },
+  "nextMoveAvailable": 1640995891
+}
+```
+
+**Central Puzzle State (All):**
+```json
+{
+  "fragments": [
+    {
+      "id": "fragment_player1-uuid",
+      "playerId": "player1-uuid",
+      "position": {"x": 0, "y": 0},
       "solved": true,
-      "correctPosition": {"x": 2, "y": 1},
-      "preSolved": false
+      "correctPosition": {"x": 0, "y": 0},
+      "preSolved": false,
+      "visible": true,
+      "movableBy": "player1-uuid"
     },
-    "nextMoveAvailable": 1234567891
-  }
-  ```
+    {
+      "id": "fragment_unassigned-1",
+      "playerId": null,
+      "position": {"x": 1, "y": 1},
+      "solved": true,
+      "correctPosition": {"x": 1, "y": 1},
+      "preSolved": false,
+      "visible": true,
+      "movableBy": "anyone"
+    }
+  ],
+  "gridSize": 4,
+  "playerDisconnected": "disconnected-player-uuid"
+}
+```
+**CRITICAL**: This shows only the central shared puzzle grid. Individual puzzles in progress are NOT included here and remain completely invisible until completion.
 
-- `piece_recommendation`:
-  ```json
-  {
-    "id": "recommendation-uuid",
-    "fromPlayerId": "sender-uuid",
-    "toPlayerId": "receiver-uuid",
+#### Collaboration System
+
+**Piece Recommendation Request:**
+```json
+{
+  "auth": {
+    "playerId": "uuid-generated-by-server"
+  },
+  "payload": {
+    "toPlayerId": "target-player-uuid",
     "fromFragmentId": "fragment_sender-uuid",
-    "toFragmentId": "fragment_receiver-uuid",
+    "toFragmentId": "fragment_target-uuid",
     "suggestedFromPos": {"x": 1, "y": 2},
-    "suggestedToPos": {"x": 3, "y": 0},
-    "message": "I think your piece goes in the top right corner",
-    "timestamp": "2025-05-26T10:30:00Z"
+    "suggestedToPos": {"x": 3, "y": 0}
   }
-  ```
+}
+```
 
-  **Guide Hints (Guide Token Effect):**
-  ```json
-  {
-    "type": "guide_hint",
-    "hints": [
-      "Exact position: (2, 3)",
-      "Column is correct!",
-      "Row needs adjustment"
+**Piece Recommendation (Sent to Target Player):**
+```json
+{
+  "id": "recommendation-uuid",
+  "fromPlayerId": "sender-uuid",
+  "toPlayerId": "receiver-uuid",
+  "fromFragmentId": "fragment_sender-uuid",
+  "toFragmentId": "fragment_receiver-uuid",
+  "suggestedFromPos": {"x": 1, "y": 2},
+  "suggestedToPos": {"x": 3, "y": 0},
+  "timestamp": "2025-05-26T10:30:00Z"
+}
+```
+
+**Piece Recommendation Response:**
+```json
+{
+  "auth": {
+    "playerId": "uuid-generated-by-server"
+  },
+  "payload": {
+    "recommendationId": "recommendation-uuid",
+    "accepted": true
+  }
+}
+```
+
+#### Token Effects Implementation
+
+**Guide Token Guidance:**
+```json
+{
+  "type": "guide_highlight",
+  "playerId": "player-uuid",
+  "highlightedArea": {
+    "positions": [
+      {"x": 2, "y": 2},
+      {"x": 2, "y": 3},
+      {"x": 3, "y": 2},
+      {"x": 3, "y": 3}
     ]
-  }
-  ```
+  },
+  "thresholdLevel": 2,
+  "maxThresholds": 5
+}
+```
 
-- `central_puzzle_state`:
-  ```json
-  {
+**Personal Puzzle State (Players Only):**
+```json
+{
+  "personalView": {
     "fragments": [
       {
         "id": "fragment_player1-uuid",
@@ -345,216 +526,212 @@ All client-to-server events after initial connection use wrapper structure:
         "position": {"x": 0, "y": 0},
         "solved": true,
         "correctPosition": {"x": 0, "y": 0},
-        "preSolved": false
+        "preSolved": false,
+        "visible": true,
+        "ownedByPlayer": true
       }
     ],
     "gridSize": 4,
-    "playerDisconnected": "disconnected-player-uuid"
+    "playerFragmentId": "fragment_player1-uuid",
+    "guideHighlight": {
+      "positions": [{"x": 2, "y": 2}, {"x": 2, "y": 3}]
+    }
   }
-  ```
+}
+```
+**CRITICAL**: This personal view shows only the central shared puzzle grid, not the player's individual puzzle work in progress.
+
+**Token Effects Summary:**
+- **Anchor Tokens**: Pre-solve puzzle pieces (max 12 of 16 pieces)
+- **Chronos Tokens**: Extend puzzle time (+20 seconds per threshold)
+- **Guide Tokens**: Provide placement guidance with highlighted areas (linear threshold progression from large area to 2-position precision)
+- **Clarity Tokens**: Show complete image preview (+1 second per threshold)
 
 #### Disconnection Handling
-- Immediate fragment auto-solve
-- Random grid placement
-- Broadcast disconnection to all players
+- Immediate fragment auto-solve for disconnected players
+- Random grid placement maintains puzzle integrity
+- Host disconnection notifications (no automatic transfer)
+- No reconnection support during puzzle assembly phase
+- Reconnection support with state restoration in other phases
 
-### 4. Post-Game Events
+### 4. Post-Game Analytics
 
-#### Server to Client Events
-- `game_analytics`:
-  ```json
-  {
-    "personalAnalytics": [
-      {
-        "playerId": "uuid",
-        "playerName": "Player1",
-        "tokenCollection": {
-          "anchor": 12,
-          "chronos": 8,
-          "guide": 15,
-          "clarity": 10
-        },
-        "triviaPerformance": {
-          "totalQuestions": 20,
-          "correctAnswers": 16,
-          "accuracyByCategory": {
-            "general": 0.85,
-            "science": 0.90
-          },
-          "specialtyBonus": 40,
-          "specialtyCorrect": 4,
-          "specialtyTotal": 5
-        },
-        "puzzleSolvingMetrics": {
-          "fragmentSolveTime": 180,
-          "movesContributed": 8,
-          "successfulMoves": 7,
-          "recommendationsSent": 3,
-          "recommendationsReceived": 2,
-          "recommendationsAccepted": 1
-        }
-      }
-    ],
-    "teamAnalytics": {
-      "overallPerformance": {
-        "totalTime": 1200,
-        "completionRate": 1.0,
-        "totalScore": 2500
+**Game Analytics (All Players):**
+```json
+{
+  "personalAnalytics": [
+    {
+      "playerId": "uuid",
+      "playerName": "Player1",
+      "tokenCollection": {
+        "anchor": 12,
+        "chronos": 8,
+        "guide": 15,
+        "clarity": 10
       },
-      "collaborationScores": {
-        "averageResponseTime": 12.5,
-        "communicationScore": 0.85,
-        "coordinationScore": 0.80,
-        "totalRecommendations": 15,
-        "acceptedRecommendations": 8
-      },
-      "resourceEfficiency": {
-        "tokensPerRound": 25.6,
-        "tokenDistribution": {
-          "anchor": 45.0,
-          "chronos": 32.0,
-          "guide": 28.0,
-          "clarity": 38.0
+      "triviaPerformance": {
+        "totalQuestions": 20,
+        "correctAnswers": 16,
+        "accuracyByCategory": {
+          "general": 0.85,
+          "science": 0.90
         },
-        "thresholdsReached": {
-          "anchor": 2,
-          "chronos": 1,
-          "guide": 1,
-          "clarity": 2
-        }
+        "specialtyBonus": 40,
+        "specialtyCorrect": 4,
+        "specialtyTotal": 5
+      },
+      "puzzleSolvingMetrics": {
+        "fragmentSolveTime": 180,
+        "movesContributed": 8,
+        "successfulMoves": 7,
+        "recommendationsSent": 3,
+        "recommendationsReceived": 2,
+        "recommendationsAccepted": 1
       }
+    }
+  ],
+  "teamAnalytics": {
+    "overallPerformance": {
+      "totalTime": 1200,
+      "completionRate": 1.0,
+      "totalScore": 2500
     },
-    "globalLeaderboard": [
-      {
-        "playerId": "uuid",
-        "playerName": "Player1",
-        "totalScore": 1850,
-        "rank": 1
+    "collaborationScores": {
+      "averageResponseTime": 12.5,
+      "communicationScore": 0.85,
+      "coordinationScore": 0.80,
+      "totalRecommendations": 15,
+      "acceptedRecommendations": 8
+    },
+    "resourceEfficiency": {
+      "tokensPerRound": 25.6,
+      "tokenDistribution": {
+        "anchor": 45.0,
+        "chronos": 32.0,
+        "guide": 28.0,
+        "clarity": 38.0
+      },
+      "thresholdsReached": {
+        "anchor": 2,
+        "chronos": 1,
+        "guide": 1,
+        "clarity": 2
       }
-    ],
-    "gameSuccess": true
-  }
-  ```
+    }
+  },
+  "globalLeaderboard": [
+    {
+      "playerId": "uuid",
+      "playerName": "Player1",
+      "totalScore": 1850,
+      "rank": 1
+    }
+  ],
+  "gameSuccess": true
+}
+```
 
-- `game_reset`:
-  ```json
-  {
-    "message": "Game resetting. Please rejoin to start a new game.",
-    "reconnectRequired": true
-  }
-  ```
+**Game Reset (All Players):**
+```json
+{
+  "message": "Game resetting. Please rejoin to start a new game.",
+  "reconnectRequired": true
+}
+```
 
-## Host-Specific Events
+## Error Handling and Validation
 
-- `host_update`:
-  ```json
-  {
-    "phase": "puzzle_assembly",
-    "connectedPlayers": 8,
-    "readyPlayers": 8,
-    "currentRound": 3,
-    "timeRemaining": 120,
-    "teamTokens": {
-      "anchorTokens": 45,
-      "chronosTokens": 32,
-      "guideTokens": 28,
-      "clarityTokens": 38
-    },
-    "playerStatuses": {
-      "player1-uuid": {
-        "name": "Alice",
-        "role": "detective",
-        "connected": true,
-        "ready": true,
-        "location": "HASH_GUIDE_STATION_2025"
-      }
-    },
-    "puzzleProgress": 0.625
-  }
-  ```
+### Error Response Format
+```json
+{
+  "error": "Validation failed",
+  "details": "Role selection validation: invalid role selection",
+  "type": "validation_error"
+}
+```
 
-## Token Effect Implementations
+### Common Error Types
+- `validation_error`: Input validation failures
+- `authentication_error`: Auth wrapper or player ID issues
+- `game_state_error`: Action not allowed in current phase
+- `host_error`: Host-specific operation failures
+- `server_shutdown`: Server maintenance notifications
 
-### Anchor Tokens
-- **Effect**: Pre-solve puzzle pieces to reduce individual workload
-- **Calculation**: `thresholds = tokens / (5 * difficultyModifier)`
-- **Maximum**: Up to 12 pieces pre-solved (leaving minimum 4 to solve)
-
-### Chronos Tokens
-- **Effect**: Extend puzzle assembly time
-- **Calculation**: `bonus = (tokens / 5) * 20 seconds * difficultyModifier`
-- **Applied**: Added to base 300-second puzzle timer
-
-### Guide Tokens
-- **Effect**: Provide piece placement hints after segment completion
-- **Levels**:
-  - Level 1: General positioning feedback
-  - Level 2: Exact row or column hints
-  - Level 3: Exact coordinates
-- **Sent via**: `piece_recommendation` event with `type: "guide_hint"`
-
-### Clarity Tokens
-- **Effect**: Show complete puzzle image preview at start of puzzle phase
-- **Duration**: `seconds = (tokens / 5) * 1 second * difficultyModifier`
-- **Sent via**: `image_preview` event before puzzle phase starts
+### Validation Rules
+- **Player ID**: Must be valid UUID v4 format
+- **Role Selection**: Must be available role from valid set
+- **Specialties**: 1-2 categories from supported list, no duplicates
+- **Grid Positions**: Within bounds (0 to gridSize-1)
+- **Message Size**: Maximum 8KB payload
+- **Hash Validation**: Resource station hashes must match constants
+- **Timestamps**: Must be positive integers
+- **Text Fields**: UTF-8 validation, length limits, no HTML injection
 
 ## Difficulty Scaling
 
-### Easy Mode (0.7x / 1.3x / 0.8x)
-- Easier trivia questions
-- 30% more time for all phases
-- 20% fewer tokens needed for thresholds
-- 20% specialty question chance
+### Difficulty Modifiers Applied
+- **Easy Mode**: 20% specialty questions, +30% time, -20% token requirements
+- **Medium Mode**: 30% specialty questions, normal time/tokens
+- **Hard Mode**: 40% specialty questions, -30% time, +30% token requirements
 
-### Medium Mode (1.0x / 1.0x / 1.0x)
-- Normal difficulty baseline
-- Standard time limits
-- Standard token requirements
-- 30% specialty question chance
+### Specialty Question Mechanics
+- Higher difficulty level than game setting
+- Extended time limits (1.5x base)
+- Point multiplier (2.0x) for correct answers
+- Selected from player's chosen specialties
 
-### Hard Mode (1.4x / 0.7x / 1.3x)
-- Harder trivia questions
-- 30% less time for all phases
-- 30% more tokens needed for thresholds
-- 40% specialty question chance
+## Performance and Security
 
-## Error Handling and Edge Cases
-- Robust error detection with specific error messages
-- Graceful degradation when features unavailable
-- Comprehensive logging for debugging
-- Invalid authentication handled with clear messages
-- Question pool exhaustion handled with reset mechanism
+### Connection Management
+- Ping/pong heartbeats every 30 seconds
+- Connection timeout after 60 seconds without pong
+- Graceful disconnection handling with state preservation
+- Rate limiting on fragment moves (1000ms cooldown)
 
-## Performance Considerations
-- Efficient data serialization with minimal payload sizes
-- Rate limiting on fragment movements (1000ms cooldown)
-- Connection state management with ping/pong heartbeats
-- Batched progress updates every 5 seconds during puzzle phase
+### Security Measures
+- CORS validation for allowed origins
+- Input sanitization and validation on all messages
+- WebSocket upgrade origin checking
+- Authentication token validation
+- Message size and rate limiting
+- Host privilege verification
 
-## Security Measures
-- Secure WebSocket connections in production
-- UUID-based player authentication for all events
-- Input validation on all client messages
-- Anti-cheat mechanisms for trivia answers and fragment movements
-- Host privilege verification for administrative actions
+### Scalability Features
+- Dynamic grid scaling (3×3 to 8×8)
+- Player limit enforcement (4-64 players)
+- Efficient broadcast system with filtering
+- Question pool management with automatic cycling
+- Connection state monitoring and cleanup
 
-## Technical Specifications
-- Dynamic Grid Scaling: 3×3 to 8×8 based on player count
-- Fragment Movement Cooldown: 1000ms consistently applied
-- Question Pool Management: Auto-reset when exhausted
-- Specialty Question Handling: Increased difficulty and time limits
-- Collaboration Tracking: Full recommendation system with accept/reject
+## Technical Implementation Notes
 
-## Real-Time Features
-- Live puzzle state synchronization
-- Instant piece recommendation delivery
-- Real-time progress tracking for host
-- Immediate feedback on all player actions
-- Collaborative hint system through guide tokens
+### Message Broadcasting
+- Targeted broadcasts using player filters
+- Host-only messages for game management
+- Player-only messages for game participation
+- Efficient serialization with minimal payload sizes
 
-## Reconnection Support
-- Automatic state restoration based on current game phase
+### State Management
+- Thread-safe operations with RWMutex
+- Atomic state transitions between game phases
+- Persistent analytics tracking across reconnections
+- Question history management to prevent repeats
+
+### Reconnection Support
+- State restoration based on current game phase
 - Fragment ownership maintained across disconnections
-- Auto-solve and relocation for disconnected players during puzzle phase
-- Host transfer mechanism when host disconnects
-- Session continuity with proper state synchronization
+- Host reconnection to same endpoint with player ID
+- Seamless gameplay continuation after reconnections
+
+---
+
+## Individual vs Central Puzzle Summary
+
+**Key Points for Implementation:**
+
+1. **Complete Separation**: Individual player puzzles and the central shared grid are entirely separate systems
+2. **No Visibility**: Individual puzzle work is completely invisible to other players and the host
+3. **No Reservation**: No space is reserved on the central grid until individual completion
+4. **Activation Trigger**: Only upon individual puzzle completion does a fragment appear on the central grid
+5. **State Isolation**: Individual puzzle state is never included in central puzzle state broadcasts
+6. **Collaborative Focus**: Central grid is purely for collaboration between completed fragments

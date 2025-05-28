@@ -1,0 +1,134 @@
+.manual-code-entry {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.8);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem;
+  z-index: 100;
+}
+
+.manual-entry-content {
+  background: white;
+  border-radius: 1.5rem;
+  padding: 2rem;
+  max-width: 400px;
+  width: 100%;
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.2);
+}
+
+.manual-entry-content h3 {
+  font-size: 1.5rem;
+  color: #134E4A;
+  margin-bottom: 0.5rem;
+  font-weight: 700;
+  text-align: center;
+}
+
+.manual-entry-content p {
+  font-size: 0.95rem;
+  color: #0F766E;
+  text-align: center;
+  margin-bottom: 1.5rem;
+  opacity: 0.8;
+}
+
+.code-input {
+  width: 100%;
+  padding: 1rem;
+  font-size: 1.1rem;
+  font-family: monospace;
+  text-align: center;
+  border: 2px solid #E0F2FE;
+  border-radius: 0.75rem;
+  background: #F0FDFA;
+  color: #134E4A;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  transition: all 0.3s ease;
+  margin-bottom: 1.5rem;
+}
+
+.code-input:focus {
+  border-color: #2DD4BF;
+  background: white;
+  box-shadow: 0 0 0 3px rgba(45, 212, 191, 0.1);
+}
+
+.code-input.error {
+  border-color: #EF4444;
+  background: #FEE2E2;
+  animation: shake 0.3s ease;
+}
+
+.code-input::placeholder {
+  color: #0F766E;
+  opacity: 0.5;
+  font-family: inherit;
+}
+
+.manual-entry-buttons {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.manual-entry-buttons button {
+  padding: 0.75rem 1rem;
+  font-size: 1rem;
+  border-radius: 0.75rem;
+  font-weight: 600;
+  transition: all 0.3s ease;
+}
+
+.manual-entry-buttons .btn-secondary {
+  background: white;
+  color: #14B8A6;
+  border: 2px solid #14B8A6;
+}
+
+.manual-entry-buttons .btn-secondary:active {
+  background: #F0FDFA;
+  transform: scale(0.98);
+}
+
+.manual-entry-buttons .btn-primary {
+  background: linear-gradient(135deg, #2DD4BF 0%, #14B8A6 100%);
+  color: white;
+  border: 2px solid transparent;
+}
+
+.manual-entry-buttons .btn-primary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.manual-entry-buttons .btn-primary:not(:disabled):active {
+  transform: scale(0.98);
+}
+
+.code-hint {
+  font-size: 0.875rem;
+  color: #0F766E;
+  text-align: center;
+  margin: 0;
+  opacity: 0.6;
+  font-style: italic;
+}
+
+@keyframes shake {
+  0%, 100% {
+    transform: translateX(0);
+  }
+  10%, 30%, 50%, 70%, 90% {
+    transform: translateX(-5px);
+  }
+  20%, 40%, 60%, 80% {
+    transform: translateX(5px);
+  }
+}

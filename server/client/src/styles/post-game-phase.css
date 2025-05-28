@@ -1,0 +1,359 @@
+.post-game-phase {
+  min-height: 100vh;
+  background: linear-gradient(135deg, #F0FDFA 0%, #FFFFFF 100%);
+  padding: 2rem 1rem;
+  position: relative;
+  overflow-x: hidden;
+}
+
+/* Overview Container */
+.overview-container {
+  max-width: 500px;
+  margin: 0 auto;
+}
+
+.result-header {
+  text-align: center;
+  margin-bottom: 2rem;
+}
+
+.result-icon {
+  font-size: 5rem;
+  margin-bottom: 1rem;
+  display: inline-block;
+  filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.1));
+}
+
+.result-header h1 {
+  font-size: 2.5rem;
+  color: #134E4A;
+  margin-bottom: 0.5rem;
+  font-weight: 800;
+}
+
+.result-subtitle {
+  font-size: 1.25rem;
+  color: #0F766E;
+  opacity: 0.8;
+}
+
+/* Stats Grid */
+.stats-grid {
+  display: grid;
+  gap: 1rem;
+  margin-bottom: 2rem;
+}
+
+.stat-card {
+  background: white;
+  border-radius: 1.5rem;
+  padding: 1.5rem;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+  text-align: center;
+  position: relative;
+  overflow: hidden;
+}
+
+.stat-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 4px;
+  background: linear-gradient(135deg, #2DD4BF 0%, #14B8A6 100%);
+}
+
+.stat-card h3 {
+  font-size: 1.1rem;
+  color: #134E4A;
+  margin-bottom: 1rem;
+  font-weight: 700;
+}
+
+.stat-value {
+  font-size: 2.5rem;
+  color: #134E4A;
+  font-weight: 800;
+  margin-bottom: 0.25rem;
+}
+
+.stat-label {
+  font-size: 0.875rem;
+  color: #0F766E;
+  opacity: 0.8;
+  margin-bottom: 1rem;
+}
+
+.progress-container {
+  width: 120px;
+  height: 120px;
+  margin: 0 auto;
+}
+
+.token-stats {
+  display: flex;
+  justify-content: center;
+  gap: 1.5rem;
+  margin-top: 1rem;
+}
+
+.token-stat {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.token-icon {
+  font-size: 2rem;
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.1));
+}
+
+.token-count {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: #134E4A;
+}
+
+.view-details {
+  margin-top: 1rem;
+  padding: 0.75rem 1.5rem;
+  font-size: 0.875rem;
+}
+
+/* Leaderboard Preview */
+.leaderboard-preview {
+  background: white;
+  border-radius: 1.5rem;
+  padding: 1.5rem;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+}
+
+.leaderboard-preview h3 {
+  font-size: 1.25rem;
+  color: #134E4A;
+  margin-bottom: 1rem;
+  font-weight: 700;
+  text-align: center;
+}
+
+.leaderboard-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.leaderboard-item {
+  display: flex;
+  align-items: center;
+  padding: 0.75rem;
+  background: #F0FDFA;
+  border-radius: 0.75rem;
+  transition: all 0.3s ease;
+}
+
+.leaderboard-item:hover {
+  transform: translateX(4px);
+  background: #E0F2FE;
+}
+
+.leaderboard-item .rank {
+  font-size: 1.25rem;
+  font-weight: 800;
+  color: #14B8A6;
+  margin-right: 1rem;
+  min-width: 40px;
+}
+
+.leaderboard-item .name {
+  flex: 1;
+  font-weight: 600;
+  color: #134E4A;
+}
+
+.leaderboard-item .score {
+  font-weight: 700;
+  color: #0F766E;
+}
+
+/* Detailed Stats */
+.detailed-stats {
+  max-width: 600px;
+  margin: 0 auto;
+}
+
+.stats-header {
+  display: flex;
+  align-items: center;
+  margin-bottom: 2rem;
+  position: relative;
+}
+
+.stats-header h2 {
+  flex: 1;
+  text-align: center;
+  font-size: 1.75rem;
+  color: #134E4A;
+  font-weight: 700;
+  margin-right: 4rem;
+}
+
+.charts-grid {
+  display: grid;
+  gap: 1.5rem;
+  margin-bottom: 2rem;
+}
+
+.chart-card {
+  background: white;
+  border-radius: 1.5rem;
+  padding: 1.5rem;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+}
+
+.chart-card h3 {
+  font-size: 1.1rem;
+  color: #134E4A;
+  margin-bottom: 1rem;
+  font-weight: 700;
+  text-align: center;
+}
+
+/* Collaboration Stats */
+.collaboration-stats {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.collab-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.collab-label {
+  font-size: 0.875rem;
+  color: #0F766E;
+  font-weight: 600;
+}
+
+.collab-bar {
+  height: 8px;
+  background: #F0FDFA;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.collab-fill {
+  height: 100%;
+  border-radius: 4px;
+  transition: width 1s ease-out;
+}
+
+/* Full Leaderboard */
+.full-leaderboard {
+  background: white;
+  border-radius: 1.5rem;
+  padding: 1.5rem;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+}
+
+.full-leaderboard h3 {
+  font-size: 1.25rem;
+  color: #134E4A;
+  margin-bottom: 1rem;
+  font-weight: 700;
+  text-align: center;
+}
+
+.leaderboard-table {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.leaderboard-row {
+  display: flex;
+  align-items: center;
+  padding: 0.75rem;
+  background: #F0FDFA;
+  border-radius: 0.5rem;
+  transition: all 0.3s ease;
+}
+
+.leaderboard-row:hover {
+  background: #E0F2FE;
+  transform: translateX(2px);
+}
+
+.leaderboard-row.current-player {
+  background: linear-gradient(135deg, #2DD4BF20 0%, #14B8A620 100%);
+  border: 2px solid #2DD4BF;
+}
+
+.leaderboard-row .rank {
+  font-size: 1rem;
+  font-weight: 700;
+  color: #14B8A6;
+  margin-right: 1rem;
+  min-width: 35px;
+}
+
+.leaderboard-row .name {
+  flex: 1;
+  font-weight: 600;
+  color: #134E4A;
+  font-size: 0.9rem;
+}
+
+.leaderboard-row .score {
+  font-weight: 700;
+  color: #0F766E;
+  font-size: 0.9rem;
+}
+
+/* Recharts Custom Styles */
+.recharts-tooltip-wrapper {
+  outline: none !important;
+}
+
+.recharts-default-tooltip {
+  background: white !important;
+  border: 2px solid #E0F2FE !important;
+  border-radius: 0.75rem !important;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1) !important;
+}
+
+.recharts-tooltip-label {
+  color: #134E4A !important;
+  font-weight: 700 !important;
+}
+
+/* Responsive adjustments */
+@media (min-width: 480px) {
+  .stats-grid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+@media (max-width: 380px) {
+  .result-header h1 {
+    font-size: 2rem;
+  }
+  
+  .stat-value {
+    font-size: 2rem;
+  }
+  
+  .token-stats {
+    gap: 1rem;
+  }
+  
+  .chart-card {
+    padding: 1rem;
+  }
+}

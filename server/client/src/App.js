@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import './App.css';
 import { AnimatePresence } from 'framer-motion';
 import {
@@ -119,6 +119,11 @@ function App() {
         });
         break;
 
+      case MessageType.ERROR:
+        console.error('Game error:', payload);
+        // Handle error display if needed
+        break;
+
       default:
         console.log('Unhandled message type:', type);
     }
@@ -126,7 +131,10 @@ function App() {
 
   // Callback for sending authenticated messages
   const sendAuthenticatedMessage = useCallback((type, payload) => {
-    if (!playerId) return;
+    if (!playerId) {
+      console.warn('Cannot send message: playerId not set');
+      return;
+    }
     
     sendMessage({
       type,
@@ -138,16 +146,47 @@ function App() {
   }, [playerId, sendMessage]);
 
   // Update game state when player selects role
-  const handleRoleSelection = (role) => {
+  const handleRoleSelection = useCallback((role) => {
     setGameState(prev => ({ ...prev, playerRole: role }));
     sendAuthenticatedMessage(MessageType.ROLE_SELECTION, { role });
-  };
+  }, [sendAuthenticatedMessage]);
 
   // Update game state when player selects specialties
-  const handleSpecialtySelection = (specialties) => {
+  const handleSpecialtySelection = useCallback((specialties) => {
     setGameState(prev => ({ ...prev, playerSpecialties: specialties }));
     sendAuthenticatedMessage(MessageType.TRIVIA_SPECIALTY_SELECTION, { specialties });
-  };
+  }, [sendAuthenticatedMessage]);
+
+  // Handle location verification
+  const handleLocationVerified = useCallback((hash) => {
+    sendAuthenticatedMessage(MessageType.RESOURCE_LOCATION_VERIFIED, { verifiedHash: hash });
+  }, [sendAuthenticatedMessage]);
+
+  // Handle trivia answer submission
+  const handleAnswerSubmit = useCallback((questionId, answer) => {
+    sendAuthenticatedMessage(MessageType.TRIVIA_ANSWER, { 
+      questionId, 
+      answer, 
+      timestamp: Date.now() 
+    });
+  }, [sendAuthenticatedMessage]);
+
+  // Handle segment completion
+  const handleSegmentCompleted = useCallback((segmentId) => {
+    sendAuthenticatedMessage(MessageType.SEGMENT_COMPLETED, {
+      segmentId,
+      completionTimestamp: Date.now()
+    });
+  }, [sendAuthenticatedMessage]);
+
+  // Handle fragment move request
+  const handleFragmentMoveRequest = useCallback((fragmentId, newPosition) => {
+    sendAuthenticatedMessage(MessageType.FRAGMENT_MOVE_REQUEST, {
+      fragmentId,
+      newPosition,
+      timestamp: Date.now()
+    });
+  }, [sendAuthenticatedMessage]);
 
   return (
     <div className="App">
@@ -181,16 +220,8 @@ function App() {
             key="resource"
             resourceHashes={gameState.resourceHashes}
             currentQuestion={gameState.currentQuestion}
-            onLocationVerified={(hash) => 
-              sendAuthenticatedMessage(MessageType.RESOURCE_LOCATION_VERIFIED, { verifiedHash: hash })
-            }
-            onAnswerSubmit={(questionId, answer) => 
-              sendAuthenticatedMessage(MessageType.TRIVIA_ANSWER, { 
-                questionId, 
-                answer, 
-                timestamp: Date.now() 
-              })
-            }
+            onLocationVerified={handleLocationVerified}
+            onAnswerSubmit={handleAnswerSubmit}
           />
         )}
 
@@ -199,19 +230,8 @@ function App() {
             key="puzzle"
             puzzleData={gameState.puzzleData}
             playerId={playerId}
-            onSegmentCompleted={(segmentId) =>
-              sendAuthenticatedMessage(MessageType.SEGMENT_COMPLETED, {
-                segmentId,
-                completionTimestamp: Date.now()
-              })
-            }
-            onFragmentMoveRequest={(fragmentId, newPosition) =>
-              sendAuthenticatedMessage(MessageType.FRAGMENT_MOVE_REQUEST, {
-                fragmentId,
-                newPosition,
-                timestamp: Date.now()
-              })
-            }
+            onSegmentCompleted={handleSegmentCompleted}
+            onFragmentMoveRequest={handleFragmentMoveRequest}
             sendMessage={sendAuthenticatedMessage}
           />
         )}

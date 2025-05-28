@@ -1,52 +1,183 @@
 sequenceDiagram
-    participant C as Client
+    participant H as Host
     participant S as Server
-    
-    Note over C,S: Setup Phase
-    
-    C->>S: WebSocket Connection
-    S->>C: available_roles (with playerId, roles, bonuses, trivia categories)
-    C->>S: role_selection (with auth wrapper)
-    C->>S: trivia_specialty_selection (with auth wrapper)
-    
-    loop Waiting for Game Start
-        S->>C: game_lobby_status (player count, roles, game starting status)
-    end
-    
-    Note over C,S: Resource Gathering Phase Start
-    
-    S->>C: resource_phase_start (resource hashes)
-    
-    loop For Each Trivia Round
-        alt Client Changes Location
-            C->>S: resource_location_verified (verified hash)
+    participant P1 as Player1
+    participant P2 as Player2
+
+    Note over H,P2: Connection Phase
+
+    %% Host Connection
+    H->>S: WebSocket Connection to /ws/host/{uuid}
+    S->>H: available_roles (isHost: true, playerId, welcome message)
+
+    %% Player Connections
+    P1->>S: WebSocket Connection to /ws
+    S->>P1: available_roles (playerId, roles, bonuses, trivia categories)
+
+    P2->>S: WebSocket Connection to /ws
+    S->>P2: available_roles (playerId, roles, bonuses, trivia categories)
+
+    Note over H,P2: Setup Phase - Role Selection
+
+    P1->>S: role_selection (with auth wrapper)
+    S->>H: host_update (player statuses, counts)
+    S-->>P1: game_lobby_status
+    S-->>P2: game_lobby_status
+
+    P1->>S: trivia_specialty_selection (with auth wrapper)
+    Note over P1,S: Player1 auto-marked ready after specialty selection
+
+    P2->>S: role_selection (with auth wrapper)
+    P2->>S: trivia_specialty_selection (with auth wrapper)
+    Note over P2,S: Player2 auto-marked ready after specialty selection
+
+    S->>H: host_update (all players ready)
+    S-->>P1: game_lobby_status (ready to start)
+    S-->>P2: game_lobby_status (ready to start)
+
+    Note over H,P2: Game Start (Host-Controlled)
+
+    H->>S: host_start_game (with auth wrapper)
+    S-->>P1: resource_phase_start (resource hashes)
+    S-->>P2: resource_phase_start (resource hashes)
+    S->>H: host_update (phase: resource_gathering)
+
+    Note over H,P2: Resource Gathering Phase
+
+    loop For Each Round (5x default)
+
+        alt Player Changes Location
+            P1->>S: resource_location_verified (verified hash, with auth)
+            P2->>S: resource_location_verified (verified hash, with auth)
         end
-        S->>C: trivia_question
-        C->>S: trivia_answer (with auth wrapper)
+
+        Note over S: One trivia question sent per round (60 seconds per round default)
+        S->>P1: trivia_question (same time limit for all questions)
+        S->>P2: trivia_question (same time limit for all questions)
+
+        P1->>S: trivia_answer (with auth wrapper)
+        P2->>S: trivia_answer (with auth wrapper)
+
+        S-->>P1: team_progress_update (team tokens, questions answered)
+        S-->>P2: team_progress_update (team tokens, questions answered)
+        S->>H: host_update (round progress, team tokens, player locations)
+
     end
-    
-    loop Progress Updates (Independent)
-        S->>C: team_progress_update (questions answered, team tokens)
+
+    Note over H,P2: Puzzle Assembly Phase Start
+
+    S-->>P1: image_preview (if clarity tokens earned)
+    S-->>P2: image_preview (if clarity tokens earned)
+
+    S->>P1: puzzle_phase_load (imageId, segmentId, gridSize, preSolved)
+    S->>P2: puzzle_phase_load (imageId, segmentId, gridSize, preSolved)
+    S->>H: puzzle_phase_load (host version with monitoring info)
+
+    H->>S: host_start_puzzle (with auth wrapper)
+    S-->>P1: puzzle_phase_start (startTimestamp, totalTime with chronos bonus)
+    S-->>P2: puzzle_phase_start (startTimestamp, totalTime with chronos bonus)
+
+    Note over H,P2: Individual Puzzle Solving
+
+    P1->>S: segment_completed (with auth wrapper)
+    S->>P1: segment_completion_ack (gridPosition coordinates)
+    Note over S,P1: P1's fragment now becomes visible and movable by P1 only
+    S->>P1: personal_puzzle_state (all visible fragments + guide highlight area)
+
+    alt Guide Tokens Available
+        Note over S,P1: Guide highlight area sent with personal puzzle state (linear precision based on thresholds)
     end
-    
-    Note over C,S: Puzzle Assembly Phase
-    
-    S->>C: puzzle_phase_load (imageId, segmentId, gridSize)
-    Note over C: Client loads puzzle assets
-    S->>C: puzzle_phase_start (startTimestamp)
-    
-    C->>S: segment_completed (with auth wrapper)
-    S->>C: segment_completion_ack (gridPosition coordinates)
-    
-    loop Fragment Movement
-        C->>S: fragment_move_request (with auth wrapper)
-        S->>C: fragment_move_response (status, cooldown info)
-        S->>C: central_puzzle_state (updated puzzle state)
+
+    P2->>S: segment_completed (with auth wrapper)
+    S->>P2: segment_completion_ack (gridPosition coordinates)
+    Note over S,P2: P2's fragment now becomes visible and movable by P2 only
+    S->>P2: personal_puzzle_state (all visible fragments + guide highlight area)
+
+    Note over H,P2: Collaborative Fragment Movement
+
+    loop Fragment Movement and Collaboration
+
+        P1->>S: fragment_move_request (own fragmentId, newPosition, with auth)
+        alt Ownership Check and Cooldown Check Passed
+            S->>P1: fragment_move_response (status: success, fragment details)
+            S-->>P1: personal_puzzle_state (updated grid with guide highlighting)
+            S-->>P2: personal_puzzle_state (updated grid with guide highlighting)
+            S->>H: host_update (complete puzzle state, all fragment positions with ownership)
+        else Ownership Check Failed
+            S->>P1: fragment_move_response (status: denied, ownership error)
+        else Cooldown Active
+            S->>P1: fragment_move_response (status: ignored, cooldown info)
+        end
+
+        alt Strategic Recommendation (for unassigned fragments)
+            P1->>S: piece_recommendation_request (toPlayerId, positions, with auth)
+            S->>P2: piece_recommendation (from P1, strategic suggestion)
+
+            P2->>S: piece_recommendation_response (recommendationId, accepted, with auth)
+
+            alt Recommendation Accepted (affects unassigned fragments only)
+                S-->>P1: personal_puzzle_state (moves executed)
+                S-->>P2: personal_puzzle_state (moves executed)
+                S->>H: host_update (complete puzzle state after strategic moves)
+            end
+        end
+
     end
-    
-    Note over C,S: Post-Game
-    
-    S->>C: game_analytics (personal, team, and global stats)
-    S->>C: game_reset (reconnection required)
-    
-    Note over C,S: Players must reconnect to start new game
+
+    Note over H,P2: Puzzle Completion Check
+
+    alt Puzzle Completed Successfully
+        S-->>P1: game_analytics (personal, team, leaderboard)
+        S-->>P2: game_analytics (personal, team, leaderboard)
+        S->>H: host_update (game completed, final analytics)
+    else Time Expired
+        S-->>P1: game_analytics (incomplete game stats)
+        S-->>P2: game_analytics (incomplete game stats)
+        S->>H: host_update (game failed, final analytics)
+    end
+
+    Note over H,P2: Post-Game Reset
+
+    S-->>P1: game_reset (reconnection required)
+    S-->>P2: game_reset (reconnection required)
+    S->>H: game_reset (reconnection required)
+
+    Note over H,P2: Players must reconnect to start new game
+
+    rect rgb(255, 240, 240)
+        Note over H,P2: Error Handling Examples
+
+        alt Validation Error
+            P1->>S: invalid_message (malformed data)
+            S->>P1: error (validation_error, details)
+        end
+
+        alt Authentication Error
+            P1->>S: message_with_wrong_playerid (wrong auth)
+            S->>P1: error (authentication_error)
+        end
+
+        alt Host Privilege Error
+            P1->>S: host_start_game (non-host trying host action)
+            S->>P1: error (only host can start the game)
+        end
+
+        alt Disconnection Handling
+            P2--xS: WebSocket disconnected
+
+            alt During Puzzle Phase
+                S-->>P1: central_puzzle_state (playerDisconnected: P2)
+                S->>H: host_update (player disconnected)
+                Note over S: P2's fragment auto-solved and relocated
+            end
+
+            alt Host Disconnection
+                H--xS: Host WebSocket disconnected
+                S-->>P1: error (type: host_disconnected, game paused)
+                S-->>P2: error (type: host_disconnected, game paused)
+                Note over S: Game paused until host reconnects to host endpoint
+            end
+
+            Note over H,P2: Players cannot reconnect during puzzle assembly phase
+        end
+    end

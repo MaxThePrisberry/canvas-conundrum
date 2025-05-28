@@ -292,6 +292,7 @@ All client-to-server events after initial connection use this wrapper:
   "preSolved": false
 }
 ```
+**CRITICAL**: This loads the player's individual 16-piece puzzle segment that they must solve privately. This segment has NO connection to the central shared puzzle grid until completion.
 
 **Puzzle Phase Load (Host):**
 ```json
@@ -313,6 +314,23 @@ All client-to-server events after initial connection use this wrapper:
 ```
 *Total time includes chronos token bonuses*
 
+#### Individual vs Central Puzzle System
+
+**CRITICAL DISTINCTION**: Canvas Conundrum operates with two completely separate puzzle systems:
+
+1. **Individual Player Puzzles** (Private, Invisible to Others):
+   - Each player receives a unique 16-piece puzzle segment to solve privately
+   - These individual puzzles are completely separate from the central grid
+   - No visibility on shared screens until completion
+   - No space reserved on central grid until completion
+   - Players work on these individually without affecting the shared game state
+
+2. **Central Shared Puzzle Grid** (Public, Collaborative):
+   - Only activated when players complete their individual puzzles
+   - Each completed individual puzzle becomes one movable fragment on the shared grid
+   - Collaborative space where players move their completed fragments to correct positions
+   - Visible to all players and host for coordination
+
 #### Grid and Fragment Management
 
 **Dynamic Grid Sizing:**
@@ -320,6 +338,12 @@ All client-to-server events after initial connection use this wrapper:
 - 10-16 players: 4×4 grid (16 fragments)
 - 17-25 players: 5×5 grid (25 fragments)
 - Continues scaling to 8×8 maximum
+
+**Fragment Lifecycle:**
+1. **Invisible Phase**: Player works on individual 16-piece puzzle (not visible to others)
+2. **Completion Trigger**: Player completes individual puzzle and sends completion message
+3. **Activation Phase**: Individual puzzle becomes one fragment on central shared grid
+4. **Collaborative Phase**: Fragment becomes visible and movable on shared puzzle grid
 
 **Fragment Movement Protocol:**
 - Movement cooldown: 1000ms consistently applied
@@ -340,6 +364,7 @@ All client-to-server events after initial connection use this wrapper:
   }
 }
 ```
+**CRITICAL**: This event transforms the player's individual puzzle into a fragment on the central shared grid. Before this event, the individual puzzle work is completely invisible to other players and the central grid.
 
 **Fragment Move Request (All Players):**
 ```json
@@ -354,6 +379,7 @@ All client-to-server events after initial connection use this wrapper:
   }
 }
 ```
+**Note**: Only applies to fragments on the central shared grid, not individual puzzles
 
 **Host Start Puzzle Timer (Host Only):**
 ```json
@@ -375,6 +401,7 @@ All client-to-server events after initial connection use this wrapper:
   "gridPosition": {"x": 2, "y": 3}
 }
 ```
+**CRITICAL**: This confirms that the player's individual puzzle has been converted to a fragment on the central shared grid at the specified position.
 
 **Fragment Move Response:**
 ```json
@@ -421,7 +448,7 @@ All client-to-server events after initial connection use this wrapper:
   "playerDisconnected": "disconnected-player-uuid"
 }
 ```
-*Note: Fragments only become visible after individual puzzle completion. Players can only move their own fragments or unassigned fragments.*
+**CRITICAL**: This shows only the central shared puzzle grid. Individual puzzles in progress are NOT included here and remain completely invisible until completion.
 
 #### Collaboration System
 
@@ -512,6 +539,7 @@ All client-to-server events after initial connection use this wrapper:
   }
 }
 ```
+**CRITICAL**: This personal view shows only the central shared puzzle grid, not the player's individual puzzle work in progress.
 
 **Token Effects Summary:**
 - **Anchor Tokens**: Pre-solve puzzle pieces (max 12 of 16 pieces)
@@ -694,3 +722,16 @@ All client-to-server events after initial connection use this wrapper:
 - Fragment ownership maintained across disconnections
 - Host reconnection to same endpoint with player ID
 - Seamless gameplay continuation after reconnections
+
+---
+
+## Individual vs Central Puzzle Summary
+
+**Key Points for Implementation:**
+
+1. **Complete Separation**: Individual player puzzles and the central shared grid are entirely separate systems
+2. **No Visibility**: Individual puzzle work is completely invisible to other players and the host
+3. **No Reservation**: No space is reserved on the central grid until individual completion
+4. **Activation Trigger**: Only upon individual puzzle completion does a fragment appear on the central grid
+5. **State Isolation**: Individual puzzle state is never included in central puzzle state broadcasts
+6. **Collaborative Focus**: Central grid is purely for collaboration between completed fragments

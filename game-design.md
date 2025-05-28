@@ -37,7 +37,7 @@ Canvas Conundrum uses a dedicated host model for reliable game management:
   - Select character roles with resource bonuses
   - Choose trivia specialty categories
   - Answer trivia questions during resource gathering
-  - Solve individual puzzle segments
+  - Solve individual puzzle segments privately
   - Collaborate on puzzle assembly through recommendations
   - Move fragments on shared puzzle grid
 - **Requirements**: Host must be connected for game to start
@@ -188,7 +188,80 @@ All communication after initial connection requires authentication:
 **Duration**: Base 300 seconds + chronos bonuses + difficulty modifiers
 **Participants**: Players solve and collaborate (host monitors)
 
+## CRITICAL: Dual-Puzzle System Architecture
+
+**FUNDAMENTAL DESIGN PRINCIPLE**: Canvas Conundrum operates with two completely independent puzzle systems that remain entirely separate until a specific transition moment. Understanding this separation is crucial for proper implementation.
+
+### System 1: Individual Player Puzzles (Private & Invisible)
+
+**Complete Isolation Characteristics:**
+- **Zero Visibility**: Individual puzzle work is completely invisible to all other players, the host, and any shared displays
+- **No Grid Connection**: Individual puzzles have absolutely no relationship to the central shared puzzle grid
+- **No Space Reservation**: No position, placeholder, or reservation exists on the central grid during individual solving
+- **Isolated Processing**: Individual puzzle state is processed completely separately from shared game state
+- **Private Workspace**: Each player works in their own private puzzle-solving environment
+
+**Individual Puzzle Mechanics:**
+- **Assignment**: Each player receives exactly one unique 16-piece puzzle segment (e.g., `segment_a5`, `segment_b2`)
+- **Content**: Each segment contains 16 individual jigsaw pieces that form part of the larger artwork
+- **Solving Process**: Players arrange these 16 pieces into the correct configuration privately
+- **Pre-solving Effects**: Anchor tokens can pre-solve up to 12 of these 16 pieces, leaving minimum 4 for manual solving
+- **No Interaction**: Other players cannot see, help with, or influence individual puzzle progress
+- **Host Blindness**: Host cannot monitor or view individual puzzle progress in real-time
+
+**Individual Puzzle Workflow:**
+1. **Phase Start**: Player receives `puzzle_phase_load` with their unique `segmentId`
+2. **Private Solving**: Player works on 16-piece puzzle completely invisibly
+3. **No Broadcasting**: No progress updates sent to other players or host
+4. **Completion Trigger**: Player completes arrangement and sends `segment_completed` message
+5. **Transformation**: Individual puzzle immediately converts to central grid fragment
+
+### System 2: Central Shared Puzzle Grid (Public & Collaborative)
+
+**Collaborative Space Characteristics:**
+- **Full Visibility**: All activities visible to all players and host in real-time
+- **Fragment-Based**: Operates with completed puzzle fragments, not individual pieces
+- **Post-Completion Only**: Only becomes populated after individual puzzle completions
+- **Shared Control**: Players can move fragments collaboratively within ownership rules
+- **Real-Time Updates**: All movements immediately broadcast to all participants
+
+**Central Grid Mechanics:**
+- **Dynamic Scaling**: Grid size automatically scales with player count
+- **Fragment Creation**: Each completed individual puzzle becomes one movable fragment
+- **Position Assignment**: Fragments appear at predetermined grid coordinates
+- **Movement Rules**: Players can move their own fragments and unassigned fragments
+- **Collaboration Features**: Recommendation system for strategic coordination
+
+### The Critical Transformation Moment
+
+**Individual Completion → Central Fragment Activation:**
+
+This is the single most important transition in the entire game system:
+
+1. **Pre-Completion State**:
+   - Individual puzzle exists only in player's private space
+   - Central grid shows no trace of this puzzle
+   - Other players see no indication of progress
+   - Host displays show no fragment for this player
+
+2. **Completion Trigger**:
+   - Player arranges final pieces of their 16-piece puzzle
+   - Player sends `segment_completed` message with `segmentId` and timestamp
+   - Server validates completion and assigns grid position
+
+3. **Instant Transformation**:
+   - Individual 16-piece puzzle instantly becomes one single fragment
+   - Fragment appears at designated position on central shared grid
+   - Fragment becomes visible to all players and host immediately
+   - Fragment becomes movable according to ownership rules
+
+4. **Post-Completion State**:
+   - Individual puzzle workspace no longer exists for that player
+   - Player now participates only in central grid collaboration
+   - Fragment participates in shared puzzle assembly process
+
 #### Dynamic Grid System
+
 **Grid Scaling Algorithm:**
 ```
 Player Count → Grid Size → Total Fragments
@@ -202,59 +275,51 @@ Player Count → Grid Size → Total Fragments
 
 **Grid Properties:**
 - Always maintains perfect square shape
-- Each player receives one puzzle segment (16 pieces each)
+- Each player's completed individual puzzle becomes exactly one fragment
 - Grid positions calculated deterministically
-- Supports swapping between any positions
+- Supports position swapping between any fragments
 
-#### Individual Puzzle Solving
-**Segment Assignment:**
-- Each player receives unique 16-piece puzzle segment
-- Segments named: `segment_a1`, `segment_b2`, etc.
-- Segment difficulty configurable per game settings
-- Pre-solved segments (from anchor tokens) marked as complete
+#### Fragment Ownership and Movement System
 
-**Solving Process:**
-1. Players solve their individual 16-piece puzzle
-2. Completion triggers server acknowledgment
-3. **Fragment becomes visible, movable, and fills a space on central grid**
-4. Guide token hints provided if available
-5. Fragment can now be moved by any player on shared grid
+**Ownership Categories:**
+1. **Player-Owned Fragments**: Created when player completes individual puzzle
+   - Only the creating player can move their own fragment
+   - Clearly identified with player ID in fragment data
+   - Maintains ownership until game completion or disconnection
 
-**Fragment Visibility:**
-- Fragments are invisible until individual puzzle completion
-- Only completed fragments appear on player screens and host display
-- Pre-solved fragments (from anchor tokens) are immediately visible
-- **Personal Puzzle View**: Each player sees all visible fragments with guide highlighting for their own piece
+2. **Unassigned Fragments**: Pre-solved by anchor tokens or from disconnected players
+   - Any player can move these fragments
+   - No specific ownership restrictions
+   - Marked as `playerId: null` in system
 
-#### Collaborative Grid Assembly
-**Fragment Ownership and Movement:**
-- **Individual Ownership**: Players can only move their own completed fragment
-- **Unassigned Fragments**: All players can move fragments not owned by any player. These fragments are gradually added as players finish their individual fragments
-- **Movement Restrictions**: Cannot move other players' active fragments
-- **Disconnected Fragments**: Become unassigned and movable by anyone
+3. **Disconnected Player Fragments**: Auto-solved and become unassigned
+   - Immediately converted to unassigned status
+   - Can be moved by any remaining player
+   - Maintains correct solution but loses ownership
 
-**Personal Puzzle Display:**
-- Each player sees a personal view of the complete puzzle grid
-- Shows all currently visible fragments and their real-time positions
-- Highlights suggested area for their own fragment (guide token effect)
-- Smaller version of what the host displays on main screen
-- Guide highlighting becomes more precise with additional token thresholds
+**Movement Mechanics:**
+- **Movement Cooldown**: 1000ms enforced consistently across all fragment types
+- **Position Validation**: All moves validated against grid boundaries (0 to gridSize-1)
+- **Collision Resolution**: Fragments swap positions when movement causes collision
+- **Permission Checking**: Server validates ownership before allowing movement
+- **State Synchronization**: All movements immediately broadcast to all participants
 
-**Fragment Movement:**
-- **Movement Cooldown**: 1000ms enforced consistently
-- **Position Swapping**: Fragments swap positions when collision occurs
-- **Ownership Validation**: Server validates movement permissions
-- **State Synchronization**: Real-time updates to all players and host
-- **Host Display**: Complete puzzle state sent to host for projector/main screen display
-- **Host Monitoring**: Live progress tracking with completion percentage and ownership status
+#### Fragment Visibility and State Management
 
-**Movement Validation:**
-- Grid boundary checking (0 to gridSize-1)
-- Cooldown enforcement prevents race conditions
-- Position conflict resolution through swapping
-- Comprehensive logging for move history
+**Visibility Rules:**
+- **Invisible Until Completion**: Fragments only become visible after individual puzzle completion
+- **Immediate Visibility**: Once visible, fragments remain visible to all players and host
+- **Pre-Solved Visibility**: Anchor token pre-solved fragments are immediately visible at game start
+- **Personal View Consistency**: Each player sees identical central grid state
+
+**State Broadcasting:**
+- **Central Puzzle State**: Complete grid state sent to all players and host
+- **Personal Puzzle State**: Individual view with guide highlighting (guide tokens only)
+- **Host Monitoring**: Comprehensive view including fragment ownership and movement history
+- **Real-Time Updates**: State changes broadcast immediately upon fragment movement
 
 #### Strategic Collaboration System
+
 **Piece Recommendation Protocol:**
 ```json
 {
@@ -267,23 +332,70 @@ Player Count → Grid Size → Total Fragments
 ```
 
 **Recommendation Features:**
-- Real-time delivery to target player for strategic discussion
-- Accept/reject mechanism for coordination
-- Only applies to unassigned fragments or strategic suggestions
-- Analytics tracking for collaboration metrics
-- No custom messaging to maintain game flow focus
-- Players must coordinate verbally for their own fragment movements
+- **Strategic Communication**: Players can suggest optimal fragment placements
+- **Accept/Reject Mechanism**: Target player chooses whether to follow suggestions
+- **Analytics Tracking**: All recommendations tracked for collaboration scoring
+- **No Auto-Execution**: Recommendations require explicit acceptance to take effect
+- **Verbal Coordination**: Players encouraged to communicate during collaboration
+
+#### Token Effects in Puzzle Phase
+
+**Guide Token Implementation:**
+- **Personal Highlighting**: Shows highlighted area on player's personal puzzle view
+- **Progressive Precision**: Linear progression from large area to 2-position precision
+- **Own Fragment Only**: Guidance applies only to player's own fragment positioning
+- **Threshold Levels**: Multiple thresholds provide increasingly precise guidance
+- **Visual Integration**: Highlighting overlays on personal puzzle grid view
+
+**Anchor Token Pre-Solving:**
+- **Individual Puzzle Pre-Solving**: Up to 12 of 16 pieces in individual puzzles pre-solved
+- **Central Grid Pre-Population**: Some fragments appear immediately as unassigned
+- **Reduced Workload**: Players solve fewer individual pieces before grid participation
+- **Balanced Challenge**: Minimum 4 pieces always require manual solving
+
+**Chronos Token Time Extension:**
+- **Base Time**: 300 seconds for puzzle assembly phase
+- **Threshold Bonuses**: +20 seconds per threshold level achieved
+- **Total Time Calculation**: Base + (thresholds × 20) + difficulty modifiers
+- **Shared Benefit**: Extended time applies to entire team collaboration period
+
+**Clarity Token Preview:**
+- **Complete Image Display**: Shows full assembled artwork before puzzle phase
+- **Duration Calculation**: Base 3 seconds + 1 second per threshold level
+- **Strategic Value**: Helps players understand spatial relationships and planning
+- **Timing**: Displayed immediately before puzzle phase begins
 
 #### Puzzle Completion Logic
-**Victory Conditions (Both Required):**
-1. All fragments marked as solved (individual puzzles complete)
-2. All fragments positioned at correct grid coordinates
 
-**Completion Checking:**
-- Continuous validation after each move
-- Immediate game end when conditions met
-- Success/failure analytics based on completion
-- Time-based failure if puzzle timer expires
+**Victory Conditions (Both Required):**
+1. **All Fragments Present**: Every player's individual puzzle completed and converted to fragment
+2. **Correct Positioning**: All fragments positioned at their designated correct grid coordinates
+
+**Completion Validation:**
+- **Continuous Checking**: Server validates completion after every fragment movement
+- **Immediate Resolution**: Game ends instantly when both conditions satisfied
+- **Success Analytics**: Comprehensive performance tracking for successful completion
+- **Failure Handling**: Time-based failure if puzzle timer expires before completion
+
+#### Disconnection and Error Handling
+
+**Player Disconnection During Individual Solving:**
+- **Auto-Solve Trigger**: Disconnected player's individual puzzle immediately auto-solved
+- **Fragment Creation**: Auto-solved puzzle converts to unassigned fragment on central grid
+- **Random Placement**: Fragment placed at random grid position to maintain puzzle integrity
+- **Ownership Transfer**: Fragment becomes movable by any remaining player
+
+**Player Disconnection During Collaboration:**
+- **Fragment Status Change**: Player's fragment becomes unassigned immediately
+- **Movement Permission**: Any player can now move the disconnected player's fragment
+- **State Broadcasting**: Disconnection status broadcast to all remaining players
+- **No Reconnection**: No reconnection permitted during puzzle assembly phase
+
+**Host Disconnection:**
+- **Game Pause**: Puzzle timer pauses until host reconnects
+- **Player Notification**: All players notified of host disconnection
+- **State Preservation**: Complete game state maintained for host reconnection
+- **Automatic Recovery**: Game resumes when host reconnects to host endpoint
 
 ### Phase 3: Post-Game Analytics
 **Duration**: 60 seconds display time before reset
@@ -373,7 +485,7 @@ Individual Score =
 ### State Management
 - **Game State**: Atomic transitions between phases
 - **Player State**: Individual progress and analytics tracking
-- **Puzzle State**: Real-time grid synchronization
+- **Puzzle State**: Real-time grid synchronization with dual-system architecture
 - **Analytics**: Persistent tracking across reconnections
 
 ### Security Features
@@ -453,3 +565,29 @@ Individual Score =
 - `-port`: Server port (default: 8080)
 - `-cert/-key`: HTTPS certificate files
 - `-origins`: Allowed CORS origins override
+
+---
+
+## Implementation Summary: Individual vs Central Puzzle System
+
+**Critical Points for Development:**
+
+### Complete System Separation
+1. **Individual Puzzles**: Completely private, invisible, no grid interaction
+2. **Central Grid**: Collaborative space for completed fragments only
+3. **Zero Overlap**: No shared state between systems until completion trigger
+4. **Instant Transformation**: Individual completion immediately creates central fragment
+
+### State Management Requirements
+1. **Dual State Tracking**: Separate tracking systems for individual and central puzzles
+2. **Visibility Control**: Strict enforcement of individual puzzle invisibility
+3. **Transition Handling**: Reliable conversion from individual to central fragment
+4. **Broadcasting Logic**: Different message types for individual vs collaborative phases
+
+### User Experience Design
+1. **Clear Phase Distinction**: Players understand when they're in individual vs collaborative mode
+2. **Smooth Transition**: Seamless experience when individual puzzle becomes collaborative fragment
+3. **Visual Feedback**: Clear indicators of individual progress vs central grid participation
+4. **Collaborative Focus**: Central grid emphasizes teamwork and strategic coordination
+
+This dual-system architecture is fundamental to Canvas Conundrum's unique gameplay experience, ensuring both individual contribution and collaborative problem-solving while maintaining clear separation between private work and shared coordination.

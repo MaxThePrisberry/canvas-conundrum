@@ -263,8 +263,8 @@ func (pm *PlayerManager) SetPlayerSpecialties(playerID string, specialties []str
 		return fmt.Errorf("host cannot select specialties")
 	}
 
-	if len(specialties) > constants.MaxSpecialtiesPerPlayer {
-		return fmt.Errorf("too many specialties selected")
+	if len(specialties) == 0 || len(specialties) > constants.MaxSpecialtiesPerPlayer {
+		return fmt.Errorf("must select 1-2 specialties")
 	}
 
 	// Validate specialties
@@ -273,7 +273,14 @@ func (pm *PlayerManager) SetPlayerSpecialties(playerID string, specialties []str
 		validCategories[cat] = true
 	}
 
+	// Check for duplicates
+	seen := make(map[string]bool)
 	for _, specialty := range specialties {
+		if seen[specialty] {
+			return fmt.Errorf("duplicate specialty: %s", specialty)
+		}
+		seen[specialty] = true
+
 		if !validCategories[specialty] {
 			return fmt.Errorf("invalid specialty: %s", specialty)
 		}
@@ -281,6 +288,7 @@ func (pm *PlayerManager) SetPlayerSpecialties(playerID string, specialties []str
 
 	player.mu.Lock()
 	player.Specialties = specialties
+	player.Ready = true // Auto-ready player after specialty selection
 	player.mu.Unlock()
 
 	return nil
@@ -325,7 +333,7 @@ func (pm *PlayerManager) GetConnectedCount() int {
 	return len(pm.GetConnectedPlayers())
 }
 
-// GetReadyCount returns the number of ready players (including host if connected)
+// GetReadyCount returns the number of ready players (excluding host players)
 func (pm *PlayerManager) GetReadyCount() int {
 	pm.mu.RLock()
 	defer pm.mu.RUnlock()
@@ -333,11 +341,8 @@ func (pm *PlayerManager) GetReadyCount() int {
 	readyCount := 0
 	for _, p := range pm.players {
 		p.mu.RLock()
-		if p.State == StateConnected {
-			// Host is always considered ready if connected
-			if p.IsHost || p.Ready {
-				readyCount++
-			}
+		if p.State == StateConnected && !p.IsHost && p.Ready {
+			readyCount++
 		}
 		p.mu.RUnlock()
 	}

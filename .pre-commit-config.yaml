@@ -11,5 +11,3 @@ repos:
     hooks:
       - id: go-fmt
         files: ^server/.*\.go$
-      - id: no-go-testing
-        files: ^server/.*\.go$

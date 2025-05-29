@@ -37,20 +37,20 @@ const (
 
 // Regular expressions for validation
 var (
-	playerIDRegex   = regexp.MustCompile(`^[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-4[a-fA-F0-9]{3}-[8|9|aA|bB][a-fA-F0-9]{3}-[a-fA-F0-9]{12}$`)
+	playerIDRegex   = regexp.MustCompile(`^[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12}$`)
 	playerNameRegex = regexp.MustCompile(`^[a-zA-Z0-9_\-\s]{1,50}$`)
 	hashRegex       = regexp.MustCompile(`^[A-Z_0-9]{10,50}$`)
 )
 
-// validatePlayerID validates a player ID format (UUID v4)
-func validatePlayerID(playerID string) ValidationError {
+// validatePlayerID validates a player ID format (UUID)
+func validatePlayerID(playerID string) *ValidationError {
 	if playerID == "" {
-		return ValidationError{Field: "playerId", Message: "player ID cannot be empty"}
+		return &ValidationError{Field: "playerId", Message: "player ID cannot be empty"}
 	}
 	if !playerIDRegex.MatchString(playerID) {
-		return ValidationError{Field: "playerId", Message: "invalid player ID format"}
+		return &ValidationError{Field: "playerId", Message: "invalid player ID format"}
 	}
-	return ValidationError{}
+	return nil
 }
 
 // validatePlayerName validates a player name
@@ -71,9 +71,9 @@ func validatePlayerName(name string) ValidationError {
 }
 
 // validateRole validates a player role selection
-func validateRole(role string) ValidationError {
+func validateRole(role string) *ValidationError {
 	if role == "" {
-		return ValidationError{Field: "role", Message: "role cannot be empty"}
+		return &ValidationError{Field: "role", Message: "role cannot be empty"}
 	}
 
 	validRoles := map[string]bool{
@@ -84,9 +84,9 @@ func validateRole(role string) ValidationError {
 	}
 
 	if !validRoles[role] {
-		return ValidationError{Field: "role", Message: "invalid role selection"}
+		return &ValidationError{Field: "role", Message: "invalid role selection"}
 	}
-	return ValidationError{}
+	return nil
 }
 
 // validateSpecialties validates trivia specialty selections
@@ -187,14 +187,14 @@ func validateTriviaAnswer(questionID, answer string, timestamp int64) []Validati
 }
 
 // validateGridPosition validates a grid position
-func validateGridPosition(pos GridPos, maxGridSize int) ValidationError {
+func validateGridPosition(pos GridPos, maxGridSize int) *ValidationError {
 	if pos.X < MinGridPosition || pos.X >= maxGridSize {
-		return ValidationError{Field: "position.x", Message: fmt.Sprintf("x position out of bounds (0-%d)", maxGridSize-1)}
+		return &ValidationError{Field: "position.x", Message: fmt.Sprintf("x position out of bounds (0-%d)", maxGridSize-1)}
 	}
 	if pos.Y < MinGridPosition || pos.Y >= maxGridSize {
-		return ValidationError{Field: "position.y", Message: fmt.Sprintf("y position out of bounds (0-%d)", maxGridSize-1)}
+		return &ValidationError{Field: "position.y", Message: fmt.Sprintf("y position out of bounds (0-%d)", maxGridSize-1)}
 	}
-	return ValidationError{}
+	return nil
 }
 
 // validateSegmentID validates a puzzle segment ID
@@ -222,8 +222,8 @@ func validateFragmentMove(fragmentID string, newPos GridPos, timestamp int64, ma
 		errors = append(errors, ValidationError{Field: "fragmentId", Message: "invalid fragment ID format"})
 	}
 
-	if posErr := validateGridPosition(newPos, maxGridSize); posErr.Field != "" {
-		errors = append(errors, posErr)
+	if posErr := validateGridPosition(newPos, maxGridSize); posErr != nil {
+		errors = append(errors, *posErr)
 	}
 
 	if timestamp <= 0 {
@@ -232,10 +232,10 @@ func validateFragmentMove(fragmentID string, newPos GridPos, timestamp int64, ma
 
 	// Validate ownership format if provided
 	if ownership != "" && ownership != "anyone" {
-		if ownershipErr := validatePlayerID(ownership); ownershipErr.Field != "" {
+		if ownershipErr := validatePlayerID(ownership); ownershipErr != nil {
 			ownershipErr.Field = "ownership"
 			ownershipErr.Message = "invalid fragment ownership format"
-			errors = append(errors, ownershipErr)
+			errors = append(errors, *ownershipErr)
 		}
 	}
 
@@ -246,9 +246,9 @@ func validateFragmentMove(fragmentID string, newPos GridPos, timestamp int64, ma
 func validatePieceRecommendation(toPlayerID, fromFragmentID, toFragmentID string, fromPos, toPos GridPos, maxGridSize int) []ValidationError {
 	var errors []ValidationError
 
-	if playerErr := validatePlayerID(toPlayerID); playerErr.Field != "" {
+	if playerErr := validatePlayerID(toPlayerID); playerErr != nil {
 		playerErr.Field = "toPlayerId"
-		errors = append(errors, playerErr)
+		errors = append(errors, *playerErr)
 	}
 
 	if fromFragmentID == "" {
@@ -265,14 +265,14 @@ func validatePieceRecommendation(toPlayerID, fromFragmentID, toFragmentID string
 
 	// Note: Message field removed - no longer supported
 
-	if fromPosErr := validateGridPosition(fromPos, maxGridSize); fromPosErr.Field != "" {
+	if fromPosErr := validateGridPosition(fromPos, maxGridSize); fromPosErr != nil {
 		fromPosErr.Field = "suggestedFromPos"
-		errors = append(errors, fromPosErr)
+		errors = append(errors, *fromPosErr)
 	}
 
-	if toPosErr := validateGridPosition(toPos, maxGridSize); toPosErr.Field != "" {
+	if toPosErr := validateGridPosition(toPos, maxGridSize); toPosErr != nil {
 		toPosErr.Field = "suggestedToPos"
-		errors = append(errors, toPosErr)
+		errors = append(errors, *toPosErr)
 	}
 
 	return errors
@@ -288,8 +288,8 @@ func validateAuthWrapper(data []byte) (*AuthWrapper, []ValidationError) {
 		return nil, errors
 	}
 
-	if playerErr := validatePlayerID(wrapper.Auth.PlayerID); playerErr.Field != "" {
-		errors = append(errors, playerErr)
+	if playerErr := validatePlayerID(wrapper.Auth.PlayerID); playerErr != nil {
+		errors = append(errors, *playerErr)
 	}
 
 	if len(wrapper.Payload) == 0 {
@@ -326,8 +326,8 @@ func ValidateRoleSelection(payload json.RawMessage) (map[string]interface{}, []V
 		return nil, errors
 	}
 
-	if roleErr := validateRole(data.Role); roleErr.Field != "" {
-		errors = append(errors, roleErr)
+	if roleErr := validateRole(data.Role); roleErr != nil {
+		errors = append(errors, *roleErr)
 	}
 
 	result := map[string]interface{}{

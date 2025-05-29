@@ -37,6 +37,7 @@ func NewGameManager(playerManager *PlayerManager, triviaManager *TriviaManager, 
 			PlayerAnalytics:      make(map[string]*PlayerAnalytics),
 			PieceRecommendations: make(map[string]*PieceRecommendation),
 			CurrentQuestions:     make(map[string]*TriviaQuestion),
+			PuzzleFragments:      make(map[string]*PuzzleFragment),
 		},
 		playerManager:   playerManager,
 		triviaManager:   triviaManager,
@@ -1497,10 +1498,10 @@ func (gm *GameManager) getTotalTokens() int {
 func (gm *GameManager) calculateThresholdsReached() map[string]int {
 	difficultyMod := gm.getDifficultyModifiers()
 	return map[string]int{
-		constants.TokenAnchor:  gm.state.TeamTokens.AnchorTokens / (constants.AnchorTokenThresholds * int(difficultyMod.TokenThresholdModifier)),
-		constants.TokenChronos: gm.state.TeamTokens.ChronosTokens / (constants.ChronosTokenThresholds * int(difficultyMod.TokenThresholdModifier)),
-		constants.TokenGuide:   gm.state.TeamTokens.GuideTokens / (constants.GuideTokenThresholds * int(difficultyMod.TokenThresholdModifier)),
-		constants.TokenClarity: gm.state.TeamTokens.ClarityTokens / (constants.ClarityTokenThresholds * int(difficultyMod.TokenThresholdModifier)),
+		constants.TokenAnchor:  int(float64(gm.state.TeamTokens.AnchorTokens) / (float64(constants.AnchorTokenThresholds) * difficultyMod.TokenThresholdModifier)),
+		constants.TokenChronos: int(float64(gm.state.TeamTokens.ChronosTokens) / (float64(constants.ChronosTokenThresholds) * difficultyMod.TokenThresholdModifier)),
+		constants.TokenGuide:   int(float64(gm.state.TeamTokens.GuideTokens) / (float64(constants.GuideTokenThresholds) * difficultyMod.TokenThresholdModifier)),
+		constants.TokenClarity: int(float64(gm.state.TeamTokens.ClarityTokens) / (float64(constants.ClarityTokenThresholds) * difficultyMod.TokenThresholdModifier)),
 	}
 }
 

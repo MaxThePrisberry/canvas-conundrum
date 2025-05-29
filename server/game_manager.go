@@ -165,9 +165,6 @@ func (gm *GameManager) runResourceGatheringPhase() {
 		},
 	}
 
-	// Apply difficulty modifiers
-	difficultyMod := gm.getDifficultyModifiers()
-
 	// FIXED: Each round is exactly 60 seconds with 1 question per round
 	roundDuration := time.Duration(constants.ResourceGatheringRoundDuration) * time.Second
 
@@ -256,7 +253,6 @@ func (gm *GameManager) sendSynchronizedTriviaQuestion() {
 func (gm *GameManager) runTriviaRound() {
 	difficultyMod := gm.getDifficultyModifiers()
 	roundDuration := time.Duration(float64(constants.ResourceGatheringRoundDuration)*difficultyMod.TimeLimitModifier) * time.Second
-	questionInterval := time.Duration(constants.TriviaQuestionInterval) * time.Second
 
 	roundEnd := time.Now().Add(roundDuration)
 
@@ -271,9 +267,8 @@ func (gm *GameManager) runTriviaRound() {
 		// Send progress update
 		gm.sendTeamProgressUpdate()
 
-		// Wait for next question interval
 		select {
-		case <-time.After(questionInterval):
+		case <-time.After(30 * time.Second): // Fixed 30 second interval
 			continue
 		case <-gm.stopChan:
 			return
@@ -436,26 +431,6 @@ func (gm *GameManager) ProcessTriviaAnswer(playerID, questionID, answer string) 
 			category = category[:idx]
 		}
 	}
-
-	// Calculate running accuracy for this category
-	totalForCategory := 0
-	correctForCategory := 0
-	for _, q := range gm.state.QuestionHistory[playerID] {
-		if q { // Question was asked
-			totalForCategory++
-		}
-	}
-	// This is a simplified accuracy calculation - in a full implementation,
-	// you'd track category-specific correct/total counts
-	if totalForCategory > 0 {
-		analytics.TriviaPerformance.AccuracyByCategory[category] = float64(analytics.TriviaPerformance.CorrectAnswers) / float64(analytics.TriviaPerformance.TotalQuestions)
-	}
-
-	// Remove current question (answered)
-	delete(gm.state.CurrentQuestions, playerID)
-
-	log.Printf("Player %s answered question %s: correct=%v, tokens awarded for location %s",
-		playerID, questionID, correct, player.CurrentLocation)
 
 	return nil
 }
@@ -889,7 +864,7 @@ func (gm *GameManager) ProcessSegmentCompleted(playerID, segmentID string) error
 		playerID, segmentID, fragmentID)
 
 	// ENHANCED: Update all players' personal puzzle states since a new fragment is now visible
-	gm.broadcastPersonalPuzzleStates()
+	gm.BroadcastPersonalPuzzleStates()
 
 	// Update host with new fragment visibility
 	gm.sendCompletePuzzleStateToHost()
@@ -1032,7 +1007,7 @@ func (gm *GameManager) ProcessFragmentMove(playerID, fragmentID string, newPos G
 	}
 
 	// ENHANCED: Broadcast updated personal puzzle states to all players
-	gm.broadcastPersonalPuzzleStates()
+	gm.BroadcastPersonalPuzzleStates()
 
 	// Update host with complete puzzle state
 	gm.sendCompletePuzzleStateToHost()
@@ -1754,7 +1729,7 @@ func (gm *GameManager) handleFragmentDisconnection(playerID string) {
 	log.Printf("Converted fragment %s to unassigned due to player %s disconnection", fragmentID, playerID)
 
 	// Broadcast updated states
-	gm.broadcastPersonalPuzzleStates()
+	gm.BroadcastPersonalPuzzleStates()
 	gm.sendCompletePuzzleStateToHost()
 }
 

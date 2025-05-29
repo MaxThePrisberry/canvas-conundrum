@@ -449,7 +449,7 @@ func ValidateFragmentMove(payload json.RawMessage, maxGridSize int) (map[string]
 		return nil, errors
 	}
 
-	errors = append(errors, validateFragmentMove(data.FragmentID, data.NewPosition, data.Timestamp, maxGridSize)...)
+	errors = append(errors, validateFragmentMove(data.FragmentID, data.NewPosition, data.Timestamp, maxGridSize, "")...)
 
 	result := map[string]interface{}{
 		"fragmentId":  data.FragmentID,

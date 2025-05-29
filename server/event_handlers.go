@@ -244,10 +244,10 @@ func (eh *EventHandlers) HandlePieceRecommendationRequest(playerID string, paylo
 	}
 
 	// Process the recommendation (no custom message support)
+	// FIXED: Removed empty string parameter that was passed for message
 	return eh.gameManager.ProcessPieceRecommendation(
 		playerID,
 		data.ToPlayerID,
-		"", // No custom messages supported
 		data.FromFragmentID,
 		data.ToFragmentID,
 		data.SuggestedFromPos,

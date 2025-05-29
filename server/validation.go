@@ -487,7 +487,6 @@ func ValidatePieceRecommendationRequest(payload json.RawMessage, maxGridSize int
 		ToFragmentID     string  `json:"toFragmentId"`
 		SuggestedFromPos GridPos `json:"suggestedFromPos"`
 		SuggestedToPos   GridPos `json:"suggestedToPos"`
-		// Message field removed - no longer accepted
 	}
 
 	var errors []ValidationError
@@ -511,7 +510,6 @@ func ValidatePieceRecommendationRequest(payload json.RawMessage, maxGridSize int
 		"toFragmentId":     data.ToFragmentID,
 		"suggestedFromPos": data.SuggestedFromPos,
 		"suggestedToPos":   data.SuggestedToPos,
-		// No message field in result
 	}
 
 	return result, errors

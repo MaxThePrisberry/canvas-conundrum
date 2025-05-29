@@ -394,7 +394,11 @@ func (gm *GameManager) ProcessTriviaAnswer(playerID, questionID, answer string) 
 			difficultyMod := gm.getDifficultyModifiers()
 			tokensAwarded = int(float64(tokensAwarded) * difficultyMod.TokenThresholdModifier)
 
-			// Add tokens to team total
+			// Check if any token type reached a new threshold and notify players
+			// This is purely informational during resource gathering phase
+			oldThresholds := gm.calculateThresholdsReached()
+
+			// Add the tokens to team total (this code already exists)
 			switch tokenType {
 			case constants.TokenAnchor:
 				gm.state.TeamTokens.AnchorTokens += tokensAwarded
@@ -406,6 +410,17 @@ func (gm *GameManager) ProcessTriviaAnswer(playerID, questionID, answer string) 
 				gm.state.TeamTokens.ClarityTokens += tokensAwarded
 			}
 
+			// Check if any thresholds were reached
+			newThresholds := gm.calculateThresholdsReached()
+			for tokenType, newLevel := range newThresholds {
+				if oldLevel, exists := oldThresholds[tokenType]; exists && newLevel > oldLevel {
+					log.Printf("Team reached new %s token threshold: level %d", tokenType, newLevel)
+
+					// The existing sendTeamProgressUpdate() will include this information
+					// No need for special notifications - the UI can show threshold progress
+				}
+			}
+
 			// Track in player analytics
 			if analytics.TokenCollection == nil {
 				analytics.TokenCollection = make(map[string]int)
@@ -415,11 +430,6 @@ func (gm *GameManager) ProcessTriviaAnswer(playerID, questionID, answer string) 
 			log.Printf("Player %s answered correctly, awarded %d %s tokens (specialty: %v, role bonus: %v)",
 				playerID, tokensAwarded, tokenType, isSpecialtyQuestion,
 				constants.RoleTokenBonuses[player.Role] == tokenType)
-		}
-
-		// Update guide token highlights for all players if guide tokens were earned
-		if tokenType == constants.TokenGuide {
-			gm.updateAllGuideHighlights()
 		}
 	}
 
@@ -753,13 +763,17 @@ func (gm *GameManager) StartPuzzle() error {
 	return nil
 }
 
-// runPuzzleTimer manages the puzzle phase timer
+// Add this to the runPuzzleTimer function to gradually release unassigned fragments
 func (gm *GameManager) runPuzzleTimer(duration time.Duration) {
 	timer := time.NewTimer(duration)
 	defer timer.Stop()
 
 	ticker := time.NewTicker(5 * time.Second)
 	defer ticker.Stop()
+
+	// ADDED: Fragment release ticker - release one unassigned fragment every 30 seconds
+	fragmentReleaseTicker := time.NewTicker(30 * time.Second)
+	defer fragmentReleaseTicker.Stop()
 
 	for {
 		select {
@@ -771,6 +785,9 @@ func (gm *GameManager) runPuzzleTimer(duration time.Duration) {
 			// Send progress updates
 			gm.sendPuzzleProgress()
 			gm.sendHostUpdate()
+		case <-fragmentReleaseTicker.C:
+			// ADDED: Release one unassigned fragment periodically
+			gm.releaseUnassignedFragment()
 		case <-gm.stopChan:
 			return
 		}
@@ -1216,13 +1233,33 @@ func (gm *GameManager) checkPuzzleComplete() bool {
 	return true
 }
 
-// IMPLEMENTED: Piece recommendation system
-func (gm *GameManager) ProcessPieceRecommendation(fromPlayerID, toPlayerID, message string, fromFragmentID, toFragmentID string, suggestedFromPos, suggestedToPos GridPos) error {
+// ProcessPieceRecommendation handles piece recommendation requests
+func (gm *GameManager) ProcessPieceRecommendation(fromPlayerID, toPlayerID string, fromFragmentID, toFragmentID string, suggestedFromPos, suggestedToPos GridPos) error {
 	gm.mu.Lock()
 	defer gm.mu.Unlock()
 
 	if gm.state.Phase != PhasePuzzleAssembly {
 		return fmt.Errorf("not in puzzle assembly phase")
+	}
+
+	// FIXED: Validate that both fragments are unassigned or movable by anyone
+	fromFragment, exists := gm.state.PuzzleFragments[fromFragmentID]
+	if !exists {
+		return fmt.Errorf("from fragment not found: %s", fromFragmentID)
+	}
+
+	toFragment, exists := gm.state.PuzzleFragments[toFragmentID]
+	if !exists {
+		return fmt.Errorf("to fragment not found: %s", toFragmentID)
+	}
+
+	// Check if fragments are unassigned or community-movable
+	if fromFragment.MovableBy != "anyone" || !fromFragment.IsUnassigned {
+		return fmt.Errorf(constants.ErrInvalidRecommendation + ": from fragment is player-owned")
+	}
+
+	if toFragment.MovableBy != "anyone" || !toFragment.IsUnassigned {
+		return fmt.Errorf(constants.ErrInvalidRecommendation + ": to fragment is player-owned")
 	}
 
 	// Create recommendation
@@ -1234,7 +1271,7 @@ func (gm *GameManager) ProcessPieceRecommendation(fromPlayerID, toPlayerID, mess
 		ToFragmentID:     toFragmentID,
 		SuggestedFromPos: suggestedFromPos,
 		SuggestedToPos:   suggestedToPos,
-		Message:          message,
+		Message:          "", // FIXED: No longer accept custom messages
 		Timestamp:        time.Now(),
 	}
 

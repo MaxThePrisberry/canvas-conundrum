@@ -5,6 +5,7 @@ import (
 	"log"
 	"math"
 	"math/rand"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -154,7 +155,7 @@ func (gm *GameManager) StartGame() error {
 	return nil
 }
 
-// runResourceGatheringPhase manages the resource gathering phase
+// runResourceGatheringPhase manages the resource gathering phase - FIXED for 1 question per round
 func (gm *GameManager) runResourceGatheringPhase() {
 	// Send resource phase start message
 	gm.broadcastChan <- BroadcastMessage{
@@ -164,12 +165,11 @@ func (gm *GameManager) runResourceGatheringPhase() {
 		},
 	}
 
-	// Apply difficulty modifiers
-	difficultyMod := gm.getDifficultyModifiers()
+	// FIXED: Each round is exactly 60 seconds with 1 question per round
+	roundDuration := time.Duration(constants.ResourceGatheringRoundDuration) * time.Second
 
-	// Run rounds
-	totalRounds := int(float64(constants.ResourceGatheringRounds) * difficultyMod.TimeLimitModifier)
-	for round := 1; round <= totalRounds; round++ {
+	// Run exactly 5 rounds as specified
+	for round := 1; round <= constants.ResourceGatheringRounds; round++ {
 		gm.mu.Lock()
 		gm.state.CurrentRound = round
 		gm.state.RoundStartTime = time.Now()
@@ -178,26 +178,81 @@ func (gm *GameManager) runResourceGatheringPhase() {
 		// Send round start to host
 		gm.sendHostUpdate()
 
-		// Run trivia questions for this round
-		gm.runTriviaRound()
+		// FIXED: Send exactly ONE question to all non-host players at the start of each round
+		gm.sendSynchronizedTriviaQuestion()
 
-		// Check if game was stopped
+		// Wait for the full round duration (60 seconds)
 		select {
+		case <-time.After(roundDuration):
+			// Round completed normally
+			log.Printf("Round %d completed", round)
 		case <-gm.stopChan:
+			// Game was stopped
 			return
-		default:
 		}
+
+		// Send progress update after each round
+		gm.sendTeamProgressUpdate()
 	}
 
-	// Transition to puzzle phase
+	// All rounds completed, transition to puzzle phase
 	gm.startPuzzlePhase()
+}
+
+// sendSynchronizedTriviaQuestion sends ONE question to all non-host players simultaneously
+func (gm *GameManager) sendSynchronizedTriviaQuestion() {
+	// Get all connected non-host players
+	players := gm.playerManager.GetConnectedNonHostPlayers()
+
+	if len(players) == 0 {
+		log.Println("No non-host players to send trivia questions to")
+		return
+	}
+
+	gm.mu.RLock()
+	difficulty := gm.state.Difficulty
+	gm.mu.RUnlock()
+
+	// Send the same question timing to all players, but personalized questions
+	questionSentTime := time.Now()
+
+	for _, player := range players {
+		// Get player's question history for this specific player
+		gm.mu.RLock()
+		history := gm.state.QuestionHistory[player.ID]
+		gm.mu.RUnlock()
+
+		// Get a personalized question for this player
+		question, err := gm.triviaManager.GetQuestion(difficulty, player.Specialties, history)
+		if err != nil {
+			log.Printf("Error getting trivia question for player %s: %v", player.ID, err)
+			continue
+		}
+
+		// FIXED: Ensure consistent time limit regardless of specialty or difficulty
+		// Specialty questions get the same time limit as regular questions
+		question.TimeLimit = constants.TriviaAnswerTimeout
+
+		// Mark question as asked for this player
+		gm.mu.Lock()
+		if gm.state.QuestionHistory[player.ID] == nil {
+			gm.state.QuestionHistory[player.ID] = make(map[string]bool)
+		}
+		gm.state.QuestionHistory[player.ID][question.ID] = true
+		gm.state.CurrentQuestions[player.ID] = question
+		gm.mu.Unlock()
+
+		// Send question to player
+		sendToPlayer(player, MsgTriviaQuestion, question)
+	}
+
+	log.Printf("Sent synchronized trivia questions to %d players at %v", len(players), questionSentTime)
 }
 
 // runTriviaRound manages a single trivia round - Updated to only send to non-host players
 func (gm *GameManager) runTriviaRound() {
 	difficultyMod := gm.getDifficultyModifiers()
 	roundDuration := time.Duration(float64(constants.ResourceGatheringRoundDuration)*difficultyMod.TimeLimitModifier) * time.Second
-	questionInterval := time.Duration(constants.TriviaQuestionInterval) * time.Second
 
 	roundEnd := time.Now().Add(roundDuration)
 
@@ -212,9 +267,8 @@ func (gm *GameManager) runTriviaRound() {
 		// Send progress update
 		gm.sendTeamProgressUpdate()
 
-		// Wait for next question interval
 		select {
-		case <-time.After(questionInterval):
+		case <-time.After(30 * time.Second): // Fixed 30 second interval
 			continue
 		case <-gm.stopChan:
 			return
@@ -247,7 +301,7 @@ func (gm *GameManager) sendTriviaQuestion(player *Player) {
 	sendToPlayer(player, MsgTriviaQuestion, question)
 }
 
-// ProcessTriviaAnswer handles a player's trivia answer - Updated to exclude hosts
+// ProcessTriviaAnswer handles a player's trivia answer - ENHANCED with better validation
 func (gm *GameManager) ProcessTriviaAnswer(playerID, questionID, answer string) error {
 	gm.mu.Lock()
 	defer gm.mu.Unlock()
@@ -272,19 +326,36 @@ func (gm *GameManager) ProcessTriviaAnswer(playerID, questionID, answer string) 
 		return fmt.Errorf("host does not participate in trivia questions")
 	}
 
-	// Check if player has a location
+	// Check if player has a location (must be at a resource station)
 	if player.CurrentLocation == "" {
-		return fmt.Errorf("player must be at a resource station")
+		return fmt.Errorf("player must be at a resource station to answer questions")
 	}
 
 	// Get the current question for this player
 	currentQuestion, exists := gm.state.CurrentQuestions[playerID]
 	if !exists || currentQuestion.ID != questionID {
-		return fmt.Errorf("invalid or expired question")
+		return fmt.Errorf("invalid or expired question ID")
 	}
 
-	// Validate answer against correct answer
-	correct := strings.EqualFold(strings.TrimSpace(answer), strings.TrimSpace(currentQuestion.CorrectAnswer))
+	// Validate answer using the trivia manager's enhanced comparison
+	correct, err := gm.triviaManager.ValidateAnswer(questionID, answer)
+	if err != nil {
+		log.Printf("Error validating answer for question %s: %v", questionID, err)
+		return fmt.Errorf("error validating answer")
+	}
+
+	// Initialize analytics if not exists
+	if gm.state.PlayerAnalytics[playerID] == nil {
+		gm.state.PlayerAnalytics[playerID] = &PlayerAnalytics{
+			PlayerID:        playerID,
+			PlayerName:      player.Name,
+			TokenCollection: make(map[string]int),
+			TriviaPerformance: TriviaPerformance{
+				AccuracyByCategory: make(map[string]float64),
+			},
+			PuzzleMetrics: PuzzleSolvingMetrics{},
+		}
+	}
 
 	// Update analytics
 	analytics := gm.state.PlayerAnalytics[playerID]
@@ -307,22 +378,27 @@ func (gm *GameManager) ProcessTriviaAnswer(playerID, questionID, answer string) 
 		if tokenType != "" {
 			tokensAwarded := constants.BaseTokensPerCorrectAnswer
 
-			// Apply role bonus if applicable
+			// Apply role bonus if player is at the matching station
 			if bonusToken, ok := constants.RoleTokenBonuses[player.Role]; ok && bonusToken == tokenType {
 				tokensAwarded = int(float64(tokensAwarded) * constants.RoleResourceMultiplier)
 			}
 
-			// Apply specialty point multiplier
+			// Apply specialty point multiplier for specialty questions
 			if isSpecialtyQuestion {
+				specialtyBonus := int(float64(tokensAwarded) * (constants.SpecialtyPointMultiplier - 1.0))
 				tokensAwarded = int(float64(tokensAwarded) * constants.SpecialtyPointMultiplier)
-				analytics.TriviaPerformance.SpecialtyBonus += tokensAwarded - constants.BaseTokensPerCorrectAnswer
+				analytics.TriviaPerformance.SpecialtyBonus += specialtyBonus
 			}
 
-			// Apply difficulty modifiers
+			// Apply difficulty modifiers to token awards
 			difficultyMod := gm.getDifficultyModifiers()
 			tokensAwarded = int(float64(tokensAwarded) * difficultyMod.TokenThresholdModifier)
 
-			// Add tokens to team total
+			// Check if any token type reached a new threshold and notify players
+			// This is purely informational during resource gathering phase
+			oldThresholds := gm.calculateThresholdsReached()
+
+			// Add the tokens to team total (this code already exists)
 			switch tokenType {
 			case constants.TokenAnchor:
 				gm.state.TeamTokens.AnchorTokens += tokensAwarded
@@ -334,15 +410,196 @@ func (gm *GameManager) ProcessTriviaAnswer(playerID, questionID, answer string) 
 				gm.state.TeamTokens.ClarityTokens += tokensAwarded
 			}
 
+			// Check if any thresholds were reached
+			newThresholds := gm.calculateThresholdsReached()
+			for tokenType, newLevel := range newThresholds {
+				if oldLevel, exists := oldThresholds[tokenType]; exists && newLevel > oldLevel {
+					log.Printf("Team reached new %s token threshold: level %d", tokenType, newLevel)
+
+					// The existing sendTeamProgressUpdate() will include this information
+					// No need for special notifications - the UI can show threshold progress
+				}
+			}
+
 			// Track in player analytics
+			if analytics.TokenCollection == nil {
+				analytics.TokenCollection = make(map[string]int)
+			}
 			analytics.TokenCollection[tokenType] += tokensAwarded
+
+			log.Printf("Player %s answered correctly, awarded %d %s tokens (specialty: %v, role bonus: %v)",
+				playerID, tokensAwarded, tokenType, isSpecialtyQuestion,
+				constants.RoleTokenBonuses[player.Role] == tokenType)
 		}
 	}
 
-	// Remove current question
-	delete(gm.state.CurrentQuestions, playerID)
+	// Update category accuracy
+	category := strings.ToLower(currentQuestion.Category)
+	if strings.Contains(category, "specialty") {
+		// Extract the actual category from "science (specialty)" format
+		if idx := strings.Index(category, " ("); idx > 0 {
+			category = category[:idx]
+		}
+	}
 
 	return nil
+}
+
+// updateAllGuideHighlights updates guide highlighting for all players when guide tokens change
+func (gm *GameManager) updateAllGuideHighlights() {
+	// This will be called when guide tokens are earned to update all players' highlighting
+	players := gm.playerManager.GetConnectedNonHostPlayers()
+
+	for _, player := range players {
+		// Calculate new guide highlight for this player
+		highlight := gm.calculateGuideHighlight(player.ID)
+
+		// Send updated personal puzzle state if we're in puzzle phase
+		if gm.state.Phase == PhasePuzzleAssembly {
+			gm.sendPersonalPuzzleState(player, highlight)
+		}
+	}
+
+	log.Printf("Updated guide highlights for %d players due to guide token threshold change", len(players))
+}
+
+// calculateGuideHighlight calculates linear progression guide highlighting for a specific player
+func (gm *GameManager) calculateGuideHighlight(playerID string) *GuideHighlight {
+	// Calculate current guide token threshold level
+	difficultyMod := gm.getDifficultyModifiers()
+	tokensPerThreshold := int(float64(constants.GuideTokenThresholds) * difficultyMod.TokenThresholdModifier)
+
+	currentLevel := 0
+	if tokensPerThreshold > 0 {
+		currentLevel = gm.state.TeamTokens.GuideTokens / tokensPerThreshold
+	}
+
+	// Cap at maximum threshold level
+	if currentLevel >= len(constants.GuideHighlightSizes) {
+		currentLevel = len(constants.GuideHighlightSizes) - 1
+	}
+
+	// Get the player's fragment to determine correct position
+	fragment := gm.state.PuzzleFragments[fmt.Sprintf("fragment_%s", playerID)]
+	if fragment == nil {
+		// Return empty highlight if no fragment
+		return &GuideHighlight{
+			PlayerID:       playerID,
+			Positions:      []GridPos{},
+			ThresholdLevel: currentLevel,
+			MaxThresholds:  constants.GuideTokenMaxThresholds,
+			CoverageSize:   0.0,
+		}
+	}
+
+	// Calculate highlighted positions based on linear progression
+	positions := gm.calculateHighlightPositions(fragment.CorrectPosition, currentLevel)
+
+	coverageSize := 0.0
+	if currentLevel < len(constants.GuideHighlightSizes) {
+		coverageSize = constants.GuideHighlightSizes[currentLevel]
+	}
+
+	return &GuideHighlight{
+		PlayerID:       playerID,
+		Positions:      positions,
+		ThresholdLevel: currentLevel,
+		MaxThresholds:  constants.GuideTokenMaxThresholds,
+		CoverageSize:   coverageSize,
+	}
+}
+
+// calculateHighlightPositions calculates the grid positions to highlight based on threshold level
+func (gm *GameManager) calculateHighlightPositions(correctPos GridPos, thresholdLevel int) []GridPos {
+	if thresholdLevel < 0 || thresholdLevel >= len(constants.GuideHighlightSizes) {
+		return []GridPos{}
+	}
+
+	coveragePercent := constants.GuideHighlightSizes[thresholdLevel]
+	gridSize := gm.state.GridSize
+	totalPositions := gridSize * gridSize
+	positionsToHighlight := int(float64(totalPositions) * coveragePercent)
+
+	// Ensure minimum of 1 position, maximum of 2 for highest precision
+	if positionsToHighlight < 1 {
+		positionsToHighlight = 1
+	}
+	if thresholdLevel == len(constants.GuideHighlightSizes)-1 && positionsToHighlight > 2 {
+		positionsToHighlight = 2 // Highest precision = exactly 2 positions
+	}
+
+	positions := make([]GridPos, 0, positionsToHighlight)
+
+	if positionsToHighlight == 1 {
+		// Single position - show correct position
+		positions = append(positions, correctPos)
+	} else if positionsToHighlight == 2 {
+		// Two positions - correct position plus one adjacent
+		positions = append(positions, correctPos)
+
+		// Add one adjacent position
+		adjacent := gm.getAdjacentPosition(correctPos, gridSize)
+		positions = append(positions, adjacent)
+	} else {
+		// Larger area - create area around correct position
+		positions = gm.getAreaAroundPosition(correctPos, positionsToHighlight, gridSize)
+	}
+
+	return positions
+}
+
+// getAreaAroundPosition creates an area of positions around the center point
+func (gm *GameManager) getAreaAroundPosition(center GridPos, count int, gridSize int) []GridPos {
+	positions := make([]GridPos, 0, count)
+
+	// Start with center position
+	positions = append(positions, center)
+	added := 1
+
+	// Add positions in expanding rings around center
+	for radius := 1; radius <= gridSize && added < count; radius++ {
+		// Add positions at current radius
+		for dx := -radius; dx <= radius && added < count; dx++ {
+			for dy := -radius; dy <= radius && added < count; dy++ {
+				// Skip positions not on the current radius ring
+				if abs(dx) != radius && abs(dy) != radius {
+					continue
+				}
+
+				newPos := GridPos{X: center.X + dx, Y: center.Y + dy}
+
+				// Check bounds and avoid duplicates
+				if newPos.X >= 0 && newPos.X < gridSize &&
+					newPos.Y >= 0 && newPos.Y < gridSize &&
+					!containsPosition(positions, newPos) {
+					positions = append(positions, newPos)
+					added++
+				}
+			}
+		}
+	}
+
+	return positions
+}
+
+// getAdjacentPosition gets an adjacent position for 2-position precision highlighting
+func (gm *GameManager) getAdjacentPosition(center GridPos, gridSize int) GridPos {
+	// Try positions in order: right, down, left, up
+	candidates := []GridPos{
+		{X: center.X + 1, Y: center.Y}, // right
+		{X: center.X, Y: center.Y + 1}, // down
+		{X: center.X - 1, Y: center.Y}, // left
+		{X: center.X, Y: center.Y - 1}, // up
+	}
+
+	for _, pos := range candidates {
+		if pos.X >= 0 && pos.X < gridSize && pos.Y >= 0 && pos.Y < gridSize {
+			return pos
+		}
+	}
+
+	// Fallback - return center position if no adjacent position is valid
+	return center
 }
 
 // getTokenTypeForLocation returns the token type for a given location hash
@@ -378,6 +635,7 @@ func (gm *GameManager) startPuzzlePhase() {
 	// Initialize puzzle fragments for NON-HOST players only
 	gm.state.PuzzleFragments = make(map[string]*PuzzleFragment)
 
+	// Create player-owned fragments
 	for i, player := range nonHostPlayers {
 		correctPos := gm.calculateCorrectPosition(i, gridSize)
 		fragment := &PuzzleFragment{
@@ -387,13 +645,38 @@ func (gm *GameManager) startPuzzlePhase() {
 			CorrectPosition: correctPos,
 			Solved:          false,
 			PreSolved:       i < maxPreSolved, // Pre-solve based on anchor tokens
+			Visible:         false,            // Fragments start invisible until segment completion
+			MovableBy:       player.ID,        // Only the owning player can move their fragment
+			IsUnassigned:    false,
 		}
 
 		if fragment.PreSolved {
 			fragment.Solved = true
+			fragment.Visible = true // Pre-solved fragments are immediately visible
 		}
 
 		gm.state.PuzzleFragments[fragment.ID] = fragment
+	}
+
+	// Create some unassigned fragments for collaboration (if player count allows)
+	if playerCount < gridSize*gridSize {
+		unassignedCount := min(3, (gridSize*gridSize)-playerCount) // Max 3 unassigned fragments
+		for i := 0; i < unassignedCount; i++ {
+			unassignedID := fmt.Sprintf("fragment_unassigned_%d", i)
+			correctPos := gm.calculateCorrectPosition(playerCount+i, gridSize)
+			fragment := &PuzzleFragment{
+				ID:              unassignedID,
+				PlayerID:        "", // No owner
+				Position:        GridPos{X: (playerCount + i) % gridSize, Y: (playerCount + i) / gridSize},
+				CorrectPosition: correctPos,
+				Solved:          false,
+				PreSolved:       false,
+				Visible:         false,    // Will be made visible gradually
+				MovableBy:       "anyone", // Any player can move unassigned fragments
+				IsUnassigned:    true,
+			}
+			gm.state.PuzzleFragments[fragment.ID] = fragment
+		}
 	}
 
 	// Send clarity bonus (image preview)
@@ -480,13 +763,17 @@ func (gm *GameManager) StartPuzzle() error {
 	return nil
 }
 
-// runPuzzleTimer manages the puzzle phase timer
+// Add this to the runPuzzleTimer function to gradually release unassigned fragments
 func (gm *GameManager) runPuzzleTimer(duration time.Duration) {
 	timer := time.NewTimer(duration)
 	defer timer.Stop()
 
 	ticker := time.NewTicker(5 * time.Second)
 	defer ticker.Stop()
+
+	// ADDED: Fragment release ticker - release one unassigned fragment every 30 seconds
+	fragmentReleaseTicker := time.NewTicker(30 * time.Second)
+	defer fragmentReleaseTicker.Stop()
 
 	for {
 		select {
@@ -498,13 +785,45 @@ func (gm *GameManager) runPuzzleTimer(duration time.Duration) {
 			// Send progress updates
 			gm.sendPuzzleProgress()
 			gm.sendHostUpdate()
+		case <-fragmentReleaseTicker.C:
+			// ADDED: Release one unassigned fragment periodically
+			gm.releaseUnassignedFragment()
 		case <-gm.stopChan:
 			return
 		}
 	}
 }
 
-// ProcessSegmentCompleted handles when a player completes their puzzle segment - Updated to exclude hosts
+// BroadcastPersonalPuzzleStates sends personalized puzzle states to all players
+func (gm *GameManager) BroadcastPersonalPuzzleStates() {
+	// Get all visible fragments
+	visibleFragments := make([]*PuzzleFragment, 0)
+	for _, fragment := range gm.state.PuzzleFragments {
+		if fragment.Visible {
+			visibleFragments = append(visibleFragments, fragment)
+		}
+	}
+
+	// Send personalized state to each player
+	players := gm.playerManager.GetConnectedNonHostPlayers()
+	for _, player := range players {
+		personalState := PersonalPuzzleState{
+			Fragments:        visibleFragments,
+			GridSize:         gm.state.GridSize,
+			PlayerFragmentID: fmt.Sprintf("fragment_%s", player.ID),
+			GuideHighlight:   gm.calculateGuideHighlight(player.ID),
+		}
+
+		sendToPlayer(player, MsgPersonalPuzzleState, map[string]interface{}{
+			"personalView": personalState,
+		})
+	}
+
+	// Update host with complete puzzle state
+	gm.sendHostUpdate()
+}
+
+// ProcessSegmentCompleted handles when a player completes their puzzle segment - ENHANCED
 func (gm *GameManager) ProcessSegmentCompleted(playerID, segmentID string) error {
 	gm.mu.Lock()
 	defer gm.mu.Unlock()
@@ -528,17 +847,23 @@ func (gm *GameManager) ProcessSegmentCompleted(playerID, segmentID string) error
 	}
 
 	// Find the fragment
-	fragment := gm.state.PuzzleFragments[fmt.Sprintf("fragment_%s", playerID)]
+	fragmentID := fmt.Sprintf("fragment_%s", playerID)
+	fragment := gm.state.PuzzleFragments[fragmentID]
 	if fragment == nil {
-		return fmt.Errorf("fragment not found")
+		return fmt.Errorf("fragment not found for player %s", playerID)
 	}
 
 	if fragment.PreSolved {
 		return fmt.Errorf("fragment was pre-solved by anchor tokens")
 	}
 
-	// Mark as solved
+	if fragment.Solved {
+		return fmt.Errorf("fragment already completed")
+	}
+
+	// CRITICAL: Mark fragment as solved and visible (this is the transformation moment)
 	fragment.Solved = true
+	fragment.Visible = true // Fragment becomes visible on central grid
 
 	// Update analytics
 	if analytics, ok := gm.state.PlayerAnalytics[playerID]; ok {
@@ -552,8 +877,14 @@ func (gm *GameManager) ProcessSegmentCompleted(playerID, segmentID string) error
 		"gridPosition": fragment.Position,
 	})
 
-	// Send guide token hints if available
-	gm.sendGuideHints(playerID)
+	log.Printf("Player %s completed individual puzzle segment %s, fragment %s is now visible on central grid",
+		playerID, segmentID, fragmentID)
+
+	// ENHANCED: Update all players' personal puzzle states since a new fragment is now visible
+	gm.BroadcastPersonalPuzzleStates()
+
+	// Update host with new fragment visibility
+	gm.sendCompletePuzzleStateToHost()
 
 	// Check if all fragments are solved and positioned correctly
 	if gm.checkPuzzleComplete() {
@@ -600,7 +931,7 @@ func (gm *GameManager) sendGuideHints(playerID string) {
 	}
 }
 
-// ProcessFragmentMove handles a fragment move request
+// ProcessFragmentMove handles a fragment move request - ENHANCED with ownership validation
 func (gm *GameManager) ProcessFragmentMove(playerID, fragmentID string, newPos GridPos) error {
 	gm.mu.Lock()
 	defer gm.mu.Unlock()
@@ -611,7 +942,20 @@ func (gm *GameManager) ProcessFragmentMove(playerID, fragmentID string, newPos G
 
 	fragment, exists := gm.state.PuzzleFragments[fragmentID]
 	if !exists {
-		return fmt.Errorf("fragment not found")
+		return fmt.Errorf("fragment not found: %s", fragmentID)
+	}
+
+	// ENHANCED: Validate fragment ownership
+	if err := gm.validateFragmentOwnership(playerID, fragment); err != nil {
+		player, _ := gm.playerManager.GetPlayer(playerID)
+		if player != nil {
+			sendToPlayer(player, MsgFragmentMoveResponse, map[string]interface{}{
+				"status":     "denied",
+				"reason":     err.Error(),
+				"fragmentId": fragmentID,
+			})
+		}
+		return err
 	}
 
 	// Check cooldown
@@ -625,18 +969,18 @@ func (gm *GameManager) ProcessFragmentMove(playerID, fragmentID string, newPos G
 				"nextMoveAvailable": fragment.LastMoved.Add(cooldownDuration).Unix(),
 			})
 		}
-		return nil
+		return nil // Don't return error for cooldown, just ignore
 	}
 
 	// Validate new position
 	if newPos.X < 0 || newPos.X >= gm.state.GridSize || newPos.Y < 0 || newPos.Y >= gm.state.GridSize {
-		return fmt.Errorf("position out of bounds")
+		return fmt.Errorf("position out of bounds: (%d, %d)", newPos.X, newPos.Y)
 	}
 
-	// Find fragment at target position and swap
+	// Find fragment at target position and handle collision
 	var targetFragment *PuzzleFragment
 	for _, f := range gm.state.PuzzleFragments {
-		if f.Position.X == newPos.X && f.Position.Y == newPos.Y {
+		if f.Position.X == newPos.X && f.Position.Y == newPos.Y && f.ID != fragmentID {
 			targetFragment = f
 			break
 		}
@@ -649,13 +993,13 @@ func (gm *GameManager) ProcessFragmentMove(playerID, fragmentID string, newPos G
 		targetFragment.Position = oldPos
 		targetFragment.LastMoved = time.Now()
 	} else {
-		// Just move to empty position
+		// Move to empty position
 		fragment.Position = newPos
 	}
 
 	fragment.LastMoved = time.Now()
 
-	// Record move
+	// Record move in history
 	gm.state.FragmentMoveHistory = append(gm.state.FragmentMoveHistory, FragmentMove{
 		FragmentID: fragmentID,
 		FromPos:    oldPos,
@@ -670,7 +1014,7 @@ func (gm *GameManager) ProcessFragmentMove(playerID, fragmentID string, newPos G
 		analytics.PuzzleMetrics.SuccessfulMoves++
 	}
 
-	// Send response
+	// Send success response
 	player, _ := gm.playerManager.GetPlayer(playerID)
 	if player != nil {
 		sendToPlayer(player, MsgFragmentMoveResponse, map[string]interface{}{
@@ -679,43 +1023,243 @@ func (gm *GameManager) ProcessFragmentMove(playerID, fragmentID string, newPos G
 		})
 	}
 
-	// Broadcast updated puzzle state
-	gm.broadcastPuzzleState()
+	// ENHANCED: Broadcast updated personal puzzle states to all players
+	gm.BroadcastPersonalPuzzleStates()
+
+	// Update host with complete puzzle state
+	gm.sendCompletePuzzleStateToHost()
 
 	// Check if puzzle is complete after move
 	if gm.checkPuzzleComplete() {
 		gm.endGame(true)
 	}
 
+	log.Printf("Player %s moved fragment %s from (%d,%d) to (%d,%d)",
+		playerID, fragmentID, oldPos.X, oldPos.Y, newPos.X, newPos.Y)
+
 	return nil
 }
 
-// IMPLEMENTED: Comprehensive puzzle completion check
+// sendPersonalPuzzleState sends a personalized puzzle view to a specific player
+func (gm *GameManager) sendPersonalPuzzleState(player *Player, guideHighlight *GuideHighlight) {
+	// Get all visible fragments
+	visibleFragments := make([]*PuzzleFragment, 0)
+	for _, fragment := range gm.state.PuzzleFragments {
+		if fragment.Visible {
+			visibleFragments = append(visibleFragments, fragment)
+		}
+	}
+
+	personalState := PersonalPuzzleState{
+		Fragments:        visibleFragments,
+		GridSize:         gm.state.GridSize,
+		PlayerFragmentID: fmt.Sprintf("fragment_%s", player.ID),
+		GuideHighlight:   guideHighlight,
+	}
+
+	sendToPlayer(player, MsgPersonalPuzzleState, map[string]interface{}{
+		"personalView": personalState,
+	})
+}
+
+// sendCompletePuzzleStateToHost sends comprehensive puzzle information to the host
+func (gm *GameManager) sendCompletePuzzleStateToHost() {
+	host := gm.playerManager.GetHost()
+	if host == nil {
+		return
+	}
+
+	// Build ownership mapping
+	ownershipMapping := make(map[string]string)
+	unassignedFragments := make([]string, 0)
+	visibilityStatus := make(map[string]bool)
+
+	for _, fragment := range gm.state.PuzzleFragments {
+		if fragment.IsUnassigned {
+			ownershipMapping[fragment.ID] = "unassigned"
+			unassignedFragments = append(unassignedFragments, fragment.ID)
+		} else if fragment.PlayerID != "" {
+			ownershipMapping[fragment.ID] = fragment.PlayerID
+		} else {
+			ownershipMapping[fragment.ID] = "unknown"
+		}
+		visibilityStatus[fragment.ID] = fragment.Visible
+	}
+
+	// Calculate collaboration stats
+	collaborationStats := gm.calculateCollaborationSummary()
+
+	// Get all fragments for host (including invisible ones)
+	allFragments := make([]*PuzzleFragment, 0, len(gm.state.PuzzleFragments))
+	for _, fragment := range gm.state.PuzzleFragments {
+		allFragments = append(allFragments, fragment)
+	}
+
+	completePuzzleState := CompletePuzzleState{
+		Fragments:           allFragments,
+		GridSize:            gm.state.GridSize,
+		OwnershipMapping:    ownershipMapping,
+		UnassignedFragments: unassignedFragments,
+		VisibilityStatus:    visibilityStatus,
+		CompletionPercent:   gm.calculateCompletionPercentage(),
+		MovementHistory:     gm.getRecentMovementHistory(10), // Last 10 moves
+		CollaborationStats:  collaborationStats,
+	}
+
+	// Send to host
+	sendToPlayer(host, MsgCentralPuzzleState, completePuzzleState)
+}
+
+// calculateCollaborationSummary creates real-time collaboration metrics
+func (gm *GameManager) calculateCollaborationSummary() CollaborationSummary {
+	totalMoves := len(gm.state.FragmentMoveHistory)
+	playerOwnedMoves := 0
+	unassignedMoves := 0
+	movementsByPlayer := make(map[string]int)
+
+	for _, move := range gm.state.FragmentMoveHistory {
+		movementsByPlayer[move.PlayerID]++
+
+		// Determine if this was a player-owned or unassigned move
+		if fragment, exists := gm.state.PuzzleFragments[move.FragmentID]; exists {
+			if fragment.IsUnassigned {
+				unassignedMoves++
+			} else {
+				playerOwnedMoves++
+			}
+		}
+	}
+
+	// Calculate recommendation acceptance rate
+	totalRecommendations := 0
+	acceptedRecommendations := 0
+	for _, analytics := range gm.state.PlayerAnalytics {
+		totalRecommendations += analytics.PuzzleMetrics.RecommendationsSent
+		acceptedRecommendations += analytics.PuzzleMetrics.RecommendationsAccepted
+	}
+
+	acceptanceRate := 0.0
+	if totalRecommendations > 0 {
+		acceptanceRate = float64(acceptedRecommendations) / float64(totalRecommendations) * 100
+	}
+
+	// Get recent activity
+	recentActivity := gm.getRecentActivity(10)
+
+	return CollaborationSummary{
+		TotalMoves:               totalMoves,
+		PlayerOwnedMoves:         playerOwnedMoves,
+		UnassignedMoves:          unassignedMoves,
+		ActiveRecommendations:    len(gm.state.PieceRecommendations),
+		RecommendationAcceptRate: acceptanceRate,
+		MovementsByPlayer:        movementsByPlayer,
+		RecentActivity:           recentActivity,
+	}
+}
+
+// getRecentMovementHistory returns the most recent fragment movements
+func (gm *GameManager) getRecentMovementHistory(count int) []FragmentMove {
+	if len(gm.state.FragmentMoveHistory) <= count {
+		return gm.state.FragmentMoveHistory
+	}
+
+	start := len(gm.state.FragmentMoveHistory) - count
+	return gm.state.FragmentMoveHistory[start:]
+}
+
+// getRecentActivity generates recent activity events for host monitoring
+func (gm *GameManager) getRecentActivity(count int) []RecentActivity {
+	activities := make([]RecentActivity, 0)
+
+	// Add recent movements
+	recentMoves := gm.getRecentMovementHistory(count / 2)
+	for _, move := range recentMoves {
+		player, _ := gm.playerManager.GetPlayer(move.PlayerID)
+		playerName := "Unknown"
+		if player != nil {
+			playerName = player.Name
+		}
+
+		fragment := gm.state.PuzzleFragments[move.FragmentID]
+		fragmentOwnership := "unknown"
+		if fragment != nil {
+			if fragment.IsUnassigned {
+				fragmentOwnership = "community"
+			} else {
+				fragmentOwnership = "personal"
+			}
+		}
+
+		activities = append(activities, RecentActivity{
+			Type:       "move",
+			PlayerID:   move.PlayerID,
+			FragmentID: move.FragmentID,
+			Description: fmt.Sprintf("%s moved %s fragment from (%d,%d) to (%d,%d)",
+				playerName, fragmentOwnership, move.FromPos.X, move.FromPos.Y, move.ToPos.X, move.ToPos.Y),
+			Timestamp: move.Timestamp,
+		})
+	}
+
+	// Sort by timestamp (most recent first)
+	sort.Slice(activities, func(i, j int) bool {
+		return activities[i].Timestamp.After(activities[j].Timestamp)
+	})
+
+	// Return only the requested count
+	if len(activities) > count {
+		activities = activities[:count]
+	}
+
+	return activities
+}
+
+// Enhanced puzzle completion check with ownership considerations
 func (gm *GameManager) checkPuzzleComplete() bool {
-	// Check if all fragments are solved
+	// Check if all fragments are solved (this includes both player-owned and unassigned)
 	for _, fragment := range gm.state.PuzzleFragments {
 		if !fragment.Solved {
 			return false
 		}
 	}
 
-	// IMPLEMENTED: Check if fragments are in correct positions
+	// Check if all fragments are in correct positions
 	for _, fragment := range gm.state.PuzzleFragments {
 		if fragment.Position.X != fragment.CorrectPosition.X || fragment.Position.Y != fragment.CorrectPosition.Y {
 			return false
 		}
 	}
 
+	log.Println("Puzzle completion check passed: all fragments solved and correctly positioned")
 	return true
 }
 
-// IMPLEMENTED: Piece recommendation system
-func (gm *GameManager) ProcessPieceRecommendation(fromPlayerID, toPlayerID, message string, fromFragmentID, toFragmentID string, suggestedFromPos, suggestedToPos GridPos) error {
+// ProcessPieceRecommendation handles piece recommendation requests
+func (gm *GameManager) ProcessPieceRecommendation(fromPlayerID, toPlayerID string, fromFragmentID, toFragmentID string, suggestedFromPos, suggestedToPos GridPos) error {
 	gm.mu.Lock()
 	defer gm.mu.Unlock()
 
 	if gm.state.Phase != PhasePuzzleAssembly {
 		return fmt.Errorf("not in puzzle assembly phase")
+	}
+
+	// FIXED: Validate that both fragments are unassigned or movable by anyone
+	fromFragment, exists := gm.state.PuzzleFragments[fromFragmentID]
+	if !exists {
+		return fmt.Errorf("from fragment not found: %s", fromFragmentID)
+	}
+
+	toFragment, exists := gm.state.PuzzleFragments[toFragmentID]
+	if !exists {
+		return fmt.Errorf("to fragment not found: %s", toFragmentID)
+	}
+
+	// Check if fragments are unassigned or community-movable
+	if fromFragment.MovableBy != "anyone" || !fromFragment.IsUnassigned {
+		return fmt.Errorf(constants.ErrInvalidRecommendation + ": from fragment is player-owned")
+	}
+
+	if toFragment.MovableBy != "anyone" || !toFragment.IsUnassigned {
+		return fmt.Errorf(constants.ErrInvalidRecommendation + ": to fragment is player-owned")
 	}
 
 	// Create recommendation
@@ -727,7 +1271,7 @@ func (gm *GameManager) ProcessPieceRecommendation(fromPlayerID, toPlayerID, mess
 		ToFragmentID:     toFragmentID,
 		SuggestedFromPos: suggestedFromPos,
 		SuggestedToPos:   suggestedToPos,
-		Message:          message,
+		Message:          "", // FIXED: No longer accept custom messages
 		Timestamp:        time.Now(),
 	}
 
@@ -1120,6 +1664,175 @@ func (gm *GameManager) resetGame() {
 	}
 }
 
+// initializeUnassignedFragments creates a pool of unassigned fragments
+func (gm *GameManager) initializeUnassignedFragments(count int, startIndex int) {
+	for i := 0; i < count; i++ {
+		unassignedID := fmt.Sprintf("fragment_unassigned_%d", i)
+		correctPos := gm.calculateCorrectPosition(startIndex+i, gm.state.GridSize)
+
+		fragment := &PuzzleFragment{
+			ID:              unassignedID,
+			PlayerID:        "", // No owner
+			Position:        GridPos{X: (startIndex + i) % gm.state.GridSize, Y: (startIndex + i) / gm.state.GridSize},
+			CorrectPosition: correctPos,
+			Solved:          false,
+			PreSolved:       false,
+			Visible:         false,    // Will be made visible gradually
+			MovableBy:       "anyone", // Any player can move unassigned fragments
+			IsUnassigned:    true,
+		}
+		gm.state.PuzzleFragments[fragment.ID] = fragment
+	}
+}
+
+// validateFragmentOwnership checks if a player can move a specific fragment
+func (gm *GameManager) validateFragmentOwnership(playerID string, fragment *PuzzleFragment) error {
+	if fragment == nil {
+		return fmt.Errorf("fragment not found")
+	}
+
+	// Check if fragment is visible first
+	if !fragment.Visible {
+		return fmt.Errorf(constants.ErrFragmentNotVisible)
+	}
+
+	// Player can move their own fragment
+	if fragment.PlayerID == playerID && fragment.MovableBy == playerID {
+		return nil
+	}
+
+	// Anyone can move unassigned fragments
+	if fragment.IsUnassigned && fragment.MovableBy == "anyone" {
+		return nil
+	}
+
+	// Pre-solved fragments that became unassigned
+	if fragment.PreSolved && fragment.MovableBy == "anyone" {
+		return nil
+	}
+
+	// Otherwise, movement is not allowed
+	return fmt.Errorf(constants.ErrFragmentOwnership)
+}
+
+// releaseUnassignedFragment makes one unassigned fragment visible during puzzle phase
+func (gm *GameManager) releaseUnassignedFragment() {
+	gm.mu.Lock()
+	defer gm.mu.Unlock()
+
+	for _, fragment := range gm.state.PuzzleFragments {
+		if fragment.IsUnassigned && !fragment.Visible {
+			fragment.Visible = true
+			fragment.Solved = true // Unassigned fragments are pre-solved
+
+			log.Printf("Released unassigned fragment %s at position (%d, %d)",
+				fragment.ID, fragment.Position.X, fragment.Position.Y)
+
+			// Broadcast updated personal puzzle states
+			gm.BroadcastPersonalPuzzleStates()
+			break // Only release one at a time
+		}
+	}
+}
+
+// handleFragmentDisconnection converts a player's fragment to unassigned status
+func (gm *GameManager) handleFragmentDisconnection(playerID string) {
+	gm.mu.Lock()
+	defer gm.mu.Unlock()
+
+	fragmentID := fmt.Sprintf("fragment_%s", playerID)
+	fragment, exists := gm.state.PuzzleFragments[fragmentID]
+	if !exists {
+		return
+	}
+
+	// Convert to unassigned fragment
+	fragment.MovableBy = "anyone"
+	fragment.IsUnassigned = true
+	fragment.PlayerID = "" // Remove player ownership
+
+	// Auto-solve if not already solved
+	if !fragment.Solved {
+		fragment.Solved = true
+		fragment.Visible = true
+	}
+
+	// Randomly relocate fragment to maintain game balance
+	fragment.Position = GridPos{
+		X: rand.Intn(gm.state.GridSize),
+		Y: rand.Intn(gm.state.GridSize),
+	}
+
+	log.Printf("Converted fragment %s to unassigned due to player %s disconnection", fragmentID, playerID)
+
+	// Broadcast updated states
+	gm.BroadcastPersonalPuzzleStates()
+	gm.sendCompletePuzzleStateToHost()
+}
+
+// getVisibleFragments returns only visible fragments
+func (gm *GameManager) getVisibleFragments() []*PuzzleFragment {
+	visible := make([]*PuzzleFragment, 0)
+	for _, fragment := range gm.state.PuzzleFragments {
+		if fragment.Visible {
+			visible = append(visible, fragment)
+		}
+	}
+	return visible
+}
+
+// calculateCompletionPercentage calculates the percentage of correctly placed fragments
+func (gm *GameManager) calculateCompletionPercentage() float64 {
+	correctCount := 0
+	totalVisible := 0
+
+	for _, fragment := range gm.state.PuzzleFragments {
+		if fragment.Visible {
+			totalVisible++
+			if fragment.Position.X == fragment.CorrectPosition.X &&
+				fragment.Position.Y == fragment.CorrectPosition.Y {
+				correctCount++
+			}
+		}
+	}
+
+	if totalVisible == 0 {
+		return 0
+	}
+
+	return float64(correctCount) / float64(totalVisible) * 100
+}
+
+// buildOwnershipMapping creates a mapping of fragment IDs to owners
+func (gm *GameManager) buildOwnershipMapping() map[string]string {
+	ownership := make(map[string]string)
+
+	for _, fragment := range gm.state.PuzzleFragments {
+		if fragment.IsUnassigned {
+			ownership[fragment.ID] = "unassigned"
+		} else if fragment.PlayerID != "" {
+			ownership[fragment.ID] = fragment.PlayerID
+		} else {
+			ownership[fragment.ID] = "unknown"
+		}
+	}
+
+	return ownership
+}
+
+// getUnassignedFragmentIDs returns a list of unassigned fragment IDs
+func (gm *GameManager) getUnassignedFragmentIDs() []string {
+	unassigned := make([]string, 0)
+
+	for _, fragment := range gm.state.PuzzleFragments {
+		if fragment.IsUnassigned {
+			unassigned = append(unassigned, fragment.ID)
+		}
+	}
+
+	return unassigned
+}
+
 // String methods for GamePhase
 func (p GamePhase) String() string {
 	switch p {
@@ -1136,10 +1849,18 @@ func (p GamePhase) String() string {
 	}
 }
 
-// Utility function for min
-func min(a, b int) int {
-	if a < b {
-		return a
+func abs(x int) int {
+	if x < 0 {
+		return -x
 	}
-	return b
+	return x
+}
+
+func containsPosition(positions []GridPos, pos GridPos) bool {
+	for _, p := range positions {
+		if p.X == pos.X && p.Y == pos.Y {
+			return true
+		}
+	}
+	return false
 }

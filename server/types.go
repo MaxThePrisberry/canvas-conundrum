@@ -46,6 +46,8 @@ const (
 	MsgCountdown            = "countdown"
 	MsgPieceRecommendation  = "piece_recommendation"
 	MsgImagePreview         = "image_preview"
+	MsgPersonalPuzzleState  = "personal_puzzle_state"
+	MsgGuideHighlight       = "guide_highlight"
 )
 
 // WebSocket Message Types - Client to Server
@@ -141,7 +143,10 @@ type PuzzleFragment struct {
 	Solved          bool      `json:"solved"`
 	LastMoved       time.Time `json:"-"`
 	CorrectPosition GridPos   `json:"correctPosition"`
-	PreSolved       bool      `json:"preSolved"` // From anchor tokens
+	PreSolved       bool      `json:"preSolved"`
+	Visible         bool      `json:"visible"`
+	MovableBy       string    `json:"movableBy"`
+	IsUnassigned    bool      `json:"-"`
 }
 
 // Grid Position
@@ -278,4 +283,126 @@ type BroadcastMessage struct {
 	Type    string
 	Payload interface{}
 	Filter  func(*Player) bool // Optional filter to send to specific players
+}
+
+// Personal Puzzle State - Individual player view of the puzzle
+type PersonalPuzzleState struct {
+	Fragments        []*PuzzleFragment `json:"fragments"`        // Only visible fragments
+	GridSize         int               `json:"gridSize"`         // Grid dimensions
+	PlayerFragmentID string            `json:"playerFragmentId"` // Player's own fragment ID
+	GuideHighlight   *GuideHighlight   `json:"guideHighlight"`   // Player-specific guide highlighting
+}
+
+// Guide Highlight - Linear progression guide token effects
+type GuideHighlight struct {
+	PlayerID       string    `json:"playerId"`       // Player receiving the highlight
+	Positions      []GridPos `json:"positions"`      // Array of highlighted grid positions
+	ThresholdLevel int       `json:"thresholdLevel"` // Current guide token threshold level (0-5)
+	MaxThresholds  int       `json:"maxThresholds"`  // Maximum possible thresholds
+	CoverageSize   float64   `json:"coverageSize"`   // Percentage of grid covered (0.02-0.25)
+}
+
+// Complete Puzzle State - Enhanced host view with ownership information
+type CompletePuzzleState struct {
+	Fragments           []*PuzzleFragment    `json:"fragments"`           // All fragments (visible and invisible)
+	GridSize            int                  `json:"gridSize"`            // Grid dimensions
+	OwnershipMapping    map[string]string    `json:"ownershipMapping"`    // fragmentId -> playerId or "unassigned"
+	UnassignedFragments []string             `json:"unassignedFragments"` // List of unassigned fragment IDs
+	VisibilityStatus    map[string]bool      `json:"visibilityStatus"`    // fragmentId -> visible status
+	CompletionPercent   float64              `json:"completionPercent"`   // Percentage of puzzle completed
+	MovementHistory     []FragmentMove       `json:"movementHistory"`     // Recent movement activity
+	CollaborationStats  CollaborationSummary `json:"collaborationStats"`  // Real-time collaboration metrics
+}
+
+// Collaboration Summary - Real-time collaboration metrics for host
+type CollaborationSummary struct {
+	TotalMoves               int              `json:"totalMoves"`               // Total fragment moves
+	PlayerOwnedMoves         int              `json:"playerOwnedMoves"`         // Moves of own fragments
+	UnassignedMoves          int              `json:"unassignedMoves"`          // Moves of unassigned fragments
+	ActiveRecommendations    int              `json:"activeRecommendations"`    // Pending recommendations
+	RecommendationAcceptRate float64          `json:"recommendationAcceptRate"` // Acceptance rate %
+	MovementsByPlayer        map[string]int   `json:"movementsByPlayer"`        // playerId -> move count
+	RecentActivity           []RecentActivity `json:"recentActivity"`           // Last 10 significant events
+}
+
+// Recent Activity - Individual activity events for host monitoring
+type RecentActivity struct {
+	Type        string    `json:"type"`        // "move", "recommendation", "completion", "disconnection"
+	PlayerID    string    `json:"playerId"`    // Player involved
+	FragmentID  string    `json:"fragmentId"`  // Fragment involved
+	Description string    `json:"description"` // Human-readable description
+	Timestamp   time.Time `json:"timestamp"`   // When event occurred
+}
+
+// Individual Puzzle Progress - Track individual puzzle solving progress
+type IndividualPuzzleProgress struct {
+	PlayerID         string    `json:"playerId"`         // Player solving the puzzle
+	SegmentID        string    `json:"segmentId"`        // Puzzle segment being solved
+	PiecesRemaining  int       `json:"piecesRemaining"`  // Pieces left to solve (out of 16)
+	PiecesSolved     int       `json:"piecesSolved"`     // Pieces already solved
+	StartTime        time.Time `json:"startTime"`        // When player started solving
+	EstimatedFinish  time.Time `json:"estimatedFinish"`  // Estimated completion time
+	IsPreSolved      bool      `json:"isPreSolved"`      // Whether anchor tokens pre-solved this
+	CompletionStatus string    `json:"completionStatus"` // "in_progress", "completed", "pre_solved"
+}
+
+// Enhanced Host Update - Add individual puzzle tracking
+type EnhancedHostUpdate struct {
+	HostUpdate                                          // Embed existing HostUpdate
+	IndividualPuzzleProgress []IndividualPuzzleProgress `json:"individualPuzzleProgress"` // Track individual solving
+	CompletePuzzleState      CompletePuzzleState        `json:"completePuzzleState"`      // Full puzzle state
+	UnassignedFragmentStatus UnassignedFragmentStatus   `json:"unassignedFragmentStatus"` // Unassigned fragment info
+}
+
+// Unassigned Fragment Status - Track community fragments
+type UnassignedFragmentStatus struct {
+	TotalUnassigned    int      `json:"totalUnassigned"`    // Total unassigned fragments
+	VisibleUnassigned  int      `json:"visibleUnassigned"`  // Visible unassigned fragments
+	PendingRelease     int      `json:"pendingRelease"`     // Fragments waiting to be released
+	NextReleaseTime    int64    `json:"nextReleaseTime"`    // Unix timestamp of next release
+	UnassignedIDs      []string `json:"unassignedIds"`      // List of unassigned fragment IDs
+	CommunityMoveCount int      `json:"communityMoveCount"` // Moves made on unassigned fragments
+}
+
+// Enhanced Player Analytics - Add individual puzzle metrics
+type EnhancedPlayerAnalytics struct {
+	PlayerAnalytics                                 // Embed existing analytics
+	IndividualPuzzleMetrics IndividualPuzzleMetrics `json:"individualPuzzleMetrics"` // Individual puzzle solving stats
+	CollaborationMetrics    PlayerCollaboration     `json:"collaborationMetrics"`    // Player collaboration stats
+	GuideTokenUtilization   GuideTokenStats         `json:"guideTokenUtilization"`   // Guide token effectiveness
+}
+
+// Individual Puzzle Metrics - Track individual puzzle solving performance
+type IndividualPuzzleMetrics struct {
+	SegmentID         string  `json:"segmentId"`         // Assigned puzzle segment
+	PiecesManuallySet int     `json:"piecesManuallySet"` // Pieces placed manually (not pre-solved)
+	PiecesPreSolved   int     `json:"piecesPreSolved"`   // Pieces pre-solved by anchor tokens
+	SolvingStartTime  int64   `json:"solvingStartTime"`  // Unix timestamp when solving started
+	CompletionTime    int64   `json:"completionTime"`    // Unix timestamp when completed
+	SolvingDuration   int     `json:"solvingDuration"`   // Seconds spent solving individual puzzle
+	EfficiencyScore   float64 `json:"efficiencyScore"`   // Efficiency metric (0-1.0)
+	DifficultyRating  float64 `json:"difficultyRating"`  // Perceived difficulty based on time
+}
+
+// Player Collaboration - Enhanced collaboration tracking
+type PlayerCollaboration struct {
+	OwnFragmentMoves        int     `json:"ownFragmentMoves"`        // Moves of own fragment
+	UnassignedFragmentMoves int     `json:"unassignedFragmentMoves"` // Moves of unassigned fragments
+	RecommendationsSent     int     `json:"recommendationsSent"`     // Recommendations sent to others
+	RecommendationsReceived int     `json:"recommendationsReceived"` // Recommendations received
+	RecommendationsAccepted int     `json:"recommendationsAccepted"` // Recommendations accepted
+	AcceptanceRate          float64 `json:"acceptanceRate"`          // Acceptance rate %
+	VerbalCoordination      int     `json:"verbalCoordination"`      // Inferred coordination events
+	HelpfulnessScore        float64 `json:"helpfulnessScore"`        // Community helpfulness (0-1.0)
+}
+
+// Guide Token Stats - Track guide token effectiveness for individual players
+type GuideTokenStats struct {
+	CurrentThresholdLevel int       `json:"currentThresholdLevel"` // Current guide token level (0-5)
+	HighlightPositions    []GridPos `json:"highlightPositions"`    // Current highlighted positions
+	HighlightCoverage     float64   `json:"highlightCoverage"`     // Grid coverage percentage
+	MovesWithinHighlight  int       `json:"movesWithinHighlight"`  // Moves made within highlighted area
+	MovesOutsideHighlight int       `json:"movesOutsideHighlight"` // Moves made outside highlighted area
+	GuideEffectiveness    float64   `json:"guideEffectiveness"`    // Effectiveness score (0-1.0)
+	LastHighlightUpdate   time.Time `json:"lastHighlightUpdate"`   // When highlight was last updated
 }

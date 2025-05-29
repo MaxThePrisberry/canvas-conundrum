@@ -45,10 +45,6 @@ var TriviaCategories = []string{
 
 // Trivia Mechanics - All used in game_manager.go and trivia_manager.go
 const (
-	// TriviaQuestionInterval - Time interval between trivia questions during resource gathering phase (seconds)
-	// Used in: game_manager.go runTriviaRound()
-	TriviaQuestionInterval int = 60
-
 	// SpecialtyPointMultiplier - Point multiplier for correctly answering specialty trivia questions
 	// Used in: game_manager.go ProcessTriviaAnswer()
 	SpecialtyPointMultiplier float64 = 2.0
@@ -59,6 +55,7 @@ const (
 
 	// TriviaAnswerTimeout - Time limit for answering trivia questions (seconds)
 	// Used in: trivia_manager.go loadQuestionsFromFile() and GetQuestion()
+	// Note: Same timeout applies to both regular and specialty questions
 	TriviaAnswerTimeout int = 30
 
 	// MaxSpecialtiesPerPlayer - Maximum number of specialty categories per player
@@ -93,6 +90,25 @@ const (
 	ClarityTimeBonus int = 1
 )
 
+// Guide Token Linear Progression - NEW: Implementation for linear guide highlighting
+const (
+	// GuideTokenMaxThresholds - Maximum number of guide token thresholds for linear progression
+	GuideTokenMaxThresholds int = 5
+
+	// GuideTokenLinearSteps - Number of linear progression steps for guide highlighting
+	GuideTokenLinearSteps int = 5
+)
+
+// GuideHighlightSizes - Linear progression from large area (25%) to precise (2 positions)
+// Index corresponds to threshold level (0-4), values are grid percentage coverage
+var GuideHighlightSizes = []float64{
+	0.25, // Level 0: 25% of grid (very vague)
+	0.16, // Level 1: 16% of grid
+	0.09, // Level 2: 9% of grid
+	0.04, // Level 3: 4% of grid
+	0.02, // Level 4: 2% of grid (2 positions for precision)
+}
+
 // Puzzle Mechanics - All used in game_manager.go
 const (
 	// FragmentMovementCooldown - Cooldown period after moving a puzzle fragment (milliseconds)
@@ -121,8 +137,9 @@ const (
 	ResourceGatheringRounds int = 5
 
 	// ResourceGatheringRoundDuration - Duration of each resource gathering round (seconds)
+	// FIXED: Changed from 180 to 60 to match documentation requirement
 	// Used in: game_manager.go runTriviaRound() and sendHostUpdate()
-	ResourceGatheringRoundDuration int = 180
+	ResourceGatheringRoundDuration int = 60
 
 	// PuzzleAssemblyBaseTime - Base time for puzzle assembly phase (seconds)
 	// Used in: game_manager.go StartPuzzle()
@@ -202,4 +219,27 @@ const (
 	WebSocketPongTimeout     = 60 * time.Second
 	BroadcastChannelBuffer   = 256
 	PlayerEventChannelBuffer = 64
+)
+
+// Error Messages - Used throughout the application for consistent error handling
+const (
+	// Fragment ownership errors
+	ErrFragmentOwnership  = "you can only move your own fragment or unassigned fragments"
+	ErrFragmentNotVisible = "fragment is not yet visible"
+	ErrFragmentUnassigned = "invalid unassigned fragment access"
+
+	// Recommendation errors
+	ErrInvalidRecommendation = "can only recommend moves for unassigned fragments"
+	ErrRecommendationAuth    = "not authorized to respond to this recommendation"
+
+	// Phase errors
+	ErrWrongPhase            = "action not allowed in current game phase"
+	ErrReconnectionForbidden = "reconnection not allowed during puzzle assembly phase"
+
+	// Host errors
+	ErrHostOnly   = "only host can perform this action"
+	ErrHostExists = "a host is already connected to this game"
+
+	// Validation errors
+	ErrInvalidOwnership = "invalid fragment ownership format"
 )

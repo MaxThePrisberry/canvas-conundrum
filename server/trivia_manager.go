@@ -7,6 +7,7 @@ import (
 	"log"
 	"math/rand"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -91,7 +92,7 @@ func (tm *TriviaManager) loadAllQuestions() error {
 	return nil
 }
 
-// loadQuestionsFromFile loads questions from a single JSON file with enhanced validation
+// loadQuestionsFromFile loads questions from a single JSON file - ENHANCED validation
 func (tm *TriviaManager) loadQuestionsFromFile(filename, category, difficulty string) ([]TriviaQuestion, error) {
 	data, err := ioutil.ReadFile(filename)
 	if err != nil {
@@ -164,7 +165,7 @@ func (tm *TriviaManager) loadQuestionsFromFile(filename, category, difficulty st
 			Text:             questionText,
 			Category:         category,
 			Difficulty:       difficulty,
-			TimeLimit:        constants.TriviaAnswerTimeout,
+			TimeLimit:        constants.TriviaAnswerTimeout, // FIXED: All questions get same base timeout
 			Options:          options,
 			CorrectAnswer:    correctAnswer,
 			IncorrectAnswers: validIncorrectAnswers,
@@ -175,6 +176,9 @@ func (tm *TriviaManager) loadQuestionsFromFile(filename, category, difficulty st
 	if len(questions) == 0 {
 		return nil, fmt.Errorf("no valid questions after processing")
 	}
+
+	log.Printf("Loaded %d valid questions from %s (all with %d second timeout)",
+		len(questions), filename, constants.TriviaAnswerTimeout)
 
 	return questions, nil
 }
@@ -248,7 +252,7 @@ func (tm *TriviaManager) initializeQuestionPools() {
 	}
 }
 
-// GetQuestion retrieves a question with enhanced cycling and validation
+// GetQuestion retrieves a question with FIXED time limits for specialty questions
 func (tm *TriviaManager) GetQuestion(gameDifficulty string, playerSpecialties []string, askedQuestions map[string]bool) (*TriviaQuestion, error) {
 	tm.mu.Lock()
 	defer tm.mu.Unlock()
@@ -321,23 +325,29 @@ func (tm *TriviaManager) GetQuestion(gameDifficulty string, playerSpecialties []
 	// Configure question settings
 	question.IsSpecialty = isSpecialty
 	if isSpecialty {
-		// Specialty questions get same time limit as regular questions
+		// FIXED: Specialty questions get the SAME time limit as regular questions
 		question.TimeLimit = constants.TriviaAnswerTimeout
 		// Add specialty indicator to category display
 		question.Category = question.Category + " (Specialty)"
+	} else {
+		// Regular questions also get the standard timeout
+		question.TimeLimit = constants.TriviaAnswerTimeout
 	}
 
-	// Apply difficulty-based time modifiers
-	diffMod := tm.getDifficultyModifiersForTrivia(gameDifficulty)
-	question.TimeLimit = int(float64(question.TimeLimit) * diffMod.TimeLimitModifier)
+	// REMOVED: No difficulty-based time modifiers applied to individual questions
+	// The documentation specifies that all questions should have consistent time limits
+	// Time modifications should only apply to phase durations, not individual question timeouts
 
-	// Ensure minimum time limit
+	// Ensure minimum time limit safety check
 	if question.TimeLimit < 10 {
 		question.TimeLimit = 10
 	}
 
 	// Record when this question was asked
 	tm.questionHistory[question.ID] = time.Now()
+
+	log.Printf("Generated %s question (specialty: %v) with %d second timeout for category %s",
+		questionDifficulty, isSpecialty, question.TimeLimit, category)
 
 	return question, nil
 }
@@ -500,7 +510,7 @@ func (tm *TriviaManager) cleanupQuestionHistory() {
 	}
 }
 
-// ValidateAnswer validates an answer against stored correct answer with enhanced matching
+// Enhanced answer validation with consistent logging
 func (tm *TriviaManager) ValidateAnswer(questionID, playerAnswer string) (bool, error) {
 	tm.mu.RLock()
 	defer tm.mu.RUnlock()
@@ -510,7 +520,13 @@ func (tm *TriviaManager) ValidateAnswer(questionID, playerAnswer string) (bool, 
 		for _, questions := range difficulties {
 			for _, question := range questions {
 				if question.ID == questionID {
-					return tm.compareAnswers(question.CorrectAnswer, playerAnswer), nil
+					correct := tm.compareAnswers(question.CorrectAnswer, playerAnswer)
+
+					// Enhanced logging for debugging
+					log.Printf("Answer validation: questionID=%s, correct=%s, player=%s, result=%v",
+						questionID, question.CorrectAnswer, playerAnswer, correct)
+
+					return correct, nil
 				}
 			}
 		}
@@ -519,7 +535,7 @@ func (tm *TriviaManager) ValidateAnswer(questionID, playerAnswer string) (bool, 
 	return false, fmt.Errorf("question not found: %s", questionID)
 }
 
-// compareAnswers provides enhanced answer comparison
+// Enhanced answer comparison with better variation handling
 func (tm *TriviaManager) compareAnswers(correct, player string) bool {
 	// Normalize both answers
 	correctNorm := tm.normalizeAnswer(correct)
@@ -531,7 +547,181 @@ func (tm *TriviaManager) compareAnswers(correct, player string) bool {
 	}
 
 	// Check for common variations
-	return tm.checkAnswerVariations(correctNorm, playerNorm)
+	if tm.checkAnswerVariations(correctNorm, playerNorm) {
+		return true
+	}
+
+	// Additional fuzzy matching for numbers and common patterns
+	return tm.checkFuzzyMatch(correctNorm, playerNorm)
+}
+
+// checkFuzzyMatch provides additional fuzzy matching for edge cases
+func (tm *TriviaManager) checkFuzzyMatch(correct, player string) bool {
+	// Handle numeric answers (e.g., "42" vs "forty-two")
+	if tm.isNumericAnswer(correct) && tm.isNumericAnswer(player) {
+		return tm.compareNumericAnswers(correct, player)
+	}
+
+	// Handle dates and years
+	if tm.isDateAnswer(correct) && tm.isDateAnswer(player) {
+		return tm.compareDateAnswers(correct, player)
+	}
+
+	// Handle percentage answers
+	if strings.Contains(correct, "%") || strings.Contains(player, "%") {
+		return tm.comparePercentageAnswers(correct, player)
+	}
+
+	return false
+}
+
+// Helper methods for fuzzy matching
+func (tm *TriviaManager) isNumericAnswer(answer string) bool {
+	// Check if answer contains primarily numbers
+	numChars := 0
+	totalChars := len(strings.ReplaceAll(answer, " ", ""))
+
+	for _, char := range answer {
+		if char >= '0' && char <= '9' {
+			numChars++
+		}
+	}
+
+	return totalChars > 0 && float64(numChars)/float64(totalChars) > 0.5
+}
+
+func (tm *TriviaManager) isDateAnswer(answer string) bool {
+	// Check for common date patterns
+	patterns := []string{"19", "20", "year", "century", "bc", "ad", "ce", "bce"}
+	lowerAnswer := strings.ToLower(answer)
+
+	for _, pattern := range patterns {
+		if strings.Contains(lowerAnswer, pattern) {
+			return true
+		}
+	}
+
+	return false
+}
+
+func (tm *TriviaManager) compareNumericAnswers(correct, player string) bool {
+	// Extract numbers from both answers and compare
+	correctNums := tm.extractNumbers(correct)
+	playerNums := tm.extractNumbers(player)
+
+	// If both have same numbers, consider them equal
+	if len(correctNums) > 0 && len(playerNums) > 0 {
+		return correctNums[0] == playerNums[0]
+	}
+
+	return false
+}
+
+func (tm *TriviaManager) compareDateAnswers(correct, player string) bool {
+	// Extract years from both answers
+	correctYears := tm.extractYears(correct)
+	playerYears := tm.extractYears(player)
+
+	// If both contain the same year, consider them equal
+	for _, cy := range correctYears {
+		for _, py := range playerYears {
+			if cy == py {
+				return true
+			}
+		}
+	}
+
+	return false
+}
+
+func (tm *TriviaManager) comparePercentageAnswers(correct, player string) bool {
+	// Extract percentage values
+	correctPct := tm.extractPercentage(correct)
+	playerPct := tm.extractPercentage(player)
+
+	// Allow small tolerance for percentage answers
+	if correctPct >= 0 && playerPct >= 0 {
+		return abs(int(correctPct-playerPct)) <= 1 // 1% tolerance
+	}
+
+	return false
+}
+
+// Helper extraction methods
+func (tm *TriviaManager) extractNumbers(text string) []int {
+	numbers := []int{}
+	current := ""
+
+	for _, char := range text {
+		if char >= '0' && char <= '9' {
+			current += string(char)
+		} else {
+			if current != "" {
+				if num, err := strconv.Atoi(current); err == nil {
+					numbers = append(numbers, num)
+				}
+				current = ""
+			}
+		}
+	}
+
+	if current != "" {
+		if num, err := strconv.Atoi(current); err == nil {
+			numbers = append(numbers, num)
+		}
+	}
+
+	return numbers
+}
+
+func (tm *TriviaManager) extractYears(text string) []int {
+	numbers := tm.extractNumbers(text)
+	years := []int{}
+
+	for _, num := range numbers {
+		// Consider 4-digit numbers between 1000-2100 as years
+		if num >= 1000 && num <= 2100 {
+			years = append(years, num)
+		}
+	}
+
+	return years
+}
+
+func (tm *TriviaManager) extractPercentage(text string) float64 {
+	// Look for numbers followed by % or "percent"
+	text = strings.ToLower(text)
+
+	if strings.Contains(text, "%") {
+		// Extract number before %
+		parts := strings.Split(text, "%")
+		if len(parts) > 0 {
+			numStr := strings.TrimSpace(parts[0])
+			// Get the last word/number before %
+			words := strings.Fields(numStr)
+			if len(words) > 0 {
+				if pct, err := strconv.ParseFloat(words[len(words)-1], 64); err == nil {
+					return pct
+				}
+			}
+		}
+	}
+
+	if strings.Contains(text, "percent") {
+		// Extract number before "percent"
+		parts := strings.Split(text, "percent")
+		if len(parts) > 0 {
+			numStr := strings.TrimSpace(parts[0])
+			words := strings.Fields(numStr)
+			if len(words) > 0 {
+				if pct, err := strconv.ParseFloat(words[len(words)-1], 64); err == nil {
+					return pct
+				}
+			}
+		}
+	}
+
+	return -1 // No percentage found
 }
 
 // normalizeAnswer normalizes an answer for comparison

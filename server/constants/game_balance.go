@@ -90,6 +90,25 @@ const (
 	ClarityTimeBonus int = 1
 )
 
+// Guide Token Linear Progression - NEW: Implementation for linear guide highlighting
+const (
+	// GuideTokenMaxThresholds - Maximum number of guide token thresholds for linear progression
+	GuideTokenMaxThresholds int = 5
+
+	// GuideTokenLinearSteps - Number of linear progression steps for guide highlighting
+	GuideTokenLinearSteps int = 5
+)
+
+// GuideHighlightSizes - Linear progression from large area (25%) to precise (2 positions)
+// Index corresponds to threshold level (0-4), values are grid percentage coverage
+var GuideHighlightSizes = []float64{
+	0.25, // Level 0: 25% of grid (very vague)
+	0.16, // Level 1: 16% of grid
+	0.09, // Level 2: 9% of grid
+	0.04, // Level 3: 4% of grid
+	0.02, // Level 4: 2% of grid (2 positions for precision)
+}
+
 // Puzzle Mechanics - All used in game_manager.go
 const (
 	// FragmentMovementCooldown - Cooldown period after moving a puzzle fragment (milliseconds)
@@ -118,8 +137,9 @@ const (
 	ResourceGatheringRounds int = 5
 
 	// ResourceGatheringRoundDuration - Duration of each resource gathering round (seconds)
+	// FIXED: Changed from 180 to 60 to match documentation requirement
 	// Used in: game_manager.go runTriviaRound() and sendHostUpdate()
-	ResourceGatheringRoundDuration int = 180
+	ResourceGatheringRoundDuration int = 60
 
 	// PuzzleAssemblyBaseTime - Base time for puzzle assembly phase (seconds)
 	// Used in: game_manager.go StartPuzzle()

@@ -43,7 +43,7 @@ func NewWebSocketHandler(pm *PlayerManager, gm *GameManager, eh *EventHandlers, 
 	}
 }
 
-// HandleConnection handles incoming WebSocket connections with host/player distinction
+// HandleConnection handles incoming WebSocket connections with ENHANCED reconnection restrictions
 func (wsh *WebSocketHandler) HandleConnection(w http.ResponseWriter, r *http.Request, isHost bool) {
 	// Enhanced connection validation
 	if !wsh.validateConnectionRequest(r) {
@@ -78,36 +78,45 @@ func (wsh *WebSocketHandler) HandleConnection(w http.ResponseWriter, r *http.Req
 
 	// Handle reconnection or new connection
 	if playerID != "" && !isHost {
-		// Check if reconnection is allowed during current phase
+		// ENHANCED: Check if reconnection is allowed during current phase
 		phase := wsh.gameManager.GetPhase()
 		if phase == PhasePuzzleAssembly {
-			wsh.sendConnectionError(conn, "Reconnection not allowed during puzzle assembly phase")
+			wsh.sendConnectionError(conn, constants.ErrReconnectionForbidden)
+			log.Printf("Blocked reconnection attempt during puzzle assembly phase: player %s", playerID)
 			return
 		}
 
-		// Attempt regular player reconnection
+		// Attempt regular player reconnection (only allowed in setup and resource gathering)
 		if err := wsh.playerManager.ReconnectPlayer(playerID, conn); err != nil {
 			log.Printf("Reconnection failed for player %s: %v", playerID, err)
 			// Create new player if reconnection fails
 			player = wsh.playerManager.CreatePlayer(conn, false)
 		} else {
 			player, _ = wsh.playerManager.GetPlayer(playerID)
-			log.Printf("Player %s reconnected", playerID)
+			log.Printf("Player %s reconnected during %s phase", playerID, phase.String())
 
 			// Send current game state on reconnection
 			wsh.sendReconnectionState(player)
 		}
 	} else if playerID != "" && isHost {
-		// Attempt host reconnection
+		// Host reconnection is ALWAYS allowed
 		existingPlayer, err := wsh.playerManager.GetPlayer(playerID)
 		if err != nil || !existingPlayer.IsHost {
 			log.Printf("Host reconnection failed for player %s: %v", playerID, err)
-			// Create new host if reconnection fails or player wasn't a host
+			// Check if another host is already connected
+			if wsh.playerManager.GetHost() != nil {
+				wsh.sendConnectionError(conn, constants.ErrHostExists)
+				return
+			}
 			player = wsh.playerManager.CreatePlayer(conn, true)
 		} else {
 			// Reconnect existing host
 			if err := wsh.playerManager.ReconnectPlayer(playerID, conn); err != nil {
 				log.Printf("Host reconnection failed for player %s: %v", playerID, err)
+				if wsh.playerManager.GetHost() != nil {
+					wsh.sendConnectionError(conn, constants.ErrHostExists)
+					return
+				}
 				player = wsh.playerManager.CreatePlayer(conn, true)
 			} else {
 				player = existingPlayer
@@ -121,7 +130,7 @@ func (wsh *WebSocketHandler) HandleConnection(w http.ResponseWriter, r *http.Req
 			// Check if there's already a host
 			existingHost := wsh.playerManager.GetHost()
 			if existingHost != nil {
-				wsh.sendConnectionError(conn, "A host is already connected to this game")
+				wsh.sendConnectionError(conn, constants.ErrHostExists)
 				return
 			}
 			player = wsh.playerManager.CreatePlayer(conn, true)
@@ -185,49 +194,79 @@ func (wsh *WebSocketHandler) HandleConnection(w http.ResponseWriter, r *http.Req
 	}
 }
 
-// validateConnectionRequest validates the initial connection request
+// validateConnectionRequest validates the initial connection request - ENHANCED
 func (wsh *WebSocketHandler) validateConnectionRequest(r *http.Request) bool {
 	// Check request method
 	if r.Method != "GET" {
+		log.Printf("Invalid connection request method: %s", r.Method)
 		return false
 	}
 
 	// Check required headers
 	if r.Header.Get("Upgrade") != "websocket" {
+		log.Printf("Missing or invalid Upgrade header: %s", r.Header.Get("Upgrade"))
 		return false
 	}
 
 	if r.Header.Get("Connection") != "Upgrade" {
+		log.Printf("Missing or invalid Connection header: %s", r.Header.Get("Connection"))
 		return false
 	}
 
-	// Additional security checks can be added here
+	// Additional security: check user agent to prevent basic automated attacks
+	userAgent := r.Header.Get("User-Agent")
+	if userAgent == "" {
+		log.Printf("Connection rejected: missing User-Agent header")
+		return false
+	}
+
+	// Additional security: rate limiting could be added here
+	// For now, we'll just log connection attempts
+	log.Printf("Valid connection request from %s (User-Agent: %s)", r.RemoteAddr, userAgent)
+
 	return true
 }
 
-// canAcceptNewPlayer checks if we can accept a new player connection
+// canAcceptNewPlayer checks if we can accept a new player connection - ENHANCED
 func (wsh *WebSocketHandler) canAcceptNewPlayer() bool {
-	// Check game phase
-	if wsh.gameManager.GetPhase() != PhaseSetup {
+	// Check game phase - only allow new players during setup
+	phase := wsh.gameManager.GetPhase()
+	if phase != PhaseSetup {
+		log.Printf("Rejected new player connection: game is in %s phase (only setup phase allows new players)", phase.String())
 		return false
 	}
 
 	// Check player limit
-	if wsh.playerManager.GetPlayerCount() >= constants.MaxPlayers {
+	currentCount := wsh.playerManager.GetPlayerCount()
+	if currentCount >= constants.MaxPlayers {
+		log.Printf("Rejected new player connection: player limit reached (%d/%d)", currentCount, constants.MaxPlayers)
 		return false
 	}
 
 	return true
 }
 
-// sendConnectionError sends an error during connection setup
+// sendConnectionError sends an error during connection setup - ENHANCED
 func (wsh *WebSocketHandler) sendConnectionError(conn *websocket.Conn, message string) {
-	conn.WriteJSON(BaseMessage{
-		Type: MsgError,
-		Payload: mustMarshal(map[string]string{
-			"error": message,
-		}),
+	errorResponse := map[string]interface{}{
+		"error":     message,
+		"type":      "connection_error",
+		"timestamp": time.Now().Unix(),
+	}
+
+	// Set write deadline for error message
+	conn.SetWriteDeadline(time.Now().Add(5 * time.Second))
+
+	err := conn.WriteJSON(BaseMessage{
+		Type:    MsgError,
+		Payload: mustMarshal(errorResponse),
 	})
+
+	if err != nil {
+		log.Printf("Failed to send connection error message: %v", err)
+	}
+
+	log.Printf("Sent connection error: %s", message)
 }
 
 // handlePlayerMessages handles incoming messages with comprehensive validation
@@ -418,6 +457,7 @@ func (wsh *WebSocketHandler) handleSegmentCompletionWithValidation(playerID stri
 	return wsh.eventHandlers.HandleSegmentCompleted(playerID, mustMarshal(data))
 }
 
+// handleFragmentMoveWithValidation handles fragment moves with ENHANCED ownership validation
 func (wsh *WebSocketHandler) handleFragmentMoveWithValidation(playerID string, payload json.RawMessage) error {
 	// Get current grid size for validation
 	maxGridSize := 8 // Default max, will be updated by game manager
@@ -430,6 +470,30 @@ func (wsh *WebSocketHandler) handleFragmentMoveWithValidation(playerID string, p
 	data, errors := ValidateFragmentMove(payload, maxGridSize)
 	if len(errors) > 0 {
 		return fmt.Errorf("validation failed: %v", errors)
+	}
+
+	// ENHANCED: Additional ownership pre-validation before passing to game manager
+	wsh.gameManager.mu.RLock()
+	fragment, exists := wsh.gameManager.state.PuzzleFragments[data["fragmentId"].(string)]
+	wsh.gameManager.mu.RUnlock()
+
+	if exists {
+		// Pre-validate ownership to provide more specific error messages
+		if err := wsh.gameManager.validateFragmentOwnership(playerID, fragment); err != nil {
+			// Send specific ownership error response
+			player, _ := wsh.playerManager.GetPlayer(playerID)
+			if player != nil {
+				sendToPlayer(player, MsgFragmentMoveResponse, map[string]interface{}{
+					"status":     "denied",
+					"reason":     err.Error(),
+					"fragmentId": data["fragmentId"].(string),
+					"errorType":  "ownership_violation",
+				})
+			}
+
+			log.Printf("Fragment move denied for player %s: %v", playerID, err)
+			return nil // Don't return error to avoid double error messages
+		}
 	}
 
 	return wsh.eventHandlers.HandleFragmentMoveRequest(playerID, mustMarshal(data))
@@ -483,7 +547,7 @@ func (wsh *WebSocketHandler) sendValidationError(player *Player, err error) {
 	sendToPlayer(player, MsgError, errorResponse)
 }
 
-// handleDisconnection handles player disconnection with REMOVED host transfer logic
+// handleDisconnection handles player disconnection with ENHANCED fragment ownership handling
 func (wsh *WebSocketHandler) handleDisconnection(player *Player) {
 	log.Printf("Player %s disconnected", player.ID)
 
@@ -501,60 +565,73 @@ func (wsh *WebSocketHandler) handleDisconnection(player *Player) {
 	case PhaseResourceGathering:
 		// Can reconnect during resource gathering
 		// Continue game normally
+		log.Printf("Player %s disconnected during resource gathering - can reconnect", player.ID)
 
 	case PhasePuzzleAssembly:
-		// During puzzle assembly, auto-solve their fragment
-		wsh.gameManager.mu.Lock()
-		fragmentID := fmt.Sprintf("fragment_%s", player.ID)
-		if fragment, exists := wsh.gameManager.state.PuzzleFragments[fragmentID]; exists {
-			fragment.Solved = true
-			// Randomly relocate fragment to maintain grid integrity
-			fragment.Position = GridPos{
-				X: len(wsh.gameManager.state.PuzzleFragments) % wsh.gameManager.state.GridSize,
-				Y: len(wsh.gameManager.state.PuzzleFragments) / wsh.gameManager.state.GridSize,
-			}
+		// ENHANCED: During puzzle assembly, handle fragment ownership transfer
+		if !player.IsHost {
+			wsh.gameManager.handleFragmentDisconnection(player.ID)
 		}
-		wsh.gameManager.mu.Unlock()
 
-		// Notify others
+		// Notify others about disconnection and fragment changes
 		wsh.broadcastChan <- BroadcastMessage{
 			Type: MsgCentralPuzzleState,
 			Payload: map[string]interface{}{
-				"playerDisconnected": player.ID,
+				"playerDisconnected":  player.ID,
+				"phase":               "puzzle_assembly",
+				"reconnectionAllowed": false,
 			},
 		}
 
+		log.Printf("Player %s disconnected during puzzle assembly - fragment converted to unassigned", player.ID)
+
 	case PhasePostGame:
 		// No special handling needed
+		log.Printf("Player %s disconnected during post-game phase", player.ID)
 	}
 
-	// REMOVED: Host transfer logic
-	// Host disconnections are now handled differently - no automatic transfer
+	// Handle host disconnection
 	if player.IsHost {
 		log.Printf("Host %s disconnected - no host transfer, waiting for reconnection to host endpoint", player.ID)
 
-		// Optionally notify players that host disconnected
+		// Notify players that host disconnected but game continues
 		wsh.broadcastChan <- BroadcastMessage{
 			Type: MsgError,
 			Payload: map[string]interface{}{
-				"error": "Host disconnected - game may be paused until host reconnects",
-				"type":  "host_disconnected",
+				"error":            "Host disconnected - game may be paused until host reconnects",
+				"type":             "host_disconnected",
+				"phase":            phase.String(),
+				"reconnectionInfo": "Host can reconnect to continue monitoring the game",
 			},
 		}
 	}
 }
 
-// sendReconnectionState sends current game state to reconnecting player
+// sendReconnectionState sends current game state to reconnecting player - ENHANCED
 func (wsh *WebSocketHandler) sendReconnectionState(player *Player) {
 	phase := wsh.gameManager.GetPhase()
 
-	// Always send available roles first
-	roles := wsh.playerManager.GetAvailableRoles()
-	sendToPlayer(player, MsgAvailableRoles, map[string]interface{}{
-		"playerId":         player.ID,
-		"roles":            roles,
-		"triviaCategories": constants.TriviaCategories,
-	})
+	player.mu.RLock()
+	isHost := player.IsHost
+	player.mu.RUnlock()
+
+	if isHost {
+		// Host gets comprehensive state information
+		sendToPlayer(player, MsgAvailableRoles, map[string]interface{}{
+			"playerId": player.ID,
+			"isHost":   true,
+			"message":  fmt.Sprintf("Reconnected as host during %s phase", phase.String()),
+		})
+	} else {
+		// Regular player gets role information
+		roles := wsh.playerManager.GetAvailableRoles()
+		sendToPlayer(player, MsgAvailableRoles, map[string]interface{}{
+			"playerId":         player.ID,
+			"isHost":           false,
+			"roles":            roles,
+			"triviaCategories": constants.TriviaCategories,
+		})
+	}
 
 	switch phase {
 	case PhaseSetup:
@@ -562,41 +639,32 @@ func (wsh *WebSocketHandler) sendReconnectionState(player *Player) {
 		wsh.eventHandlers.broadcastLobbyStatus()
 
 	case PhaseResourceGathering:
-		// Send resource phase info
-		sendToPlayer(player, MsgResourcePhaseStart, map[string]interface{}{
-			"resourceHashes": constants.ResourceStationHashes,
-		})
+		if !isHost {
+			// Send resource phase info to regular players
+			sendToPlayer(player, MsgResourcePhaseStart, map[string]interface{}{
+				"resourceHashes": constants.ResourceStationHashes,
+			})
 
-		// Send current progress
-		wsh.gameManager.sendTeamProgressUpdate()
+			// Send current progress
+			wsh.gameManager.sendTeamProgressUpdate()
+		}
 
 	case PhasePuzzleAssembly:
-		// Send puzzle phase info
-		wsh.gameManager.mu.RLock()
-		fragmentID := fmt.Sprintf("fragment_%s", player.ID)
-		fragment := wsh.gameManager.state.PuzzleFragments[fragmentID]
-		segmentID := ""
-		if fragment != nil {
-			segmentID = fmt.Sprintf("segment_%c%d", 'a'+fragment.CorrectPosition.Y, fragment.CorrectPosition.X+1)
+		if isHost {
+			// Host gets complete puzzle state for monitoring
+			wsh.gameManager.sendCompletePuzzleStateToHost()
+		} else {
+			// NOTE: Regular players cannot reconnect during puzzle assembly
+			// This case should not occur due to connection restrictions
+			log.Printf("WARNING: Regular player %s reconnected during puzzle assembly - this should not happen", player.ID)
 		}
-		imageID := wsh.gameManager.state.PuzzleImageID
-		gridSize := wsh.gameManager.state.GridSize
-		wsh.gameManager.mu.RUnlock()
-
-		sendToPlayer(player, MsgPuzzlePhaseLoad, map[string]interface{}{
-			"imageId":   imageID,
-			"segmentId": segmentID,
-			"gridSize":  gridSize,
-			"preSolved": fragment != nil && fragment.PreSolved,
-		})
-
-		// Send current puzzle state
-		wsh.gameManager.broadcastPuzzleState()
 
 	case PhasePostGame:
-		// Send analytics
-		// Game is ending anyway
+		// Send current analytics if available
+		log.Printf("Player %s reconnected during post-game phase", player.ID)
 	}
+
+	log.Printf("Sent reconnection state to %s (host: %v) for phase %s", player.ID, isHost, phase.String())
 }
 
 // sendError sends an error message to a player

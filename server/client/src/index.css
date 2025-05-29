@@ -1,5 +1,17 @@
-/* CSS Reset and Global Styles */
+/* CSS Reset and Global Styles - Ocean/Sky Theme */
 :root {
+  /* Ocean/Sky Color Palette */
+  --color-ocean-50: #F0F9FF;
+  --color-ocean-100: #E0F2FE;
+  --color-ocean-200: #BAE6FD;
+  --color-ocean-300: #7DD3FC;
+  --color-ocean-400: #38BDF8;
+  --color-ocean-500: #0EA5E9;
+  --color-ocean-600: #0284C7;
+  --color-ocean-700: #0369A1;
+  --color-ocean-800: #075985;
+  --color-ocean-900: #0C4A6E;
+  
   /* Prevent text size adjustment on orientation change */
   -webkit-text-size-adjust: 100%;
   -moz-text-size-adjust: 100%;
@@ -60,9 +72,25 @@ body {
   /* Prevent highlighting */
   -webkit-tap-highlight-color: transparent;
   
-  /* Background */
-  background-color: #FFFFFF;
-  color: #134E4A;
+  /* Ocean gradient background */
+  background: linear-gradient(180deg, #E0F2FE 0%, #BAE6FD 20%, #7DD3FC 40%, #38BDF8 60%, #0EA5E9 80%, #0284C7 100%);
+  background-attachment: fixed;
+  color: #0F172A;
+}
+
+/* Ocean wave overlay */
+body::before {
+  content: '';
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: 
+    radial-gradient(ellipse at top, transparent 0%, rgba(255, 255, 255, 0.1) 100%),
+    radial-gradient(ellipse at bottom, rgba(3, 105, 161, 0.2) 0%, transparent 100%);
+  pointer-events: none;
+  z-index: 1;
 }
 
 /* Allow text selection in specific areas */
@@ -78,6 +106,8 @@ body {
   overscroll-behavior-y: none;
   min-height: 100vh;
   min-height: -webkit-fill-available;
+  position: relative;
+  z-index: 2;
 }
 
 /* Input and textarea resets */
@@ -145,28 +175,30 @@ ol {
 }
 
 :focus-visible {
-  outline: 2px solid #2DD4BF;
+  outline: 3px solid #0EA5E9;
   outline-offset: 2px;
+  border-radius: 4px;
 }
 
 /* Scrollbar styles for webkit browsers */
 ::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+  width: 10px;
+  height: 10px;
 }
 
 ::-webkit-scrollbar-track {
-  background: #F0FDFA;
-  border-radius: 3px;
+  background: rgba(224, 242, 254, 0.5);
+  border-radius: 5px;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #14B8A6;
-  border-radius: 3px;
+  background: linear-gradient(180deg, #0EA5E9 0%, #0284C7 100%);
+  border-radius: 5px;
+  border: 2px solid rgba(255, 255, 255, 0.3);
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #0D9488;
+  background: linear-gradient(180deg, #0284C7 0%, #0369A1 100%);
 }
 
 /* Loading state */
@@ -255,5 +287,80 @@ html {
     color: #000 !important;
     box-shadow: none !important;
     text-shadow: none !important;
+  }
+}
+
+/* Ocean-themed animations */
+@keyframes ocean-drift {
+  0%, 100% {
+    transform: translateX(0) translateY(0);
+  }
+  25% {
+    transform: translateX(-20px) translateY(-10px);
+  }
+  50% {
+    transform: translateX(20px) translateY(5px);
+  }
+  75% {
+    transform: translateX(-10px) translateY(10px);
+  }
+}
+
+@keyframes bubble-rise {
+  0% {
+    transform: translateY(100vh) scale(0);
+    opacity: 0;
+  }
+  10% {
+    transform: translateY(90vh) scale(1);
+    opacity: 0.7;
+  }
+  90% {
+    transform: translateY(10vh) scale(1);
+    opacity: 0.7;
+  }
+  100% {
+    transform: translateY(0) scale(0);
+    opacity: 0;
+  }
+}
+
+/* Responsive typography */
+html {
+  font-size: 16px;
+}
+
+@media (max-width: 768px) {
+  html {
+    font-size: 15px;
+  }
+}
+
+@media (max-width: 480px) {
+  html {
+    font-size: 14px;
+  }
+}
+
+/* High contrast mode support */
+@media (prefers-contrast: high) {
+  :focus-visible {
+    outline-width: 4px;
+  }
+  
+  body {
+    background: white;
+  }
+}
+
+/* Reduced motion support */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
   }
 }

@@ -93,12 +93,19 @@ const PhaseTransition = ({ title, subtitle, celebration = false }) => {
         </motion.div>
       </div>
 
-      <motion.div
-        className="transition-wave"
-        initial={{ x: '-100%' }}
-        animate={{ x: '100%' }}
-        transition={{ duration: 1.5, ease: "easeInOut" }}
-      />
+      {/* Animated particles */}
+      <div className="transition-particles">
+        {[...Array(10)].map((_, i) => (
+          <div key={i} className="particle" />
+        ))}
+      </div>
+
+      {/* Underwater bubbles */}
+      <div className="bubbles">
+        {[...Array(6)].map((_, i) => (
+          <div key={i} className="bubble" />
+        ))}
+      </div>
     </motion.div>
   );
 };

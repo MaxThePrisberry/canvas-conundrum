@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Html5QrcodeScanner } from 'html5-qrcode';
-import { TokenType, Colors } from '../constants';
+import { TokenType, Colors, QR_SCANNER_CONFIG, RESOURCE_STATIONS, ERROR_MESSAGES, SUCCESS_MESSAGES, HAPTIC_PATTERNS } from '../constants';
 import PhaseTransition from './PhaseTransition';
 import TriviaQuestion from './TriviaQuestion';
 import ManualCodeEntry from './ManualCodeEntry';
@@ -19,6 +19,7 @@ const ResourceGatheringPhase = ({
   const [showTransition, setShowTransition] = useState(true);
   const [lastAnswerCorrect, setLastAnswerCorrect] = useState(null);
   const [showManualEntry, setShowManualEntry] = useState(false);
+  const [scanError, setScanError] = useState(null);
   const scannerRef = useRef(null);
   const scannerInstanceRef = useRef(null);
 
@@ -30,51 +31,34 @@ const ResourceGatheringPhase = ({
 
   useEffect(() => {
     // Handle question arrival
-    if (currentQuestion) {
+    if (currentQuestion && currentView === 'waiting') {
       setCurrentView('question');
       setLastAnswerCorrect(null);
     }
-  }, [currentQuestion]);
-
-  const resourceConfig = {
-    [TokenType.ANCHOR]: {
-      title: 'Anchor Station',
-      icon: '⚓',
-      color: Colors.token.anchor,
-      description: 'Stability tokens'
-    },
-    [TokenType.CHRONOS]: {
-      title: 'Time Station',
-      icon: '⏰',
-      color: Colors.token.chronos,
-      description: 'Time extension tokens'
-    },
-    [TokenType.GUIDE]: {
-      title: 'Guide Station',
-      icon: '🧭',
-      color: Colors.token.guide,
-      description: 'Hint tokens'
-    },
-    [TokenType.CLARITY]: {
-      title: 'Clarity Station',
-      icon: '💎',
-      color: Colors.token.clarity,
-      description: 'Preview time tokens'
-    }
-  };
+  }, [currentQuestion, currentView]);
 
   const handleResourceSelect = (resourceType) => {
     setSelectedResource(resourceType);
     setCurrentView('scanner');
+    setScanError(null);
 
     // Haptic feedback
     if (window.navigator && window.navigator.vibrate) {
-      window.navigator.vibrate(30);
+      window.navigator.vibrate(HAPTIC_PATTERNS.MEDIUM);
     }
   };
 
-  const handleScanSuccess = (decodedText) => {
+  const handleScanSuccess = (decodedText, decodedResult) => {
+    console.log('QR Code scanned:', decodedText);
     verifyCode(decodedText);
+  };
+
+  const handleScanError = (errorMessage) => {
+    // Ignore continuous scan errors, they're normal
+    if (errorMessage?.includes('NotFoundException')) {
+      return;
+    }
+    console.log('QR scan error:', errorMessage);
   };
 
   const verifyCode = (code) => {
@@ -88,7 +72,7 @@ const ResourceGatheringPhase = ({
       
       // Stop scanner if active
       if (scannerInstanceRef.current) {
-        scannerInstanceRef.current.clear();
+        scannerInstanceRef.current.clear().catch(console.error);
         scannerInstanceRef.current = null;
       }
 
@@ -97,31 +81,37 @@ const ResourceGatheringPhase = ({
       onLocationVerified(code);
       setCurrentView('waiting');
       setShowManualEntry(false);
+      setScanError(null);
 
       // Success haptic feedback
       if (window.navigator && window.navigator.vibrate) {
-        window.navigator.vibrate([50, 30, 50]);
+        window.navigator.vibrate(HAPTIC_PATTERNS.SUCCESS);
       }
     } else {
       // Invalid QR code - show error feedback
+      setScanError(ERROR_MESSAGES.INVALID_CODE);
       if (window.navigator && window.navigator.vibrate) {
-        window.navigator.vibrate([100, 50, 100]);
+        window.navigator.vibrate(HAPTIC_PATTERNS.ERROR);
       }
       
-      // Show error message or manual entry option
-      setShowManualEntry(true);
+      // Show manual entry option after error
+      setTimeout(() => {
+        setShowManualEntry(true);
+      }, 1000);
     }
   };
 
   const handleBackToMenu = () => {
     // Stop scanner if active
     if (scannerInstanceRef.current) {
-      scannerInstanceRef.current.clear();
+      scannerInstanceRef.current.clear().catch(console.error);
       scannerInstanceRef.current = null;
     }
     
     setCurrentView('menu');
     setSelectedResource(null);
+    setScanError(null);
+    setShowManualEntry(false);
   };
 
   const handleAnswerSubmit = (answer, isCorrect) => {
@@ -137,25 +127,24 @@ const ResourceGatheringPhase = ({
   // Initialize QR scanner when scanner view is active
   useEffect(() => {
     if (currentView === 'scanner' && scannerRef.current && !scannerInstanceRef.current) {
-      const scanner = new Html5QrcodeScanner("qr-reader", {
-        fps: 10,
-        qrbox: { width: 250, height: 250 },
-        aspectRatio: 1.0,
-        showTorchButtonIfSupported: true,
-        showZoomSliderIfSupported: true,
-        defaultZoomValueIfSupported: 1.5
-      });
+      try {
+        const scanner = new Html5QrcodeScanner(
+          "qr-reader",
+          QR_SCANNER_CONFIG,
+          false // verbose
+        );
 
-      scannerInstanceRef.current = scanner;
-
-      scanner.render(handleScanSuccess, (error) => {
-        // Ignore errors - scanner is still active
-      });
+        scannerInstanceRef.current = scanner;
+        scanner.render(handleScanSuccess, handleScanError);
+      } catch (error) {
+        console.error('Failed to initialize QR scanner:', error);
+        setScanError(ERROR_MESSAGES.QR_SCAN_FAILED);
+      }
     }
 
     return () => {
-      if (scannerInstanceRef.current) {
-        scannerInstanceRef.current.clear();
+      if (scannerInstanceRef.current && currentView !== 'scanner') {
+        scannerInstanceRef.current.clear().catch(console.error);
         scannerInstanceRef.current = null;
       }
     };
@@ -186,7 +175,7 @@ const ResourceGatheringPhase = ({
             <p className="menu-subtitle">Scan the QR code at your chosen location</p>
 
             <div className="resource-grid">
-              {Object.entries(resourceConfig).map(([type, config], index) => (
+              {Object.entries(RESOURCE_STATIONS).map(([type, config], index) => (
                 <motion.button
                   key={type}
                   className="resource-card"
@@ -196,10 +185,10 @@ const ResourceGatheringPhase = ({
                   transition={{ delay: index * 0.1 }}
                   whileHover={{ scale: 1.05 }}
                   whileTap={{ scale: 0.95 }}
-                  style={{ '--resource-color': config.color }}
+                  style={{ '--resource-color': Colors.token[type] }}
                 >
                   <div className="resource-icon">{config.icon}</div>
-                  <h3>{config.title}</h3>
+                  <h3>{config.name}</h3>
                   <p>{config.description}</p>
                 </motion.button>
               ))}
@@ -212,7 +201,7 @@ const ResourceGatheringPhase = ({
                 animate={{ opacity: 1, y: 0 }}
               >
                 <span>Current Location:</span>
-                <strong>{resourceConfig[verifiedLocation].title}</strong>
+                <strong>{RESOURCE_STATIONS[verifiedLocation].name}</strong>
               </motion.div>
             )}
           </motion.div>
@@ -231,7 +220,7 @@ const ResourceGatheringPhase = ({
               <button className="back-button" onClick={handleBackToMenu}>
                 ← Back
               </button>
-              <h2>Scan {resourceConfig[selectedResource].title}</h2>
+              <h2>Scan {RESOURCE_STATIONS[selectedResource]?.name}</h2>
             </div>
 
             <div className="scanner-container">
@@ -241,8 +230,22 @@ const ResourceGatheringPhase = ({
                 className="scan-frame"
                 animate={{ opacity: [0.5, 1, 0.5] }}
                 transition={{ duration: 2, repeat: Infinity }}
-              />
+              >
+                <span></span>
+                <span></span>
+              </motion.div>
             </div>
+
+            {scanError && (
+              <motion.p
+                className="scanner-error"
+                initial={{ opacity: 0, y: -10 }}
+                animate={{ opacity: 1, y: 0 }}
+                style={{ color: Colors.error, textAlign: 'center', marginTop: '1rem' }}
+              >
+                {scanError}
+              </motion.p>
+            )}
 
             <p className="scanner-hint">
               Point your camera at the QR code
@@ -274,18 +277,18 @@ const ResourceGatheringPhase = ({
             >
               <motion.div
                 className="verified-icon"
-                style={{ backgroundColor: resourceConfig[verifiedLocation]?.color }}
+                style={{ backgroundColor: Colors.token[verifiedLocation] }}
                 animate={{ rotate: [0, 10, -10, 0] }}
                 transition={{ duration: 2, repeat: Infinity }}
               >
-                {resourceConfig[verifiedLocation]?.icon}
+                {RESOURCE_STATIONS[verifiedLocation]?.icon}
               </motion.div>
               
               <motion.div
                 className="verified-ring"
                 animate={{ scale: [1, 1.2, 1] }}
                 transition={{ duration: 2, repeat: Infinity }}
-                style={{ borderColor: resourceConfig[verifiedLocation]?.color }}
+                style={{ borderColor: Colors.token[verifiedLocation] }}
               />
             </motion.div>
 
@@ -299,7 +302,7 @@ const ResourceGatheringPhase = ({
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -20 }}
               >
-                {lastAnswerCorrect ? '✓ Correct! +10 tokens' : '✗ Incorrect'}
+                {lastAnswerCorrect ? SUCCESS_MESSAGES.ANSWER_CORRECT : '✗ Incorrect'}
               </motion.div>
             )}
 
@@ -325,7 +328,10 @@ const ResourceGatheringPhase = ({
         {showManualEntry && (
           <ManualCodeEntry
             onCodeSubmit={verifyCode}
-            onCancel={() => setShowManualEntry(false)}
+            onCancel={() => {
+              setShowManualEntry(false);
+              setScanError(null);
+            }}
           />
         )}
       </AnimatePresence>

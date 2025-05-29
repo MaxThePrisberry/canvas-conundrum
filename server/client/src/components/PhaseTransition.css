@@ -1,0 +1,359 @@
+/* Phase Transition - Ocean/Sky Theme */
+.phase-transition {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: linear-gradient(135deg, #0369A1 0%, #0284C7 25%, #0EA5E9 50%, #38BDF8 75%, #7DD3FC 100%);
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+/* Animated ocean waves */
+.phase-transition::before,
+.phase-transition::after {
+  content: '';
+  position: absolute;
+  left: -50%;
+  right: -50%;
+  height: 200%;
+  background: repeating-linear-gradient(
+    45deg,
+    transparent,
+    transparent 100px,
+    rgba(255, 255, 255, 0.05) 100px,
+    rgba(255, 255, 255, 0.05) 200px
+  );
+  animation: waveMotion 20s linear infinite;
+}
+
+.phase-transition::before {
+  bottom: -50%;
+  animation-direction: reverse;
+}
+
+.phase-transition::after {
+  top: -50%;
+  opacity: 0.5;
+}
+
+@keyframes waveMotion {
+  0% {
+    transform: translateX(0) rotate(0deg);
+  }
+  100% {
+    transform: translateX(200px) rotate(2deg);
+  }
+}
+
+.transition-content {
+  text-align: center;
+  position: relative;
+  z-index: 2;
+  padding: 2rem;
+}
+
+.transition-icon-container {
+  width: 150px;
+  height: 150px;
+  margin: 0 auto 2.5rem;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Ripple effects */
+.transition-icon-container::before,
+.transition-icon-container::after {
+  content: '';
+  position: absolute;
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  border-radius: 50%;
+  width: 100%;
+  height: 100%;
+  animation: ripple 2s ease-out infinite;
+}
+
+.transition-icon-container::after {
+  animation-delay: 1s;
+}
+
+@keyframes ripple {
+  0% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(2);
+    opacity: 0;
+  }
+}
+
+.transition-icon {
+  font-size: 5rem;
+  filter: drop-shadow(0 8px 16px rgba(0, 0, 0, 0.2));
+  background: rgba(255, 255, 255, 0.95);
+  width: 120px;
+  height: 120px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 
+    0 10px 40px rgba(0, 0, 0, 0.2),
+    inset 0 2px 4px rgba(255, 255, 255, 0.9);
+  position: relative;
+  overflow: hidden;
+  animation: iconFloat 3s ease-in-out infinite;
+}
+
+@keyframes iconFloat {
+  0%, 100% {
+    transform: translateY(0) rotate(0deg);
+  }
+  25% {
+    transform: translateY(-10px) rotate(-5deg);
+  }
+  75% {
+    transform: translateY(10px) rotate(5deg);
+  }
+}
+
+.transition-icon::before {
+  content: '';
+  position: absolute;
+  top: -50%;
+  left: -50%;
+  width: 200%;
+  height: 200%;
+  background: linear-gradient(45deg, transparent 30%, rgba(255, 255, 255, 0.7) 50%, transparent 70%);
+  animation: iconShine 3s ease-in-out infinite;
+}
+
+@keyframes iconShine {
+  0% {
+    transform: translateX(-100%) translateY(-100%) rotate(45deg);
+  }
+  100% {
+    transform: translateX(100%) translateY(100%) rotate(45deg);
+  }
+}
+
+.transition-title {
+  font-size: 3rem;
+  color: white;
+  margin-bottom: 0.75rem;
+  font-weight: 800;
+  text-shadow: 
+    3px 3px 6px rgba(0, 0, 0, 0.3),
+    0 0 40px rgba(255, 255, 255, 0.3);
+  letter-spacing: -1px;
+  animation: titleSlide 0.8s ease-out;
+}
+
+@keyframes titleSlide {
+  from {
+    transform: translateY(-30px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+.transition-subtitle {
+  font-size: 1.4rem;
+  color: rgba(255, 255, 255, 0.95);
+  margin-bottom: 2.5rem;
+  font-weight: 600;
+  max-width: 400px;
+  margin-left: auto;
+  margin-right: auto;
+  text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.2);
+  animation: subtitleFade 1s ease-out 0.3s both;
+}
+
+@keyframes subtitleFade {
+  from {
+    transform: translateY(20px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+.transition-dots {
+  display: flex;
+  gap: 1rem;
+  justify-content: center;
+  align-items: center;
+}
+
+.dot {
+  width: 16px;
+  height: 16px;
+  background: white;
+  border-radius: 50%;
+  display: inline-block;
+  box-shadow: 
+    0 4px 12px rgba(0, 0, 0, 0.2),
+    inset 0 1px 2px rgba(255, 255, 255, 0.8);
+}
+
+/* Particle system */
+.transition-particles {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.particle {
+  position: absolute;
+  width: 4px;
+  height: 4px;
+  background: white;
+  border-radius: 50%;
+  opacity: 0.8;
+  animation: particleFloat 10s linear infinite;
+}
+
+@keyframes particleFloat {
+  from {
+    transform: translateY(100vh) rotate(0deg);
+  }
+  to {
+    transform: translateY(-100px) rotate(360deg);
+  }
+}
+
+/* Generate multiple particles */
+.particle:nth-child(1) { left: 10%; animation-delay: 0s; animation-duration: 8s; }
+.particle:nth-child(2) { left: 20%; animation-delay: 2s; animation-duration: 10s; opacity: 0.6; }
+.particle:nth-child(3) { left: 30%; animation-delay: 4s; animation-duration: 9s; }
+.particle:nth-child(4) { left: 40%; animation-delay: 1s; animation-duration: 7s; opacity: 0.7; }
+.particle:nth-child(5) { left: 50%; animation-delay: 3s; animation-duration: 11s; }
+.particle:nth-child(6) { left: 60%; animation-delay: 5s; animation-duration: 8s; opacity: 0.5; }
+.particle:nth-child(7) { left: 70%; animation-delay: 2s; animation-duration: 9s; }
+.particle:nth-child(8) { left: 80%; animation-delay: 6s; animation-duration: 10s; opacity: 0.8; }
+.particle:nth-child(9) { left: 90%; animation-delay: 1s; animation-duration: 7s; }
+.particle:nth-child(10) { left: 95%; animation-delay: 4s; animation-duration: 12s; opacity: 0.6; }
+
+/* Celebration burst for victory */
+.celebration-burst {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 300px;
+  height: 300px;
+  pointer-events: none;
+}
+
+.burst-line {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 4px;
+  height: 100px;
+  background: linear-gradient(to bottom, transparent, rgba(255, 215, 0, 0.8), transparent);
+  transform-origin: center bottom;
+  transform: translateX(-50%) rotate(var(--rotation));
+  animation: burstExpand 1s ease-out forwards;
+}
+
+@keyframes burstExpand {
+  0% {
+    height: 0;
+    opacity: 0;
+  }
+  50% {
+    height: 150px;
+    opacity: 1;
+  }
+  100% {
+    height: 200px;
+    opacity: 0;
+  }
+}
+
+/* Underwater bubble effect */
+.bubbles {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 100%;
+  overflow: hidden;
+}
+
+.bubble {
+  position: absolute;
+  bottom: -50px;
+  background: radial-gradient(circle at 30% 30%, rgba(255, 255, 255, 0.8), rgba(255, 255, 255, 0.4));
+  border-radius: 50%;
+  opacity: 0.7;
+  animation: bubbleRise 8s ease-in-out infinite;
+}
+
+@keyframes bubbleRise {
+  0% {
+    transform: translateY(0) translateX(0) scale(1);
+  }
+  20% {
+    transform: translateY(-20vh) translateX(10px) scale(1.1);
+  }
+  40% {
+    transform: translateY(-40vh) translateX(-10px) scale(0.9);
+  }
+  60% {
+    transform: translateY(-60vh) translateX(15px) scale(1.05);
+  }
+  80% {
+    transform: translateY(-80vh) translateX(-5px) scale(0.95);
+  }
+  100% {
+    transform: translateY(-100vh) translateX(0) scale(0.8);
+    opacity: 0;
+  }
+}
+
+.bubble:nth-child(1) { left: 10%; width: 20px; height: 20px; animation-delay: 0s; }
+.bubble:nth-child(2) { left: 25%; width: 15px; height: 15px; animation-delay: 2s; animation-duration: 10s; }
+.bubble:nth-child(3) { left: 40%; width: 25px; height: 25px; animation-delay: 4s; animation-duration: 9s; }
+.bubble:nth-child(4) { left: 55%; width: 18px; height: 18px; animation-delay: 1s; }
+.bubble:nth-child(5) { left: 70%; width: 22px; height: 22px; animation-delay: 3s; animation-duration: 11s; }
+.bubble:nth-child(6) { left: 85%; width: 16px; height: 16px; animation-delay: 5s; }
+
+/* Responsive adjustments */
+@media (max-width: 480px) {
+  .transition-title {
+    font-size: 2.5rem;
+  }
+  
+  .transition-subtitle {
+    font-size: 1.2rem;
+  }
+  
+  .transition-icon-container {
+    width: 120px;
+    height: 120px;
+  }
+  
+  .transition-icon {
+    width: 100px;
+    height: 100px;
+    font-size: 4rem;
+  }
+}

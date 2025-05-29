@@ -224,32 +224,58 @@ const SetupPhase = ({
             className="waiting-screen"
           >
             <div className="waiting-animation">
+              {/* Central galaxy with orbiting elements */}
+              <div className="galaxy-center" />
+              
+              {/* Orbital rings */}
+              <div className="orbital-ring" />
+              <div className="orbital-ring" />
+              <div className="orbital-ring" />
+              
+              {/* Orbiting planets */}
               <motion.div
-                className="orb-container"
-                animate={{ rotate: 360 }}
-                transition={{ duration: 20, repeat: Infinity, ease: "linear" }}
-              >
-                {[0, 1, 2, 3].map((i) => (
-                  <motion.div
-                    key={i}
-                    className="orb"
-                    style={{
-                      '--orb-color': Object.values(Colors.token)[i],
-                      '--orb-delay': `${i * 0.2}s`
-                    }}
-                    animate={{
-                      scale: [1, 1.2, 1],
-                      opacity: [0.6, 1, 0.6]
-                    }}
-                    transition={{
-                      duration: 2,
-                      delay: i * 0.2,
-                      repeat: Infinity,
-                      ease: "easeInOut"
-                    }}
-                  />
-                ))}
-              </motion.div>
+                className="planet planet-1"
+                animate={{
+                  rotate: 360,
+                }}
+                transition={{
+                  duration: 10,
+                  repeat: Infinity,
+                  ease: "linear"
+                }}
+              />
+              <motion.div
+                className="planet planet-2"
+                animate={{
+                  rotate: -360,
+                }}
+                transition={{
+                  duration: 15,
+                  repeat: Infinity,
+                  ease: "linear"
+                }}
+              />
+              <motion.div
+                className="planet planet-3"
+                animate={{
+                  rotate: 360,
+                }}
+                transition={{
+                  duration: 20,
+                  repeat: Infinity,
+                  ease: "linear"
+                }}
+              />
+              
+              {/* Floating stars */}
+              <div className="stars">
+                <div className="star" />
+                <div className="star" />
+                <div className="star" />
+                <div className="star" />
+                <div className="star" />
+                <div className="star" />
+              </div>
               
               <motion.div
                 className="center-icon"

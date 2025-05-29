@@ -45,10 +45,6 @@ var TriviaCategories = []string{
 
 // Trivia Mechanics - All used in game_manager.go and trivia_manager.go
 const (
-	// TriviaQuestionInterval - Time interval between trivia questions during resource gathering phase (seconds)
-	// Used in: game_manager.go runTriviaRound()
-	TriviaQuestionInterval int = 60
-
 	// SpecialtyPointMultiplier - Point multiplier for correctly answering specialty trivia questions
 	// Used in: game_manager.go ProcessTriviaAnswer()
 	SpecialtyPointMultiplier float64 = 2.0
@@ -59,6 +55,7 @@ const (
 
 	// TriviaAnswerTimeout - Time limit for answering trivia questions (seconds)
 	// Used in: trivia_manager.go loadQuestionsFromFile() and GetQuestion()
+	// Note: Same timeout applies to both regular and specialty questions
 	TriviaAnswerTimeout int = 30
 
 	// MaxSpecialtiesPerPlayer - Maximum number of specialty categories per player
@@ -202,4 +199,27 @@ const (
 	WebSocketPongTimeout     = 60 * time.Second
 	BroadcastChannelBuffer   = 256
 	PlayerEventChannelBuffer = 64
+)
+
+// Error Messages - Used throughout the application for consistent error handling
+const (
+	// Fragment ownership errors
+	ErrFragmentOwnership  = "you can only move your own fragment or unassigned fragments"
+	ErrFragmentNotVisible = "fragment is not yet visible"
+	ErrFragmentUnassigned = "invalid unassigned fragment access"
+
+	// Recommendation errors
+	ErrInvalidRecommendation = "can only recommend moves for unassigned fragments"
+	ErrRecommendationAuth    = "not authorized to respond to this recommendation"
+
+	// Phase errors
+	ErrWrongPhase            = "action not allowed in current game phase"
+	ErrReconnectionForbidden = "reconnection not allowed during puzzle assembly phase"
+
+	// Host errors
+	ErrHostOnly   = "only host can perform this action"
+	ErrHostExists = "a host is already connected to this game"
+
+	// Validation errors
+	ErrInvalidOwnership = "invalid fragment ownership format"
 )

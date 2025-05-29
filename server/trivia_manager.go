@@ -321,8 +321,8 @@ func (tm *TriviaManager) GetQuestion(gameDifficulty string, playerSpecialties []
 	// Configure question settings
 	question.IsSpecialty = isSpecialty
 	if isSpecialty {
-		// Specialty questions get more time
-		question.TimeLimit = int(float64(constants.TriviaAnswerTimeout) * 1.5)
+		// Specialty questions get same time limit as regular questions
+		question.TimeLimit = constants.TriviaAnswerTimeout
 		// Add specialty indicator to category display
 		question.Category = question.Category + " (Specialty)"
 	}

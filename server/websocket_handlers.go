@@ -78,6 +78,13 @@ func (wsh *WebSocketHandler) HandleConnection(w http.ResponseWriter, r *http.Req
 
 	// Handle reconnection or new connection
 	if playerID != "" && !isHost {
+		// Check if reconnection is allowed during current phase
+		phase := wsh.gameManager.GetPhase()
+		if phase == PhasePuzzleAssembly {
+			wsh.sendConnectionError(conn, "Reconnection not allowed during puzzle assembly phase")
+			return
+		}
+
 		// Attempt regular player reconnection
 		if err := wsh.playerManager.ReconnectPlayer(playerID, conn); err != nil {
 			log.Printf("Reconnection failed for player %s: %v", playerID, err)

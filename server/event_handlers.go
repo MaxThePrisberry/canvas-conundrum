@@ -232,7 +232,6 @@ func (eh *EventHandlers) HandlePieceRecommendationRequest(playerID string, paylo
 		ToFragmentID     string  `json:"toFragmentId"`
 		SuggestedFromPos GridPos `json:"suggestedFromPos"`
 		SuggestedToPos   GridPos `json:"suggestedToPos"`
-		Message          string  `json:"message"`
 	}
 
 	if err := json.Unmarshal(payload, &data); err != nil {
@@ -244,11 +243,11 @@ func (eh *EventHandlers) HandlePieceRecommendationRequest(playerID string, paylo
 		return fmt.Errorf("target player not found")
 	}
 
-	// Process the recommendation
+	// Process the recommendation (no custom message support)
 	return eh.gameManager.ProcessPieceRecommendation(
 		playerID,
 		data.ToPlayerID,
-		data.Message,
+		"", // No custom messages supported
 		data.FromFragmentID,
 		data.ToFragmentID,
 		data.SuggestedFromPos,

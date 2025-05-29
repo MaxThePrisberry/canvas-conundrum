@@ -213,7 +213,7 @@ func validateSegmentID(segmentID string) ValidationError {
 }
 
 // validateFragmentMove validates a fragment movement request
-func validateFragmentMove(fragmentID string, newPos GridPos, timestamp int64, maxGridSize int) []ValidationError {
+func validateFragmentMove(fragmentID string, newPos GridPos, timestamp int64, maxGridSize int, ownership string) []ValidationError {
 	var errors []ValidationError
 
 	if fragmentID == "" {
@@ -230,11 +230,20 @@ func validateFragmentMove(fragmentID string, newPos GridPos, timestamp int64, ma
 		errors = append(errors, ValidationError{Field: "timestamp", Message: "invalid timestamp"})
 	}
 
+	// Validate ownership format if provided
+	if ownership != "" && ownership != "anyone" {
+		if ownershipErr := validatePlayerID(ownership); ownershipErr.Field != "" {
+			ownershipErr.Field = "ownership"
+			ownershipErr.Message = "invalid fragment ownership format"
+			errors = append(errors, ownershipErr)
+		}
+	}
+
 	return errors
 }
 
-// validatePieceRecommendation validates a piece recommendation request
-func validatePieceRecommendation(toPlayerID, fromFragmentID, toFragmentID, message string, fromPos, toPos GridPos, maxGridSize int) []ValidationError {
+// validatePieceRecommendation validates a piece recommendation request (no message field)
+func validatePieceRecommendation(toPlayerID, fromFragmentID, toFragmentID string, fromPos, toPos GridPos, maxGridSize int) []ValidationError {
 	var errors []ValidationError
 
 	if playerErr := validatePlayerID(toPlayerID); playerErr.Field != "" {
@@ -254,13 +263,7 @@ func validatePieceRecommendation(toPlayerID, fromFragmentID, toFragmentID, messa
 		errors = append(errors, ValidationError{Field: "toFragmentId", Message: "invalid to fragment ID format"})
 	}
 
-	if len(message) > MaxMessageLength {
-		errors = append(errors, ValidationError{Field: "message", Message: fmt.Sprintf("message too long (max %d characters)", MaxMessageLength)})
-	}
-
-	if !utf8.ValidString(message) {
-		errors = append(errors, ValidationError{Field: "message", Message: "message contains invalid UTF-8 characters"})
-	}
+	// Note: Message field removed - no longer supported
 
 	if fromPosErr := validateGridPosition(fromPos, maxGridSize); fromPosErr.Field != "" {
 		fromPosErr.Field = "suggestedFromPos"
@@ -484,7 +487,7 @@ func ValidatePieceRecommendationRequest(payload json.RawMessage, maxGridSize int
 		ToFragmentID     string  `json:"toFragmentId"`
 		SuggestedFromPos GridPos `json:"suggestedFromPos"`
 		SuggestedToPos   GridPos `json:"suggestedToPos"`
-		Message          string  `json:"message"`
+		// Message field removed - no longer accepted
 	}
 
 	var errors []ValidationError
@@ -497,7 +500,6 @@ func ValidatePieceRecommendationRequest(payload json.RawMessage, maxGridSize int
 		data.ToPlayerID,
 		data.FromFragmentID,
 		data.ToFragmentID,
-		data.Message,
 		data.SuggestedFromPos,
 		data.SuggestedToPos,
 		maxGridSize,
@@ -509,7 +511,7 @@ func ValidatePieceRecommendationRequest(payload json.RawMessage, maxGridSize int
 		"toFragmentId":     data.ToFragmentID,
 		"suggestedFromPos": data.SuggestedFromPos,
 		"suggestedToPos":   data.SuggestedToPos,
-		"message":          strings.TrimSpace(data.Message),
+		// No message field in result
 	}
 
 	return result, errors

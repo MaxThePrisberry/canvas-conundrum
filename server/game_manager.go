@@ -378,6 +378,7 @@ func (gm *GameManager) startPuzzlePhase() {
 	// Initialize puzzle fragments for NON-HOST players only
 	gm.state.PuzzleFragments = make(map[string]*PuzzleFragment)
 
+	// Create player-owned fragments
 	for i, player := range nonHostPlayers {
 		correctPos := gm.calculateCorrectPosition(i, gridSize)
 		fragment := &PuzzleFragment{
@@ -387,13 +388,38 @@ func (gm *GameManager) startPuzzlePhase() {
 			CorrectPosition: correctPos,
 			Solved:          false,
 			PreSolved:       i < maxPreSolved, // Pre-solve based on anchor tokens
+			Visible:         false,            // Fragments start invisible until segment completion
+			MovableBy:       player.ID,        // Only the owning player can move their fragment
+			IsUnassigned:    false,
 		}
 
 		if fragment.PreSolved {
 			fragment.Solved = true
+			fragment.Visible = true // Pre-solved fragments are immediately visible
 		}
 
 		gm.state.PuzzleFragments[fragment.ID] = fragment
+	}
+
+	// Create some unassigned fragments for collaboration (if player count allows)
+	if playerCount < gridSize*gridSize {
+		unassignedCount := min(3, (gridSize*gridSize)-playerCount) // Max 3 unassigned fragments
+		for i := 0; i < unassignedCount; i++ {
+			unassignedID := fmt.Sprintf("fragment_unassigned_%d", i)
+			correctPos := gm.calculateCorrectPosition(playerCount+i, gridSize)
+			fragment := &PuzzleFragment{
+				ID:              unassignedID,
+				PlayerID:        "", // No owner
+				Position:        GridPos{X: (playerCount + i) % gridSize, Y: (playerCount + i) / gridSize},
+				CorrectPosition: correctPos,
+				Solved:          false,
+				PreSolved:       false,
+				Visible:         false,    // Will be made visible gradually
+				MovableBy:       "anyone", // Any player can move unassigned fragments
+				IsUnassigned:    true,
+			}
+			gm.state.PuzzleFragments[fragment.ID] = fragment
+		}
 	}
 
 	// Send clarity bonus (image preview)
@@ -502,6 +528,35 @@ func (gm *GameManager) runPuzzleTimer(duration time.Duration) {
 			return
 		}
 	}
+}
+
+// BroadcastPersonalPuzzleStates sends personalized puzzle states to all players
+func (gm *GameManager) BroadcastPersonalPuzzleStates() {
+	// Get all visible fragments
+	visibleFragments := make([]*PuzzleFragment, 0)
+	for _, fragment := range gm.state.PuzzleFragments {
+		if fragment.Visible {
+			visibleFragments = append(visibleFragments, fragment)
+		}
+	}
+
+	// Send personalized state to each player
+	players := gm.playerManager.GetConnectedNonHostPlayers()
+	for _, player := range players {
+		personalState := PersonalPuzzleState{
+			Fragments:        visibleFragments,
+			GridSize:         gm.state.GridSize,
+			PlayerFragmentID: fmt.Sprintf("fragment_%s", player.ID),
+			GuideHighlight:   gm.calculateGuideHighlight(player.ID),
+		}
+
+		sendToPlayer(player, MsgPersonalPuzzleState, map[string]interface{}{
+			"personalView": personalState,
+		})
+	}
+
+	// Update host with complete puzzle state
+	gm.sendHostUpdate()
 }
 
 // ProcessSegmentCompleted handles when a player completes their puzzle segment - Updated to exclude hosts
@@ -1120,6 +1175,150 @@ func (gm *GameManager) resetGame() {
 	}
 }
 
+// initializeUnassignedFragments creates a pool of unassigned fragments
+func (gm *GameManager) initializeUnassignedFragments(count int, startIndex int) {
+	for i := 0; i < count; i++ {
+		unassignedID := fmt.Sprintf("fragment_unassigned_%d", i)
+		correctPos := gm.calculateCorrectPosition(startIndex+i, gm.state.GridSize)
+
+		fragment := &PuzzleFragment{
+			ID:              unassignedID,
+			PlayerID:        "", // No owner
+			Position:        GridPos{X: (startIndex + i) % gm.state.GridSize, Y: (startIndex + i) / gm.state.GridSize},
+			CorrectPosition: correctPos,
+			Solved:          false,
+			PreSolved:       false,
+			Visible:         false,    // Will be made visible gradually
+			MovableBy:       "anyone", // Any player can move unassigned fragments
+			IsUnassigned:    true,
+		}
+		gm.state.PuzzleFragments[fragment.ID] = fragment
+	}
+}
+
+// validateFragmentOwnership checks if a player can move a fragment
+func (gm *GameManager) validateFragmentOwnership(playerID string, fragment *PuzzleFragment) bool {
+	// Player can move their own fragment
+	if fragment.MovableBy == playerID {
+		return true
+	}
+
+	// Anyone can move unassigned fragments
+	if fragment.MovableBy == "anyone" {
+		return true
+	}
+
+	return false
+}
+
+// releaseUnassignedFragment makes one unassigned fragment visible during puzzle phase
+func (gm *GameManager) releaseUnassignedFragment() {
+	gm.mu.Lock()
+	defer gm.mu.Unlock()
+
+	for _, fragment := range gm.state.PuzzleFragments {
+		if fragment.IsUnassigned && !fragment.Visible {
+			fragment.Visible = true
+			fragment.Solved = true // Unassigned fragments are pre-solved
+
+			log.Printf("Released unassigned fragment %s at position (%d, %d)",
+				fragment.ID, fragment.Position.X, fragment.Position.Y)
+
+			// Broadcast updated personal puzzle states
+			gm.BroadcastPersonalPuzzleStates()
+			break // Only release one at a time
+		}
+	}
+}
+
+// handleFragmentDisconnection converts a player's fragment to unassigned status
+func (gm *GameManager) handleFragmentDisconnection(playerID string) {
+	fragmentID := fmt.Sprintf("fragment_%s", playerID)
+	if fragment, exists := gm.state.PuzzleFragments[fragmentID]; exists {
+		// Convert to unassigned fragment
+		fragment.MovableBy = "anyone"
+		fragment.IsUnassigned = true
+		fragment.PlayerID = ""
+
+		// Auto-solve if not already solved
+		if !fragment.Solved {
+			fragment.Solved = true
+			fragment.Visible = true
+		}
+
+		// Randomly relocate fragment
+		fragment.Position = GridPos{
+			X: rand.Intn(gm.state.GridSize),
+			Y: rand.Intn(gm.state.GridSize),
+		}
+
+		log.Printf("Converted fragment %s to unassigned due to player disconnection", fragmentID)
+	}
+}
+
+// getVisibleFragments returns only visible fragments
+func (gm *GameManager) getVisibleFragments() []*PuzzleFragment {
+	visible := make([]*PuzzleFragment, 0)
+	for _, fragment := range gm.state.PuzzleFragments {
+		if fragment.Visible {
+			visible = append(visible, fragment)
+		}
+	}
+	return visible
+}
+
+// calculateCompletionPercentage calculates the percentage of correctly placed fragments
+func (gm *GameManager) calculateCompletionPercentage() float64 {
+	correctCount := 0
+	totalVisible := 0
+
+	for _, fragment := range gm.state.PuzzleFragments {
+		if fragment.Visible {
+			totalVisible++
+			if fragment.Position.X == fragment.CorrectPosition.X &&
+				fragment.Position.Y == fragment.CorrectPosition.Y {
+				correctCount++
+			}
+		}
+	}
+
+	if totalVisible == 0 {
+		return 0
+	}
+
+	return float64(correctCount) / float64(totalVisible) * 100
+}
+
+// buildOwnershipMapping creates a mapping of fragment IDs to owners
+func (gm *GameManager) buildOwnershipMapping() map[string]string {
+	ownership := make(map[string]string)
+
+	for _, fragment := range gm.state.PuzzleFragments {
+		if fragment.IsUnassigned {
+			ownership[fragment.ID] = "unassigned"
+		} else if fragment.PlayerID != "" {
+			ownership[fragment.ID] = fragment.PlayerID
+		} else {
+			ownership[fragment.ID] = "unknown"
+		}
+	}
+
+	return ownership
+}
+
+// getUnassignedFragmentIDs returns a list of unassigned fragment IDs
+func (gm *GameManager) getUnassignedFragmentIDs() []string {
+	unassigned := make([]string, 0)
+
+	for _, fragment := range gm.state.PuzzleFragments {
+		if fragment.IsUnassigned {
+			unassigned = append(unassigned, fragment.ID)
+		}
+	}
+
+	return unassigned
+}
+
 // String methods for GamePhase
 func (p GamePhase) String() string {
 	switch p {
@@ -1134,12 +1333,4 @@ func (p GamePhase) String() string {
 	default:
 		return "unknown"
 	}
-}
-
-// Utility function for min
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
 }

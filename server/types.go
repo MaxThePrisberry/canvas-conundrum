@@ -141,7 +141,10 @@ type PuzzleFragment struct {
 	Solved          bool      `json:"solved"`
 	LastMoved       time.Time `json:"-"`
 	CorrectPosition GridPos   `json:"correctPosition"`
-	PreSolved       bool      `json:"preSolved"` // From anchor tokens
+	PreSolved       bool      `json:"preSolved"`
+	Visible         bool      `json:"visible"`
+	MovableBy       string    `json:"movableBy"`
+	IsUnassigned    bool      `json:"-"`
 }
 
 // Grid Position

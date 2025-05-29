@@ -84,9 +84,9 @@ func (gm *GameManager) SetDifficulty(difficulty string) error {
 
 // CanStartGame checks if the game can be started
 func (gm *GameManager) CanStartGame() (bool, string) {
-	// Check if host is connected
-	if !gm.playerManager.IsHostConnected() {
-		return false, "Host must be connected to start the game"
+	// Check if game is already in progress
+	if gm.state.Phase != PhaseSetup {
+		return false, "game already started"
 	}
 
 	// Get non-host players for game requirements
@@ -95,6 +95,11 @@ func (gm *GameManager) CanStartGame() (bool, string) {
 
 	if len(connectedPlayers) < constants.MinPlayers {
 		return false, fmt.Sprintf("Need at least %d players (current: %d)", constants.MinPlayers, len(connectedPlayers))
+	}
+
+	// Check if host is connected
+	if !gm.playerManager.IsHostConnected() {
+		return false, "Host must be connected to start the game"
 	}
 
 	if len(readyPlayers) < len(connectedPlayers) {
@@ -1216,9 +1221,13 @@ func (gm *GameManager) getRecentActivity(count int) []RecentActivity {
 
 // Enhanced puzzle completion check with ownership considerations
 func (gm *GameManager) checkPuzzleComplete() bool {
-	// Check if all fragments are solved (this includes both player-owned and unassigned)
+	// Check if all fragments are solved and visible (this includes both player-owned and unassigned)
 	for _, fragment := range gm.state.PuzzleFragments {
 		if !fragment.Solved {
+			return false
+		}
+		// Fragments must be visible to be considered complete
+		if !fragment.Visible {
 			return false
 		}
 	}

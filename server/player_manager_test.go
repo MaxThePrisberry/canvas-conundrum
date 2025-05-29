@@ -282,7 +282,7 @@ func TestPlayerManagerLocationTracking(t *testing.T) {
 	// Test invalid location hash
 	err := pm.UpdatePlayerLocation(player.ID, "INVALID_HASH")
 	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "invalid location hash")
+	assert.Contains(t, err.Error(), "invalid resource station hash")
 
 	// Test non-existent player
 	err = pm.UpdatePlayerLocation(uuid.New().String(), validHashes[0])

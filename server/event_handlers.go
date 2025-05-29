@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"strings"
 
 	"github.com/MaxThePrisberry/canvas-conundrum/server/constants"
 )
@@ -101,6 +102,16 @@ func (eh *EventHandlers) HandleTriviaSpecialtySelection(playerID string, payload
 
 // HandlePlayerReady handles player ready status
 func (eh *EventHandlers) HandlePlayerReady(playerID string, payload json.RawMessage) error {
+	// Check if ready field exists
+	var checkFields map[string]interface{}
+	if err := json.Unmarshal(payload, &checkFields); err != nil {
+		return fmt.Errorf("invalid payload: %v", err)
+	}
+
+	if _, ok := checkFields["ready"]; !ok {
+		return fmt.Errorf("invalid payload: ready field is required")
+	}
+
 	var data struct {
 		Ready bool `json:"ready"`
 	}
@@ -163,6 +174,22 @@ func (eh *EventHandlers) HandleResourceLocationVerified(playerID string, payload
 
 // HandleTriviaAnswer handles player trivia answers
 func (eh *EventHandlers) HandleTriviaAnswer(playerID string, payload json.RawMessage) error {
+	// Check if required fields exist
+	var checkFields map[string]interface{}
+	if err := json.Unmarshal(payload, &checkFields); err != nil {
+		return fmt.Errorf("invalid payload: %v", err)
+	}
+
+	if _, ok := checkFields["questionId"]; !ok {
+		return fmt.Errorf("invalid payload: questionId is required")
+	}
+	if _, ok := checkFields["answer"]; !ok {
+		return fmt.Errorf("invalid payload: answer is required")
+	}
+	if _, ok := checkFields["timestamp"]; !ok {
+		return fmt.Errorf("invalid payload: timestamp is required")
+	}
+
 	var data struct {
 		QuestionID string `json:"questionId"`
 		Answer     string `json:"answer"`
@@ -173,12 +200,30 @@ func (eh *EventHandlers) HandleTriviaAnswer(playerID string, payload json.RawMes
 		return fmt.Errorf("invalid payload: %v", err)
 	}
 
+	// Validate timestamp
+	if data.Timestamp <= 0 {
+		return fmt.Errorf("invalid timestamp")
+	}
+
 	// Process the answer (hosts don't participate in trivia)
 	return eh.gameManager.ProcessTriviaAnswer(playerID, data.QuestionID, data.Answer)
 }
 
 // HandleSegmentCompleted handles puzzle segment completion
 func (eh *EventHandlers) HandleSegmentCompleted(playerID string, payload json.RawMessage) error {
+	// Check if required fields exist
+	var checkFields map[string]interface{}
+	if err := json.Unmarshal(payload, &checkFields); err != nil {
+		return fmt.Errorf("invalid payload: %v", err)
+	}
+
+	if _, ok := checkFields["segmentId"]; !ok {
+		return fmt.Errorf("invalid payload: segmentId is required")
+	}
+	if _, ok := checkFields["completionTimestamp"]; !ok {
+		return fmt.Errorf("invalid payload: completionTimestamp is required")
+	}
+
 	var data struct {
 		SegmentID           string `json:"segmentId"`
 		CompletionTimestamp int64  `json:"completionTimestamp"`
@@ -188,12 +233,45 @@ func (eh *EventHandlers) HandleSegmentCompleted(playerID string, payload json.Ra
 		return fmt.Errorf("invalid payload: %v", err)
 	}
 
+	// Validate segment ID format
+	if data.SegmentID == "" {
+		return fmt.Errorf("invalid payload: segmentId cannot be empty")
+	}
+
+	// Validate segment ID format (should be segment_[a-z][0-9])
+	if len(data.SegmentID) < 9 || !strings.HasPrefix(data.SegmentID, "segment_") {
+		return fmt.Errorf("invalid segment ID format")
+	}
+
+	// Validate timestamp
+	if data.CompletionTimestamp <= 0 {
+		return fmt.Errorf("invalid timestamp")
+	}
+
 	// Process segment completion (hosts don't have puzzle segments)
 	return eh.gameManager.ProcessSegmentCompleted(playerID, data.SegmentID)
 }
 
 // HandleFragmentMoveRequest handles puzzle fragment movement
 func (eh *EventHandlers) HandleFragmentMoveRequest(playerID string, payload json.RawMessage) error {
+	// First, check if the required fields exist in the JSON
+	var checkFields map[string]interface{}
+	if err := json.Unmarshal(payload, &checkFields); err != nil {
+		return fmt.Errorf("invalid payload: %v", err)
+	}
+
+	// Check for required fields
+	if _, ok := checkFields["fragmentId"]; !ok {
+		return fmt.Errorf("invalid payload: fragmentId is required")
+	}
+	if _, ok := checkFields["newPosition"]; !ok {
+		return fmt.Errorf("invalid payload: newPosition is required")
+	}
+	if _, ok := checkFields["timestamp"]; !ok {
+		return fmt.Errorf("invalid payload: timestamp is required")
+	}
+
+	// Now unmarshal into the struct
 	var data struct {
 		FragmentID  string  `json:"fragmentId"`
 		NewPosition GridPos `json:"newPosition"`
@@ -202,6 +280,25 @@ func (eh *EventHandlers) HandleFragmentMoveRequest(playerID string, payload json
 
 	if err := json.Unmarshal(payload, &data); err != nil {
 		return fmt.Errorf("invalid payload: %v", err)
+	}
+
+	// Validate required fields
+	if data.FragmentID == "" {
+		return fmt.Errorf("invalid payload: fragmentId is required")
+	}
+
+	if data.Timestamp <= 0 {
+		return fmt.Errorf("invalid timestamp")
+	}
+
+	// Get current game state to validate position
+	eh.gameManager.mu.RLock()
+	gridSize := eh.gameManager.state.GridSize
+	eh.gameManager.mu.RUnlock()
+
+	// Validate position bounds
+	if err := validateGridPosition(data.NewPosition, gridSize); err != nil {
+		return fmt.Errorf("position out of bounds")
 	}
 
 	// Process fragment move
@@ -217,7 +314,7 @@ func (eh *EventHandlers) HandleHostStartPuzzle(playerID string, payload json.Raw
 	}
 
 	if !player.IsHost {
-		return fmt.Errorf("only host can start the puzzle")
+		return fmt.Errorf("only host can start puzzle phase")
 	}
 
 	// Start puzzle timer
@@ -226,6 +323,28 @@ func (eh *EventHandlers) HandleHostStartPuzzle(playerID string, payload json.Raw
 
 // HandlePieceRecommendationRequest handles piece recommendation requests
 func (eh *EventHandlers) HandlePieceRecommendationRequest(playerID string, payload json.RawMessage) error {
+	// Check if required fields exist
+	var checkFields map[string]interface{}
+	if err := json.Unmarshal(payload, &checkFields); err != nil {
+		return fmt.Errorf("invalid payload: %v", err)
+	}
+
+	if _, ok := checkFields["toPlayerId"]; !ok {
+		return fmt.Errorf("invalid payload: toPlayerId is required")
+	}
+	if _, ok := checkFields["fromFragmentId"]; !ok {
+		return fmt.Errorf("invalid payload: fromFragmentId is required")
+	}
+	if _, ok := checkFields["toFragmentId"]; !ok {
+		return fmt.Errorf("invalid payload: toFragmentId is required")
+	}
+	if _, ok := checkFields["suggestedFromPos"]; !ok {
+		return fmt.Errorf("invalid payload: suggestedFromPos is required")
+	}
+	if _, ok := checkFields["suggestedToPos"]; !ok {
+		return fmt.Errorf("invalid payload: suggestedToPos is required")
+	}
+
 	var data struct {
 		ToPlayerID       string  `json:"toPlayerId"`
 		FromFragmentID   string  `json:"fromFragmentId"`
@@ -236,6 +355,19 @@ func (eh *EventHandlers) HandlePieceRecommendationRequest(playerID string, paylo
 
 	if err := json.Unmarshal(payload, &data); err != nil {
 		return fmt.Errorf("invalid payload: %v", err)
+	}
+
+	// Get current game state to validate positions
+	eh.gameManager.mu.RLock()
+	gridSize := eh.gameManager.state.GridSize
+	eh.gameManager.mu.RUnlock()
+
+	// Validate positions
+	if err := validateGridPosition(data.SuggestedFromPos, gridSize); err != nil {
+		return fmt.Errorf("position out of bounds")
+	}
+	if err := validateGridPosition(data.SuggestedToPos, gridSize); err != nil {
+		return fmt.Errorf("position out of bounds")
 	}
 
 	// Validate that target player exists
@@ -257,6 +389,19 @@ func (eh *EventHandlers) HandlePieceRecommendationRequest(playerID string, paylo
 
 // HandlePieceRecommendationResponse handles piece recommendation responses
 func (eh *EventHandlers) HandlePieceRecommendationResponse(playerID string, payload json.RawMessage) error {
+	// Check if required fields exist
+	var checkFields map[string]interface{}
+	if err := json.Unmarshal(payload, &checkFields); err != nil {
+		return fmt.Errorf("invalid payload: %v", err)
+	}
+
+	if _, ok := checkFields["recommendationId"]; !ok {
+		return fmt.Errorf("invalid payload: recommendationId is required")
+	}
+	if _, ok := checkFields["accepted"]; !ok {
+		return fmt.Errorf("invalid payload: accepted is required")
+	}
+
 	var data struct {
 		RecommendationID string `json:"recommendationId"`
 		Accepted         bool   `json:"accepted"`

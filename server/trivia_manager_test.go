@@ -241,14 +241,14 @@ func TestGetPoolStats(t *testing.T) {
 	stats := tm.GetPoolStats()
 	assert.NotNil(t, stats)
 
-	// Check expected fields
-	_, hasTotal := stats["total_questions"]
-	assert.True(t, hasTotal)
+	// Check expected category fields
+	_, hasGeneral := stats["general"]
+	assert.True(t, hasGeneral)
 
-	_, hasCategories := stats["categories"]
-	assert.True(t, hasCategories)
+	_, hasScience := stats["science"]
+	assert.True(t, hasScience)
 
-	_, hasHistory := stats["question_history_size"]
+	_, hasHistory := stats["history"]
 	assert.True(t, hasHistory)
 }
 

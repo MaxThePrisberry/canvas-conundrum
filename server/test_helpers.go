@@ -91,6 +91,14 @@ func (m *MockWebSocketConn) SetCloseHandler(h func(code int, text string) error)
 	m.CloseHandler = h
 }
 
+func (m *MockWebSocketConn) WriteJSON(v interface{}) error {
+	data, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+	return m.WriteMessage(websocket.TextMessage, data)
+}
+
 // Test helper functions
 
 // CreateTestGame creates a game with test managers

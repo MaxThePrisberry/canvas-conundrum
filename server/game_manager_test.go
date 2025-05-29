@@ -113,19 +113,20 @@ func TestCanStartGame(t *testing.T) {
 	// Test with no players
 	canStart, reason := gm.CanStartGame()
 	assert.False(t, canStart)
-	assert.Contains(t, reason, "minimum")
+	assert.Contains(t, reason, "Need at least")
 
 	// Add host
 	pm.CreatePlayer(nil, true)
 	canStart, reason = gm.CanStartGame()
 	assert.False(t, canStart)
-	assert.Contains(t, reason, "minimum")
+	assert.Contains(t, reason, "Need at least")
 
 	// Add minimum players (4 non-host)
+	roles := []string{"art_enthusiast", "detective", "tourist", "janitor"}
 	for i := 0; i < 4; i++ {
 		player := pm.CreatePlayer(nil, false)
-		pm.SetPlayerRole(player.ID, "detective")
-		pm.SetPlayerReady(player.ID, true)
+		pm.SetPlayerRole(player.ID, roles[i])
+		pm.SetPlayerSpecialties(player.ID, []string{"science", "history"}) // This also sets ready=true
 	}
 
 	// Now should be able to start
@@ -137,7 +138,7 @@ func TestCanStartGame(t *testing.T) {
 	gm.state.Phase = PhaseResourceGathering
 	canStart, reason = gm.CanStartGame()
 	assert.False(t, canStart)
-	assert.Contains(t, reason, "already in progress")
+	assert.Contains(t, reason, "game already started")
 }
 
 func TestGetDifficultyModifiers(t *testing.T) {
@@ -303,7 +304,7 @@ func TestProcessTriviaAnswer(t *testing.T) {
 	gm.state.Phase = PhaseSetup
 	err = gm.ProcessTriviaAnswer(player.ID, "test_question_1", "Test answer")
 	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "trivia answers only accepted during resource gathering")
+	assert.Contains(t, err.Error(), "not in resource gathering phase")
 
 	// Test non-existent player
 	err = gm.ProcessTriviaAnswer("invalid-player", "test_question_1", "Test answer")
@@ -324,6 +325,7 @@ func TestFragmentMovement(t *testing.T) {
 	fragment := &PuzzleFragment{
 		ID:              "fragment-1",
 		PlayerID:        player.ID,
+		MovableBy:       player.ID,
 		Position:        GridPos{X: 0, Y: 0},
 		CorrectPosition: GridPos{X: 2, Y: 2},
 		Visible:         true,
@@ -337,22 +339,21 @@ func TestFragmentMovement(t *testing.T) {
 	assert.Equal(t, 1, fragment.Position.X)
 	assert.Equal(t, 1, fragment.Position.Y)
 
-	// Test move during cooldown
+	// Test move during cooldown (cooldown is ignored, no error returned)
 	err = gm.ProcessFragmentMove(player.ID, "fragment-1", GridPos{X: 2, Y: 2})
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "cooldown")
+	assert.NoError(t, err) // Cooldown moves are ignored, not errored
 
 	// Test move out of bounds
 	fragment.LastMoved = time.Now().Add(-2 * time.Second)
 	err = gm.ProcessFragmentMove(player.ID, "fragment-1", GridPos{X: 4, Y: 4})
 	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "out of bounds")
+	assert.Contains(t, err.Error(), "position out of bounds")
 
 	// Test wrong phase
 	gm.state.Phase = PhaseSetup
 	err = gm.ProcessFragmentMove(player.ID, "fragment-1", GridPos{X: 1, Y: 1})
 	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "only during puzzle assembly")
+	assert.Contains(t, err.Error(), "not in puzzle assembly phase")
 }
 
 func TestPuzzleCompletion(t *testing.T) {

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+	"time"
 	"unicode/utf8"
 
 	"github.com/MaxThePrisberry/canvas-conundrum/server/constants"
@@ -160,10 +161,10 @@ func validateTriviaAnswer(questionID, answer string, timestamp int64) []Validati
 
 	if questionID == "" {
 		errors = append(errors, ValidationError{Field: "questionId", Message: "question ID cannot be empty"})
-	} else if !playerIDRegex.MatchString(strings.Split(questionID, "_")[0]) {
-		// Basic format check - should be category_difficulty_number
+	} else {
+		// Basic format check - should be category_difficulty_index_timestamp
 		parts := strings.Split(questionID, "_")
-		if len(parts) != 3 {
+		if len(parts) != 4 {
 			errors = append(errors, ValidationError{Field: "questionId", Message: "invalid question ID format"})
 		}
 	}
@@ -181,6 +182,8 @@ func validateTriviaAnswer(questionID, answer string, timestamp int64) []Validati
 
 	if timestamp <= 0 {
 		errors = append(errors, ValidationError{Field: "timestamp", Message: "invalid timestamp"})
+	} else if timestamp > time.Now().Unix() {
+		errors = append(errors, ValidationError{Field: "timestamp", Message: "timestamp cannot be in the future"})
 	}
 
 	return errors

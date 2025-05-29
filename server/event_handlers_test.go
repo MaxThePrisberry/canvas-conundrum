@@ -30,6 +30,7 @@ func TestHandleRoleSelection(t *testing.T) {
 	eh, pm, _, _ := createTestEventHandlers()
 
 	// Create a player
+	// For simplicity, we pass nil connection since WebSocket mocking is complex
 	player := pm.CreatePlayer(nil, false)
 	playerID := player.ID
 
@@ -91,6 +92,7 @@ func TestHandleTriviaSpecialtySelection(t *testing.T) {
 	eh, pm, _, _ := createTestEventHandlers()
 
 	// Create a player
+	// For simplicity, we pass nil connection since WebSocket mocking is complex
 	player := pm.CreatePlayer(nil, false)
 	playerID := player.ID
 
@@ -147,6 +149,7 @@ func TestHandleResourceLocationVerified(t *testing.T) {
 	eh, pm, gm, _ := createTestEventHandlers()
 
 	// Create a player and set game to resource gathering phase
+	// For simplicity, we pass nil connection since WebSocket mocking is complex
 	player := pm.CreatePlayer(nil, false)
 	playerID := player.ID
 	gm.state.Phase = PhaseResourceGathering
@@ -206,6 +209,7 @@ func TestHandleTriviaAnswer(t *testing.T) {
 	eh, pm, gm, _ := createTestEventHandlers()
 
 	// Create a player and set game to resource gathering phase
+	// For simplicity, we pass nil connection since WebSocket mocking is complex
 	player := pm.CreatePlayer(nil, false)
 	playerID := player.ID
 	gm.state.Phase = PhaseResourceGathering
@@ -265,6 +269,7 @@ func TestHandleSegmentCompleted(t *testing.T) {
 	eh, pm, gm, _ := createTestEventHandlers()
 
 	// Create a player and set game to puzzle phase
+	// For simplicity, we pass nil connection since WebSocket mocking is complex
 	player := pm.CreatePlayer(nil, false)
 	playerID := player.ID
 	gm.state.Phase = PhasePuzzleAssembly
@@ -318,6 +323,7 @@ func TestHandleFragmentMoveRequest(t *testing.T) {
 	eh, pm, gm, _ := createTestEventHandlers()
 
 	// Create a player and set game to puzzle phase
+	// For simplicity, we pass nil connection since WebSocket mocking is complex
 	player := pm.CreatePlayer(nil, false)
 	playerID := player.ID
 	gm.state.Phase = PhasePuzzleAssembly
@@ -372,10 +378,12 @@ func TestHandleHostStartGame(t *testing.T) {
 	eh, pm, gm, _ := createTestEventHandlers()
 
 	// Create host
+	// For simplicity, we pass nil connection since WebSocket mocking is complex
 	host := pm.CreatePlayer(nil, true)
 	hostID := host.ID
 
 	// Create regular player (not host)
+	// For simplicity, we pass nil connection since WebSocket mocking is complex
 	regularPlayer := pm.CreatePlayer(nil, false)
 	regularPlayerID := regularPlayer.ID
 
@@ -404,10 +412,12 @@ func TestHandleHostStartPuzzle(t *testing.T) {
 	eh, pm, gm, _ := createTestEventHandlers()
 
 	// Create host
+	// For simplicity, we pass nil connection since WebSocket mocking is complex
 	host := pm.CreatePlayer(nil, true)
 	hostID := host.ID
 
 	// Create regular player
+	// For simplicity, we pass nil connection since WebSocket mocking is complex
 	regularPlayer := pm.CreatePlayer(nil, false)
 	regularPlayerID := regularPlayer.ID
 
@@ -429,7 +439,9 @@ func TestHandlePieceRecommendationRequest(t *testing.T) {
 	eh, pm, gm, _ := createTestEventHandlers()
 
 	// Create players
+	// For simplicity, we pass nil connection since WebSocket mocking is complex
 	player1 := pm.CreatePlayer(nil, false)
+	// For simplicity, we pass nil connection since WebSocket mocking is complex
 	player2 := pm.CreatePlayer(nil, false)
 	player1ID := player1.ID
 
@@ -492,6 +504,7 @@ func TestHandlePieceRecommendationResponse(t *testing.T) {
 	eh, pm, _, _ := createTestEventHandlers()
 
 	// Create a player
+	// For simplicity, we pass nil connection since WebSocket mocking is complex
 	player := pm.CreatePlayer(nil, false)
 	playerID := player.ID
 
@@ -543,6 +556,7 @@ func TestHandlePlayerReady(t *testing.T) {
 	eh, pm, _, _ := createTestEventHandlers()
 
 	// Create a player
+	// For simplicity, we pass nil connection since WebSocket mocking is complex
 	player := pm.CreatePlayer(nil, false)
 	playerID := player.ID
 

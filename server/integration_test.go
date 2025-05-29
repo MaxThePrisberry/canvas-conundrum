@@ -31,7 +31,7 @@ func TestBasicGameFlow(t *testing.T) {
 	// Test starting game without enough players
 	canStart, reason := gm.CanStartGame()
 	assert.False(t, canStart)
-	assert.Contains(t, reason, "minimum")
+	assert.Contains(t, reason, "Need at least")
 
 	// Add minimum players (4 non-host)
 	players := make([]*Player, 4)

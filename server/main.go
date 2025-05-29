@@ -1,11 +1,14 @@
 package main
 
 import (
+	"bufio" // Added for Hijacker
 	"context"
 	"encoding/json"
+	"errors" // Added for Hijacker error
 	"flag"
 	"fmt"
 	"log"
+	"net" // Added for Hijacker
 	"net/http"
 	"os"
 	"os/signal"
@@ -37,12 +40,12 @@ func main() {
 
 	// Generate unique host endpoint ID
 	hostEndpointID = uuid.New().String()
-	log.Printf("🎮 HOST ENDPOINT: /ws/host/%s", hostEndpointID)
-	log.Printf("👥 PLAYER ENDPOINT: /ws")
+	log.Printf("式 HOST ENDPOINT: /ws/host/%s", hostEndpointID)
+	log.Printf("則 PLAYER ENDPOINT: /ws")
 
 	if *environment == "development" {
-		log.Printf("🔗 Host URL: ws://localhost:%s/ws/host/%s", *port, hostEndpointID)
-		log.Printf("🔗 Player URL: ws://localhost:%s/ws", *port)
+		log.Printf("迫 Host URL: ws://localhost:%s/ws/host/%s", *port, hostEndpointID)
+		log.Printf("迫 Player URL: ws://localhost:%s/ws", *port)
 	}
 
 	// Initialize CORS configuration
@@ -198,16 +201,17 @@ func main() {
 	}
 
 	// Apply middleware chain
+	// The order is: loggingMiddleware(securityHeadersMiddleware(corsMiddleware(mux)))
+	// This means loggingMiddleware is the outermost, then security, then cors, then the mux.
 	handler := loggingMiddleware(securityHeadersMiddleware(corsMiddleware(mux)))
 
 	// Create server with enhanced configuration
 	srv := &http.Server{
-		Addr:         fmt.Sprintf("%s:%s", *host, *port),
-		Handler:      handler,
-		ReadTimeout:  15 * time.Second,
-		WriteTimeout: 15 * time.Second,
-		IdleTimeout:  60 * time.Second,
-		// Enhanced security for production
+		Addr:              fmt.Sprintf("%s:%s", *host, *port),
+		Handler:           handler,
+		ReadTimeout:       15 * time.Second,
+		WriteTimeout:      15 * time.Second,
+		IdleTimeout:       60 * time.Second,
 		ReadHeaderTimeout: 5 * time.Second,
 		MaxHeaderBytes:    1 << 20, // 1MB
 	}
@@ -279,18 +283,16 @@ var (
 func initializeCORS() {
 	corsAllowedOrigins = make(map[string]bool)
 
-	// Get origins from environment variable if not provided via flag
 	origins := *allowedOrigins
 	if origins == "" {
 		origins = os.Getenv("ALLOWED_ORIGINS")
 	}
 
 	if origins == "" {
-		// Development mode - allow common local development origins
 		if *environment == "development" {
 			corsAllowAll = false
 			corsAllowedOrigins["http://localhost:3000"] = true
-			corsAllowedOrigins["http://localhost:5173"] = true // Vite default
+			corsAllowedOrigins["http://localhost:5173"] = true
 			corsAllowedOrigins["http://localhost:8080"] = true
 			corsAllowedOrigins["http://127.0.0.1:3000"] = true
 			corsAllowedOrigins["http://127.0.0.1:5173"] = true
@@ -300,14 +302,12 @@ func initializeCORS() {
 			log.Fatal("CORS: No allowed origins specified for production environment. Use -origins flag or ALLOWED_ORIGINS env var")
 		}
 	} else if origins == "*" {
-		// Only allow wildcard in development
 		if *environment != "development" {
 			log.Fatal("CORS: Wildcard origins not allowed in production")
 		}
 		corsAllowAll = true
 		log.Println("CORS: WARNING - Allowing all origins (development only)")
 	} else {
-		// Parse specific origins
 		corsAllowAll = false
 		for _, origin := range strings.Split(origins, ",") {
 			origin = strings.TrimSpace(origin)
@@ -324,11 +324,9 @@ func isValidOrigin(origin string) bool {
 	if corsAllowAll {
 		return true
 	}
-
 	if origin == "" {
 		return false
 	}
-
 	return corsAllowedOrigins[origin]
 }
 
@@ -337,26 +335,21 @@ func corsMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		origin := r.Header.Get("Origin")
 
-		// Check if origin is allowed
 		if isValidOrigin(origin) {
 			w.Header().Set("Access-Control-Allow-Origin", origin)
 		} else if origin != "" {
-			// Log rejected origins for monitoring
 			log.Printf("CORS: Rejected origin: %s", origin)
 		}
 
-		// Set other CORS headers
 		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
 		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Requested-With")
 		w.Header().Set("Access-Control-Allow-Credentials", "true")
-		w.Header().Set("Access-Control-Max-Age", "86400") // 24 hours
+		w.Header().Set("Access-Control-Max-Age", "86400")
 
-		// Handle preflight requests
 		if r.Method == "OPTIONS" {
 			w.WriteHeader(http.StatusOK)
 			return
 		}
-
 		next.ServeHTTP(w, r)
 	})
 }
@@ -364,39 +357,71 @@ func corsMiddleware(next http.Handler) http.Handler {
 // Security headers middleware
 func securityHeadersMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Security headers
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.Header().Set("X-Frame-Options", "DENY")
 		w.Header().Set("X-XSS-Protection", "1; mode=block")
 		w.Header().Set("Referrer-Policy", "strict-origin-when-cross-origin")
 
-		// Content Security Policy
 		if *environment == "production" {
 			w.Header().Set("Content-Security-Policy", "default-src 'self'")
 		}
 
-		// HSTS for HTTPS
 		if r.TLS != nil {
 			w.Header().Set("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
 		}
-
 		next.ServeHTTP(w, r)
 	})
 }
 
-// Request logging middleware
+// responseWriter wrapper to capture status codes and support hijacking
+type responseWriter struct {
+	http.ResponseWriter
+	statusCode  int
+	wroteHeader bool
+}
+
+// WriteHeader captures the status code before writing it to the underlying writer.
+func (rw *responseWriter) WriteHeader(code int) {
+	if rw.wroteHeader {
+		return
+	}
+	rw.statusCode = code
+	rw.ResponseWriter.WriteHeader(code)
+	rw.wroteHeader = true
+}
+
+// Write ensures WriteHeader is called if it hasn't been, then writes the bytes.
+func (rw *responseWriter) Write(b []byte) (int, error) {
+	if !rw.wroteHeader {
+		rw.WriteHeader(http.StatusOK) // Default to 200 if not set
+	}
+	return rw.ResponseWriter.Write(b)
+}
+
+// Hijack implements the http.Hijacker interface.
+func (rw *responseWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	h, ok := rw.ResponseWriter.(http.Hijacker)
+	if !ok {
+		return nil, nil, errors.New("http.Hijacker interface is not supported by the underlying ResponseWriter")
+	}
+	return h.Hijack()
+}
+
+// Request logging middleware using the updated responseWriter
 func loggingMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
-
-		// Create a response writer that captures the status code
 		wrapper := &responseWriter{ResponseWriter: w, statusCode: http.StatusOK}
 
 		next.ServeHTTP(wrapper, r)
 
 		duration := time.Since(start)
-
-		// Log request details
+		// For WebSocket upgrades, the status code (101) is handled after hijacking.
+		// The wrapper.statusCode might not reflect the 101 if the hijack was successful
+		// before the wrapper could capture a header write for that.
+		// If no header was written by the wrapped handlers before hijacking,
+		// statusCode will remain the default (200).
+		// This logging is primarily for regular HTTP requests or failed WS upgrades.
 		log.Printf("%s %s %d %v %s",
 			r.Method,
 			r.URL.Path,
@@ -406,21 +431,9 @@ func loggingMiddleware(next http.Handler) http.Handler {
 	})
 }
 
-// responseWriter wrapper to capture status codes
-type responseWriter struct {
-	http.ResponseWriter
-	statusCode int
-}
-
-func (rw *responseWriter) WriteHeader(code int) {
-	rw.statusCode = code
-	rw.ResponseWriter.WriteHeader(code)
-}
-
-// Admin authentication middleware (simple token-based auth for this example)
+// Admin authentication middleware
 func adminAuthMiddleware(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		// In production, implement proper JWT or API key authentication
 		authHeader := r.Header.Get("Authorization")
 		expectedToken := os.Getenv("ADMIN_TOKEN")
 
@@ -428,12 +441,10 @@ func adminAuthMiddleware(next http.HandlerFunc) http.HandlerFunc {
 			http.Error(w, "Admin endpoints disabled", http.StatusNotFound)
 			return
 		}
-
 		if authHeader != "Bearer "+expectedToken {
 			http.Error(w, "Unauthorized", http.StatusUnauthorized)
 			return
 		}
-
 		next(w, r)
 	}
 }

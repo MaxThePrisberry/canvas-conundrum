@@ -307,9 +307,11 @@ func initializeCORS() {
 			corsAllowedOrigins["http://localhost:3000"] = true
 			corsAllowedOrigins["http://localhost:5173"] = true
 			corsAllowedOrigins["http://localhost:8080"] = true
+			corsAllowedOrigins["http://localhost:3001"] = true
 			corsAllowedOrigins["http://127.0.0.1:3000"] = true
 			corsAllowedOrigins["http://127.0.0.1:5173"] = true
 			corsAllowedOrigins["http://127.0.0.1:8080"] = true
+			corsAllowedOrigins["http://127.0.0.1:3001"] = true
 			log.Println("CORS: Using development origins")
 		} else {
 			log.Fatal("CORS: No allowed origins specified for production environment. Use -origins flag or ALLOWED_ORIGINS env var")

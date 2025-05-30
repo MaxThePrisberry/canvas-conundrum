@@ -26,9 +26,9 @@ export const useHostWebSocket = () => {
         ws.current.close();
       }
 
-      // Construct host WebSocket URL
+      // Construct host WebSocket URL - Fixed to include /ws prefix
       const baseUrl = process.env.REACT_APP_WS_URL || 'ws://localhost:8080';
-      const hostUrl = `${baseUrl}/host/${hostCode.current}`;
+      const hostUrl = `${baseUrl}/ws/host/${hostCode.current}`;
 
       console.log('Attempting host WebSocket connection to:', hostUrl);
       ws.current = new WebSocket(hostUrl);

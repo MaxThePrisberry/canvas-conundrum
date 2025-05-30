@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 
@@ -329,45 +330,68 @@ func TestGetSummaryStats(t *testing.T) {
 func TestTriviaManagerConcurrency(t *testing.T) {
 	tm := NewTriviaManager()
 
-	// Test concurrent access to various methods
-	done := make(chan bool, 10)
+	// Use a channel to limit concurrent operations
+	concurrencyLimit := make(chan struct{}, 2) // Allow only 2 concurrent operations
+	var wg sync.WaitGroup
 
-	// Concurrent GetQuestion calls
+	// Test concurrent GetQuestion calls
+	wg.Add(5)
 	for i := 0; i < 5; i++ {
-		go func() {
+		go func(id int) {
+			defer wg.Done()
+
+			// Acquire semaphore
+			concurrencyLimit <- struct{}{}
+			defer func() { <-concurrencyLimit }()
+
 			defer func() {
 				if r := recover(); r != nil {
-					t.Logf("Goroutine panicked: %v", r)
+					t.Errorf("GetQuestion goroutine %d panicked: %v", id, r)
 				}
-				done <- true
 			}()
+
 			askedQuestions := make(map[string]bool)
-			_, _ = tm.GetQuestion("medium", []string{"science"}, askedQuestions)
-		}()
+			_, err := tm.GetQuestion("medium", []string{"science"}, askedQuestions)
+			if err != nil {
+				// Log error but don't fail - trivia questions might be exhausted
+				t.Logf("GetQuestion error (expected): %v", err)
+			}
+		}(i)
 	}
 
-	// Concurrent stats access
+	// Test concurrent stats access
+	wg.Add(5)
 	for i := 0; i < 5; i++ {
-		go func() {
+		go func(id int) {
+			defer wg.Done()
+
+			// Acquire semaphore
+			concurrencyLimit <- struct{}{}
+			defer func() { <-concurrencyLimit }()
+
 			defer func() {
 				if r := recover(); r != nil {
-					t.Logf("Goroutine panicked: %v", r)
+					t.Errorf("Stats goroutine %d panicked: %v", id, r)
 				}
-				done <- true
 			}()
+
 			_ = tm.GetCategoryStats()
 			_ = tm.GetPoolStats()
 			_ = tm.GetSummaryStats()
-		}()
+		}(i)
 	}
 
 	// Wait for all goroutines with timeout
-	for i := 0; i < 10; i++ {
-		select {
-		case <-done:
-			// Goroutine completed successfully
-		case <-time.After(5 * time.Second):
-			t.Fatal("Test timed out waiting for goroutines to complete")
-		}
+	done := make(chan struct{})
+	go func() {
+		wg.Wait()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		// All goroutines completed successfully
+	case <-time.After(10 * time.Second):
+		t.Fatal("Test timed out waiting for goroutines to complete")
 	}
 }

@@ -524,14 +524,22 @@ func (gm *GameManager) calculateHighlightPositions(correctPos GridPos, threshold
 	coveragePercent := constants.GuideHighlightSizes[thresholdLevel]
 	gridSize := gm.state.GridSize
 	totalPositions := gridSize * gridSize
-	positionsToHighlight := int(float64(totalPositions) * coveragePercent)
+	// Round up to ensure we get enough positions
+	positionsToHighlight := int(float64(totalPositions)*coveragePercent + 0.5)
 
-	// Ensure minimum of 1 position, maximum of 2 for highest precision
+	// Ensure minimum positions based on threshold level for linear progression
 	if positionsToHighlight < 1 {
 		positionsToHighlight = 1
 	}
-	if thresholdLevel == len(constants.GuideHighlightSizes)-1 && positionsToHighlight > 2 {
-		positionsToHighlight = 2 // Highest precision = exactly 2 positions
+
+	// For higher threshold levels, ensure at least 2 positions for better guidance
+	if thresholdLevel >= 2 && positionsToHighlight < 2 {
+		positionsToHighlight = 2
+	}
+
+	// Highest precision level = exactly 2 positions
+	if thresholdLevel == len(constants.GuideHighlightSizes)-1 {
+		positionsToHighlight = 2
 	}
 
 	positions := make([]GridPos, 0, positionsToHighlight)

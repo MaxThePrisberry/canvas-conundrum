@@ -1,2 +1,4 @@
 server/client/node_modules/
 server/client/package-lock.json
+server/host/node_modules/
+server/host/package-lock.json

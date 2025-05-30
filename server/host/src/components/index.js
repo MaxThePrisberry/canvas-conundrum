@@ -7,5 +7,5 @@ export { default as HostResourcePhase } from './HostResourcePhase';
 export { default as HostPuzzlePhase } from './HostPuzzlePhase';
 export { default as HostPostGame } from './HostPostGame';
 
-// Import ConnectionOverlay from player client (shared component)
-export { default as ConnectionOverlay } from '../../../client/src/components/ConnectionOverlay';
+// Import ConnectionOverlay (should be the same as player ConnectionOverlay)
+export { default as ConnectionOverlay } from './ConnectionOverlay';

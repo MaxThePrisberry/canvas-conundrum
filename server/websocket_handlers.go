@@ -113,7 +113,7 @@ func (wsh *WebSocketHandler) HandleConnection(w http.ResponseWriter, r *http.Req
 			// Reconnect existing host
 			if err := wsh.playerManager.ReconnectPlayer(playerID, conn); err != nil {
 				log.Printf("Host reconnection failed for player %s: %v", playerID, err)
-				if wsh.playerManager.GetHost() != nil {
+				if wsh.playerManager.GetConnectedHost() != nil {
 					wsh.sendConnectionError(conn, constants.ErrHostExists)
 					return
 				}
@@ -128,7 +128,7 @@ func (wsh *WebSocketHandler) HandleConnection(w http.ResponseWriter, r *http.Req
 		// New connection
 		if isHost {
 			// Check if there's already a host
-			existingHost := wsh.playerManager.GetHost()
+			existingHost := wsh.playerManager.GetConnectedHost()
 			if existingHost != nil {
 				wsh.sendConnectionError(conn, constants.ErrHostExists)
 				return
@@ -150,6 +150,18 @@ func (wsh *WebSocketHandler) HandleConnection(w http.ResponseWriter, r *http.Req
 	conn.SetReadDeadline(time.Now().Add(constants.WebSocketPongTimeout))
 	conn.SetPongHandler(func(string) error {
 		conn.SetReadDeadline(time.Now().Add(constants.WebSocketPongTimeout))
+		return nil
+	})
+
+	// Set up close handler for immediate disconnect detection
+	conn.SetCloseHandler(func(code int, text string) error {
+		log.Printf("WebSocket closed for player %s (code: %d, reason: %s)", player.ID, code, text)
+		// Immediately handle disconnection for hosts to allow new connections
+		if player.IsHost {
+			wsh.handleHostDisconnection(player)
+		} else {
+			wsh.handleDisconnection(player)
+		}
 		return nil
 	})
 
@@ -547,6 +559,35 @@ func (wsh *WebSocketHandler) sendValidationError(player *Player, err error) {
 	sendToPlayer(player, MsgError, errorResponse)
 }
 
+// handleHostDisconnection handles immediate host disconnection cleanup
+func (wsh *WebSocketHandler) handleHostDisconnection(player *Player) {
+	log.Printf("Host %s disconnected - immediately cleaning up for new host connection", player.ID)
+
+	// Mark as disconnected
+	wsh.playerManager.DisconnectPlayer(player.ID)
+
+	// Immediately remove the host to allow new connections
+	if removed := wsh.playerManager.RemoveDisconnectedHost(); !removed {
+		log.Printf("Warning: Attempted to remove disconnected host but none found")
+	}
+
+	// Get current phase for notification
+	phase := wsh.gameManager.GetPhase()
+
+	// Notify players that host disconnected
+	wsh.broadcastChan <- BroadcastMessage{
+		Type: MsgError,
+		Payload: map[string]interface{}{
+			"error":            "Host disconnected - new host can now connect",
+			"type":             "host_disconnected",
+			"phase":            phase.String(),
+			"reconnectionInfo": "A new host can connect immediately",
+		},
+	}
+
+	log.Printf("Host %s removed - server is now available for new host connection", player.ID)
+}
+
 // handleDisconnection handles player disconnection with ENHANCED fragment ownership handling
 func (wsh *WebSocketHandler) handleDisconnection(player *Player) {
 	log.Printf("Player %s disconnected", player.ID)
@@ -590,20 +631,11 @@ func (wsh *WebSocketHandler) handleDisconnection(player *Player) {
 		log.Printf("Player %s disconnected during post-game phase", player.ID)
 	}
 
-	// Handle host disconnection
+	// Handle host disconnection (fallback for non-close events)
 	if player.IsHost {
-		log.Printf("Host %s disconnected - no host transfer, waiting for reconnection to host endpoint", player.ID)
-
-		// Notify players that host disconnected but game continues
-		wsh.broadcastChan <- BroadcastMessage{
-			Type: MsgError,
-			Payload: map[string]interface{}{
-				"error":            "Host disconnected - game may be paused until host reconnects",
-				"type":             "host_disconnected",
-				"phase":            phase.String(),
-				"reconnectionInfo": "Host can reconnect to continue monitoring the game",
-			},
-		}
+		log.Printf("Host %s disconnected via non-close event - using immediate cleanup", player.ID)
+		wsh.handleHostDisconnection(player)
+		return
 	}
 }
 

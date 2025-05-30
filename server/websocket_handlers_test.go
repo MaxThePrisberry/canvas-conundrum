@@ -323,3 +323,216 @@ func TestPlayerIDValidationInConnection(t *testing.T) {
 		})
 	}
 }
+
+// TestHostDisconnectionHandler tests the new host disconnection handler
+func TestHostDisconnectionHandler(t *testing.T) {
+	// Setup components
+	playerManager := NewPlayerManager()
+	triviaManager := NewTriviaManager()
+	broadcastChan := make(chan BroadcastMessage, 256)
+	gameManager := NewGameManager(playerManager, triviaManager, broadcastChan)
+	eventHandlers := NewEventHandlers(gameManager, playerManager, broadcastChan)
+	wsHandler := NewWebSocketHandler(playerManager, gameManager, eventHandlers, broadcastChan)
+
+	// Create a host player
+	host := playerManager.CreatePlayer(nil, true)
+
+	// Verify host exists and is connected
+	assert.NotNil(t, playerManager.GetConnectedHost())
+	assert.Equal(t, host.ID, playerManager.GetConnectedHost().ID)
+
+	// Simulate host disconnection via close handler
+	wsHandler.handleHostDisconnection(host)
+
+	// Verify immediate cleanup
+	assert.Nil(t, playerManager.GetConnectedHost())
+	assert.Nil(t, playerManager.GetHost())
+
+	// Verify broadcast message was sent
+	select {
+	case msg := <-broadcastChan:
+		assert.Equal(t, MsgError, msg.Type)
+		payload := msg.Payload.(map[string]interface{})
+		assert.Contains(t, payload["error"], "Host disconnected - new host can now connect")
+		assert.Equal(t, "host_disconnected", payload["type"])
+	case <-time.After(100 * time.Millisecond):
+		t.Fatal("Expected broadcast message for host disconnection")
+	}
+
+	// Cleanup
+	triviaManager.Shutdown()
+}
+
+// TestHostConnectionBlocking tests that connected hosts block new host connections
+func TestHostConnectionBlocking(t *testing.T) {
+	playerManager := NewPlayerManager()
+	triviaManager := NewTriviaManager()
+	broadcastChan := make(chan BroadcastMessage, 256)
+	gameManager := NewGameManager(playerManager, triviaManager, broadcastChan)
+	eventHandlers := NewEventHandlers(gameManager, playerManager, broadcastChan)
+	wsHandler := NewWebSocketHandler(playerManager, gameManager, eventHandlers, broadcastChan)
+
+	// Create first host
+	host1 := playerManager.CreatePlayer(nil, true)
+	assert.NotNil(t, playerManager.GetConnectedHost())
+
+	// Simulate the check that would happen in HandleConnection for new host
+	existingConnectedHost := playerManager.GetConnectedHost()
+	shouldBlockNewHost := existingConnectedHost != nil
+	assert.True(t, shouldBlockNewHost, "Should block new host when one is connected")
+
+	// Disconnect first host and clean up
+	wsHandler.handleHostDisconnection(host1)
+	assert.Nil(t, playerManager.GetConnectedHost())
+
+	// Now new host should be allowed
+	shouldBlockNewHost = playerManager.GetConnectedHost() != nil
+	assert.False(t, shouldBlockNewHost, "Should allow new host after cleanup")
+
+	// Create second host should succeed
+	host2 := playerManager.CreatePlayer(nil, true)
+	assert.NotNil(t, host2)
+	assert.NotEqual(t, host1.ID, host2.ID)
+
+	// Cleanup
+	triviaManager.Shutdown()
+}
+
+// TestWebSocketCloseHandlerBehavior tests the close handler logic
+func TestWebSocketCloseHandlerBehavior(t *testing.T) {
+	playerManager := NewPlayerManager()
+	triviaManager := NewTriviaManager()
+	broadcastChan := make(chan BroadcastMessage, 256)
+	gameManager := NewGameManager(playerManager, triviaManager, broadcastChan)
+	eventHandlers := NewEventHandlers(gameManager, playerManager, broadcastChan)
+	wsHandler := NewWebSocketHandler(playerManager, gameManager, eventHandlers, broadcastChan)
+
+	tests := []struct {
+		name       string
+		isHost     bool
+		shouldCall string
+	}{
+		{
+			name:       "Host close should call handleHostDisconnection",
+			isHost:     true,
+			shouldCall: "handleHostDisconnection",
+		},
+		{
+			name:       "Player close should call handleDisconnection",
+			isHost:     false,
+			shouldCall: "handleDisconnection",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Create player
+			player := playerManager.CreatePlayer(nil, tt.isHost)
+
+			initialConnectedCount := playerManager.GetConnectedCount()
+
+			if tt.isHost {
+				// For host, test immediate cleanup
+				wsHandler.handleHostDisconnection(player)
+
+				// Host should be completely removed
+				assert.Nil(t, playerManager.GetHost())
+				assert.Nil(t, playerManager.GetConnectedHost())
+				assert.Equal(t, initialConnectedCount-1, playerManager.GetConnectedCount())
+			} else {
+				// For regular player, test normal disconnection
+				wsHandler.handleDisconnection(player)
+
+				// Player should be disconnected but not removed
+				p, err := playerManager.GetPlayer(player.ID)
+				assert.NoError(t, err)
+				assert.Equal(t, StateDisconnected, p.State)
+				assert.Equal(t, initialConnectedCount-1, playerManager.GetConnectedCount())
+			}
+		})
+	}
+
+	// Cleanup
+	triviaManager.Shutdown()
+}
+
+// TestFallbackDisconnectionForHost tests that regular disconnection also handles hosts
+func TestFallbackDisconnectionForHost(t *testing.T) {
+	playerManager := NewPlayerManager()
+	triviaManager := NewTriviaManager()
+	broadcastChan := make(chan BroadcastMessage, 256)
+	gameManager := NewGameManager(playerManager, triviaManager, broadcastChan)
+	eventHandlers := NewEventHandlers(gameManager, playerManager, broadcastChan)
+	wsHandler := NewWebSocketHandler(playerManager, gameManager, eventHandlers, broadcastChan)
+
+	// Create host
+	host := playerManager.CreatePlayer(nil, true)
+	assert.NotNil(t, playerManager.GetConnectedHost())
+
+	// Call regular handleDisconnection (fallback path)
+	wsHandler.handleDisconnection(host)
+
+	// Should still result in host cleanup
+	assert.Nil(t, playerManager.GetConnectedHost())
+	assert.Nil(t, playerManager.GetHost())
+
+	// Cleanup
+	triviaManager.Shutdown()
+}
+
+// TestConcurrentHostDisconnectionHandling tests thread safety
+func TestConcurrentHostDisconnectionHandling(t *testing.T) {
+	playerManager := NewPlayerManager()
+	triviaManager := NewTriviaManager()
+	broadcastChan := make(chan BroadcastMessage, 256)
+	gameManager := NewGameManager(playerManager, triviaManager, broadcastChan)
+	eventHandlers := NewEventHandlers(gameManager, playerManager, broadcastChan)
+	wsHandler := NewWebSocketHandler(playerManager, gameManager, eventHandlers, broadcastChan)
+
+	// Create host
+	host := playerManager.CreatePlayer(nil, true)
+
+	done := make(chan bool, 10)
+
+	// Simulate multiple concurrent disconnection calls
+	for i := 0; i < 5; i++ {
+		go func() {
+			defer func() { done <- true }()
+			wsHandler.handleHostDisconnection(host)
+		}()
+	}
+
+	// Also simulate regular disconnection calls
+	for i := 0; i < 5; i++ {
+		go func() {
+			defer func() { done <- true }()
+			wsHandler.handleDisconnection(host)
+		}()
+	}
+
+	// Wait for all operations
+	for i := 0; i < 10; i++ {
+		select {
+		case <-done:
+		case <-time.After(1 * time.Second):
+			t.Fatal("Timeout waiting for concurrent disconnection handling")
+		}
+	}
+
+	// Final state should be consistent
+	assert.Nil(t, playerManager.GetConnectedHost())
+	assert.Nil(t, playerManager.GetHost())
+
+	// Drain broadcast channel
+	for {
+		select {
+		case <-broadcastChan:
+		default:
+			goto drained
+		}
+	}
+drained:
+
+	// Cleanup
+	triviaManager.Shutdown()
+}

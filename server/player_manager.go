@@ -368,6 +368,47 @@ func (pm *PlayerManager) GetHost() *Player {
 	return nil
 }
 
+// GetConnectedHost returns the host player only if connected
+func (pm *PlayerManager) GetConnectedHost() *Player {
+	pm.mu.RLock()
+	defer pm.mu.RUnlock()
+
+	for _, p := range pm.players {
+		p.mu.RLock()
+		isHost := p.IsHost
+		isConnected := p.State == StateConnected
+		p.mu.RUnlock()
+
+		if isHost && isConnected {
+			return p
+		}
+	}
+
+	return nil
+}
+
+// RemoveDisconnectedHost removes a disconnected host from the player list
+func (pm *PlayerManager) RemoveDisconnectedHost() bool {
+	pm.mu.Lock()
+	defer pm.mu.Unlock()
+
+	for id, p := range pm.players {
+		p.mu.RLock()
+		isHost := p.IsHost
+		isDisconnected := p.State == StateDisconnected
+		p.mu.RUnlock()
+
+		if isHost && isDisconnected {
+			log.Printf("Removing disconnected host: %s", id)
+			delete(pm.players, id)
+			return true
+		}
+	}
+
+	log.Printf("No disconnected host found to remove")
+	return false
+}
+
 // GetRoleDistribution returns the current role distribution (excluding host)
 func (pm *PlayerManager) GetRoleDistribution() map[string]int {
 	pm.mu.RLock()
@@ -495,14 +536,5 @@ func (pm *PlayerManager) GetReadyNonHostPlayers() []*Player {
 
 // IsHostConnected checks if a host is currently connected
 func (pm *PlayerManager) IsHostConnected() bool {
-	host := pm.GetHost()
-	if host == nil {
-		return false
-	}
-
-	host.mu.RLock()
-	connected := host.State == StateConnected
-	host.mu.RUnlock()
-
-	return connected
+	return pm.GetConnectedHost() != nil
 }

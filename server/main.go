@@ -193,6 +193,14 @@ func main() {
 		}))
 	}
 
+	// Static file serving for client frontend (players)
+	clientFS := http.FileServer(http.Dir("./client/public/"))
+	mux.Handle("/", clientFS)
+
+	// Static file serving for host frontend
+	hostFS := http.FileServer(http.Dir("./host/public/"))
+	mux.Handle("/host/", http.StripPrefix("/host/", hostFS))
+
 	// Apply middleware chain
 	// The order is: loggingMiddleware(securityHeadersMiddleware(corsMiddleware(mux)))
 	// This means loggingMiddleware is the outermost, then security, then cors, then the mux.

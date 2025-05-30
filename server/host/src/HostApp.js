@@ -11,6 +11,7 @@ import { GamePhase, MessageType } from './constants';
 
 function HostApp() {
   const [isConnected, setIsConnected] = useState(false);
+  const [hasAttemptedConnection, setHasAttemptedConnection] = useState(false); // Track if user tried to connect
   const [hashCode, setHashCode] = useState('');
   const [gameState, setGameState] = useState({
     phase: GamePhase.SETUP,
@@ -37,10 +38,12 @@ function HostApp() {
     connect: connectWebSocket
   } = useHostWebSocket();
 
-  // Handle WebSocket connection status
+  // Handle WebSocket connection status - only set isConnected if we've attempted to connect
   useEffect(() => {
-    setIsConnected(wsConnected);
-  }, [wsConnected]);
+    if (hasAttemptedConnection) {
+      setIsConnected(wsConnected);
+    }
+  }, [wsConnected, hasAttemptedConnection]);
 
   // Handle incoming WebSocket messages
   useEffect(() => {
@@ -128,11 +131,13 @@ function HostApp() {
 
   const handleConnect = useCallback((code) => {
     setHashCode(code);
+    setHasAttemptedConnection(true); // Mark that user attempted to connect
     connectWebSocket(code);
   }, [connectWebSocket]);
 
   const handleDisconnect = useCallback(() => {
     setIsConnected(false);
+    setHasAttemptedConnection(false); // Reset connection attempt state
     setHashCode('');
     setGameState({
       phase: GamePhase.SETUP,
@@ -154,10 +159,13 @@ function HostApp() {
 
   return (
     <div className="HostApp">
-      <ConnectionOverlay 
-        isConnected={wsConnected} 
-        isReconnecting={isReconnecting} 
-      />
+      {/* Only show connection overlay if user has attempted to connect */}
+      {hasAttemptedConnection && (
+        <ConnectionOverlay 
+          isConnected={wsConnected} 
+          isReconnecting={isReconnecting} 
+        />
+      )}
 
       <AnimatePresence mode="wait">
         {!isConnected ? (

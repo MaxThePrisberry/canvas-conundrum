@@ -810,6 +810,8 @@ func (gm *GameManager) runPuzzleTimer(duration time.Duration) {
 
 // BroadcastPersonalPuzzleStates sends personalized puzzle states to all players
 func (gm *GameManager) BroadcastPersonalPuzzleStates() {
+	// NOTE: This method assumes the caller already holds gm.mu lock
+
 	// Get all visible fragments
 	visibleFragments := make([]*PuzzleFragment, 0)
 	for _, fragment := range gm.state.PuzzleFragments {
@@ -833,8 +835,8 @@ func (gm *GameManager) BroadcastPersonalPuzzleStates() {
 		})
 	}
 
-	// Update host with complete puzzle state
-	gm.sendHostUpdate()
+	// Update host with complete puzzle state using internal method
+	gm.sendHostUpdateInternal() // Use internal version that doesn't acquire lock
 }
 
 // ProcessSegmentCompleted handles when a player completes their puzzle segment - ENHANCED
@@ -1566,7 +1568,7 @@ func (gm *GameManager) sendPuzzleProgress() {
 	}
 
 	// This is primarily for the host
-	gm.sendHostUpdate()
+	gm.sendHostUpdateInternal() // Use internal version
 }
 
 func (gm *GameManager) broadcastPuzzleState() {
@@ -1589,6 +1591,14 @@ func (gm *GameManager) broadcastPuzzleState() {
 // sendHostUpdate updates host with current game status - Enhanced for new host system
 func (gm *GameManager) sendHostUpdate() {
 	gm.mu.RLock()
+	defer gm.mu.RUnlock()
+
+	gm.sendHostUpdateInternal()
+}
+
+func (gm *GameManager) sendHostUpdateInternal() {
+	// NOTE: This method assumes the caller already holds gm.mu (either read or write lock)
+	// Do NOT acquire the lock here!
 
 	playerStatuses := make(map[string]PlayerStatus)
 	allPlayers := gm.playerManager.GetAllPlayers()
@@ -1646,8 +1656,6 @@ func (gm *GameManager) sendHostUpdate() {
 		PlayerStatuses:   playerStatuses,
 		PuzzleProgress:   progress,
 	}
-
-	gm.mu.RUnlock()
 
 	// Send only to host
 	host := gm.playerManager.GetHost()

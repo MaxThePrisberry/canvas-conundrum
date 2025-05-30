@@ -40,13 +40,6 @@ func main() {
 
 	// Generate unique host endpoint ID
 	hostEndpointID = uuid.New().String()
-	log.Printf("式 HOST ENDPOINT: /ws/host/%s", hostEndpointID)
-	log.Printf("則 PLAYER ENDPOINT: /ws")
-
-	if *environment == "development" {
-		log.Printf("迫 Host URL: ws://localhost:%s/ws/host/%s", *port, hostEndpointID)
-		log.Printf("迫 Player URL: ws://localhost:%s/ws", *port)
-	}
 
 	// Initialize CORS configuration
 	initializeCORS()
@@ -214,6 +207,15 @@ func main() {
 		IdleTimeout:       60 * time.Second,
 		ReadHeaderTimeout: 5 * time.Second,
 		MaxHeaderBytes:    1 << 20, // 1MB
+	}
+
+	// Log host endpoint information at the end for easy copying
+	log.Printf("HOST ENDPOINT: /ws/host/%s", hostEndpointID)
+	log.Printf("PLAYER ENDPOINT: /ws")
+
+	if *environment == "development" {
+		log.Printf("Host URL: ws://localhost:%s/ws/host/%s", *port, hostEndpointID)
+		log.Printf("Player URL: ws://localhost:%s/ws", *port)
 	}
 
 	// Start server in a goroutine

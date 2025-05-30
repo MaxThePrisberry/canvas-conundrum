@@ -137,6 +137,9 @@ export const GAME_CONFIG = {
   CLARITY_PREVIEW_BONUS: 1 // seconds per threshold
 };
 
+// Swap Request Timeout
+export const SWAP_REQUEST_TIMEOUT = 30000; // 30 seconds in milliseconds
+
 // WebSocket Configuration
 export const WS_URL = process.env.REACT_APP_WS_URL || 'ws://localhost:8080/ws';
 

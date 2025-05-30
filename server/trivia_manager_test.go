@@ -54,7 +54,6 @@ func TestNewTriviaManager(t *testing.T) {
 	assert.NotNil(t, tm)
 	assert.NotNil(t, tm.questions)
 	assert.NotNil(t, tm.questionHistory)
-	assert.NotNil(t, tm.mu)
 }
 
 func TestTriviaManagerQuestionLoading(t *testing.T) {

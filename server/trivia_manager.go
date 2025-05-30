@@ -17,11 +17,12 @@ import (
 
 // TriviaManager handles loading and serving trivia questions with enhanced cycling
 type TriviaManager struct {
-	questions         map[string]map[string][]TriviaQuestion // category -> difficulty -> questions
-	questionPools     map[string]map[string][]int            // category -> difficulty -> available question indices
-	questionHistory   map[string]time.Time                   // questionID -> last asked time
-	poolResetCounters map[string]map[string]int              // category -> difficulty -> reset counter
+	questions         map[string]map[string][]TriviaQuestion
+	questionPools     map[string]map[string][]int
+	questionHistory   map[string]time.Time
+	poolResetCounters map[string]map[string]int
 	mu                sync.RWMutex
+	shutdownChan      chan struct{} // Add this for graceful shutdown
 }
 
 // NewTriviaManager creates and initializes a new trivia manager
@@ -31,6 +32,7 @@ func NewTriviaManager() *TriviaManager {
 		questionPools:     make(map[string]map[string][]int),
 		questionHistory:   make(map[string]time.Time),
 		poolResetCounters: make(map[string]map[string]int),
+		shutdownChan:      make(chan struct{}), // Initialize shutdown channel
 	}
 
 	if err := tm.loadAllQuestions(); err != nil {
@@ -493,21 +495,32 @@ func (tm *TriviaManager) cleanupQuestionHistory() {
 	ticker := time.NewTicker(10 * time.Minute) // Cleanup every 10 minutes
 	defer ticker.Stop()
 
-	for range ticker.C {
-		tm.mu.Lock()
-		cutoff := time.Now().Add(-30 * time.Minute) // Remove entries older than 30 minutes
-		cleaned := 0
-		for questionID, askTime := range tm.questionHistory {
-			if askTime.Before(cutoff) {
-				delete(tm.questionHistory, questionID)
-				cleaned++
+	for {
+		select {
+		case <-ticker.C:
+			tm.mu.Lock()
+			cutoff := time.Now().Add(-30 * time.Minute) // Remove entries older than 30 minutes
+			cleaned := 0
+			for questionID, askTime := range tm.questionHistory {
+				if askTime.Before(cutoff) {
+					delete(tm.questionHistory, questionID)
+					cleaned++
+				}
 			}
+			if cleaned > 0 {
+				log.Printf("Cleaned up %d old question history entries", cleaned)
+			}
+			tm.mu.Unlock()
+		case <-tm.shutdownChan:
+			log.Println("Trivia manager cleanup routine shutting down")
+			return
 		}
-		if cleaned > 0 {
-			log.Printf("Cleaned up %d old question history entries", cleaned)
-		}
-		tm.mu.Unlock()
 	}
+}
+
+// Add a Shutdown method to cleanly stop the background goroutine
+func (tm *TriviaManager) Shutdown() {
+	close(tm.shutdownChan)
 }
 
 // Enhanced answer validation with consistent logging

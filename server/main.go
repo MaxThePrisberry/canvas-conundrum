@@ -246,6 +246,9 @@ func main() {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
+	// Shutdown TriviaManager first to stop background goroutines
+	triviaManager.Shutdown()
+
 	// Close broadcast channel
 	close(broadcastChan)
 

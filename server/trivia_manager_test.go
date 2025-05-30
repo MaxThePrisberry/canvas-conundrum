@@ -49,11 +49,11 @@ func setupTestTriviaFiles(t *testing.T) func() {
 
 func TestNewTriviaManager(t *testing.T) {
 	tm := NewTriviaManager()
+	defer tm.Shutdown()
 
 	assert.NotNil(t, tm)
 	assert.NotNil(t, tm.questions)
 	assert.NotNil(t, tm.questionHistory)
-	// assert.NotNil(t, tm.questionIndex) // Field doesn't exist, skip
 	assert.NotNil(t, tm.mu)
 }
 
@@ -61,6 +61,7 @@ func TestTriviaManagerQuestionLoading(t *testing.T) {
 	// This test would require actual trivia files or mocking
 	// For now, we'll test the structure
 	tm := NewTriviaManager()
+	defer tm.Shutdown()
 
 	// Test that the manager initializes without panic
 	assert.NotNil(t, tm.questions)
@@ -76,7 +77,8 @@ func TestTriviaManagerQuestionLoading(t *testing.T) {
 }
 
 func TestValidateAnswer(t *testing.T) {
-	_ = NewTriviaManager() // tm not used since we skip these tests
+	tm := NewTriviaManager()
+	defer tm.Shutdown()
 
 	// Since we can't easily mock the loaded questions, we'll test the answer validation logic
 	// by directly testing the internal comparison methods
@@ -165,6 +167,7 @@ func TestValidateAnswer(t *testing.T) {
 
 func TestGetQuestion(t *testing.T) {
 	tm := NewTriviaManager()
+	defer tm.Shutdown()
 
 	// Test with empty question history
 	askedQuestions := make(map[string]bool)
@@ -215,6 +218,7 @@ func TestGetQuestion(t *testing.T) {
 
 func TestGetCategoryStats(t *testing.T) {
 	tm := NewTriviaManager()
+	defer tm.Shutdown()
 
 	stats := tm.GetCategoryStats()
 	assert.NotNil(t, stats)
@@ -238,6 +242,7 @@ func TestGetCategoryStats(t *testing.T) {
 
 func TestGetPoolStats(t *testing.T) {
 	tm := NewTriviaManager()
+	defer tm.Shutdown()
 
 	stats := tm.GetPoolStats()
 	assert.NotNil(t, stats)
@@ -255,6 +260,7 @@ func TestGetPoolStats(t *testing.T) {
 
 func TestIsCategorySupported(t *testing.T) {
 	tm := NewTriviaManager()
+	defer tm.Shutdown()
 
 	tests := []struct {
 		category  string
@@ -281,6 +287,7 @@ func TestIsCategorySupported(t *testing.T) {
 
 func TestValidateQuestion(t *testing.T) {
 	tm := NewTriviaManager()
+	defer tm.Shutdown()
 
 	// Test various question ID formats
 	tests := []struct {
@@ -308,6 +315,7 @@ func TestValidateQuestion(t *testing.T) {
 
 func TestGetSummaryStats(t *testing.T) {
 	tm := NewTriviaManager()
+	defer tm.Shutdown()
 
 	stats := tm.GetSummaryStats()
 	assert.NotNil(t, stats)
@@ -329,20 +337,15 @@ func TestGetSummaryStats(t *testing.T) {
 
 func TestTriviaManagerConcurrency(t *testing.T) {
 	tm := NewTriviaManager()
+	defer tm.Shutdown() // Ensure cleanup goroutine is stopped
 
-	// Use a channel to limit concurrent operations
-	concurrencyLimit := make(chan struct{}, 2) // Allow only 2 concurrent operations
 	var wg sync.WaitGroup
 
-	// Test concurrent GetQuestion calls
-	wg.Add(5)
-	for i := 0; i < 5; i++ {
+	// Test concurrent GetQuestion calls - just 3 goroutines for simplicity
+	wg.Add(3)
+	for i := 0; i < 3; i++ {
 		go func(id int) {
 			defer wg.Done()
-
-			// Acquire semaphore
-			concurrencyLimit <- struct{}{}
-			defer func() { <-concurrencyLimit }()
 
 			defer func() {
 				if r := recover(); r != nil {
@@ -359,15 +362,11 @@ func TestTriviaManagerConcurrency(t *testing.T) {
 		}(i)
 	}
 
-	// Test concurrent stats access
-	wg.Add(5)
-	for i := 0; i < 5; i++ {
+	// Test concurrent stats access - just 2 goroutines for simplicity
+	wg.Add(2)
+	for i := 0; i < 2; i++ {
 		go func(id int) {
 			defer wg.Done()
-
-			// Acquire semaphore
-			concurrencyLimit <- struct{}{}
-			defer func() { <-concurrencyLimit }()
 
 			defer func() {
 				if r := recover(); r != nil {
@@ -391,7 +390,55 @@ func TestTriviaManagerConcurrency(t *testing.T) {
 	select {
 	case <-done:
 		// All goroutines completed successfully
-	case <-time.After(10 * time.Second):
+	case <-time.After(3 * time.Second):
 		t.Fatal("Test timed out waiting for goroutines to complete")
+	}
+}
+
+func TestTriviaManagerHighConcurrency(t *testing.T) {
+	tm := NewTriviaManager()
+	defer tm.Shutdown()
+
+	var wg sync.WaitGroup
+	maxPlayers := 64 // Test with maximum expected player count
+
+	// Test with maximum expected concurrent load
+	wg.Add(maxPlayers)
+	for i := 0; i < maxPlayers; i++ {
+		go func(id int) {
+			defer wg.Done()
+
+			defer func() {
+				if r := recover(); r != nil {
+					t.Errorf("High concurrency goroutine %d panicked: %v", id, r)
+				}
+			}()
+
+			// Each player could be getting questions
+			askedQuestions := make(map[string]bool)
+			_, err := tm.GetQuestion("medium", []string{"science"}, askedQuestions)
+			if err != nil {
+				// Expected for some goroutines as questions might be exhausted
+				t.Logf("GetQuestion error (expected): %v", err)
+			}
+
+			// Also test stats access under high load
+			_ = tm.GetCategoryStats()
+		}(i)
+	}
+
+	// Wait for all goroutines with generous timeout
+	done := make(chan struct{})
+	go func() {
+		wg.Wait()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		// All goroutines completed successfully
+		t.Logf("Successfully handled %d concurrent operations", maxPlayers)
+	case <-time.After(10 * time.Second):
+		t.Fatal("High concurrency test timed out - this could indicate a real concurrency issue")
 	}
 }

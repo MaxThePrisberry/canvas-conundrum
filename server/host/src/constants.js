@@ -13,6 +13,7 @@ export const MessageType = {
   // Server to Client (Host receives these)
   AVAILABLE_ROLES: 'available_roles',
   HOST_UPDATE: 'host_update',
+  GAME_LOBBY_STATUS: 'game_lobby_status', // Added missing message type
   GAME_ANALYTICS: 'game_analytics',
   GAME_RESET: 'game_reset',
   ERROR: 'error',

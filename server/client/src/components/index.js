@@ -9,3 +9,5 @@ export { default as TriviaQuestion } from './TriviaQuestion';
 export { default as PhaseTransition } from './PhaseTransition';
 export { default as SwapRequestList } from './SwapRequestList';
 export { default as ManualCodeEntry } from './ManualCodeEntry';
+export { default as IndividualPuzzle } from './IndividualPuzzle';
+export { default as CentralPuzzleGrid } from './CentralPuzzleGrid';

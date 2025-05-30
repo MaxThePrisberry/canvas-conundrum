@@ -26,10 +26,15 @@ function App() {
     },
     resourceHashes: {},
     currentQuestion: null,
+    imagePreview: null,
     puzzleData: null,
     analyticsData: null,
     playerRole: null,
-    playerSpecialties: []
+    playerSpecialties: [],
+    puzzleTimer: null,
+    individualPuzzleComplete: false,
+    centralPuzzleState: null,
+    personalPuzzleState: null
   });
 
   const { 
@@ -48,15 +53,22 @@ function App() {
     switch (type) {
       case MessageType.AVAILABLE_ROLES:
         setPlayerId(payload.playerId);
-        setGameState(prev => ({
-          ...prev,
-          availableRoles: payload.roles,
-          triviaCategories: payload.triviaCategories
-        }));
+        // Only set roles if not a host connection
+        if (!payload.isHost) {
+          setGameState(prev => ({
+            ...prev,
+            availableRoles: payload.roles,
+            triviaCategories: payload.triviaCategories
+          }));
+        }
         break;
 
       case MessageType.GAME_LOBBY_STATUS:
-        // Update lobby status if needed
+        // Update lobby status
+        setGameState(prev => ({
+          ...prev,
+          lobbyStatus: payload
+        }));
         break;
 
       case MessageType.RESOURCE_PHASE_START:
@@ -77,15 +89,71 @@ function App() {
       case MessageType.TEAM_PROGRESS_UPDATE:
         setGameState(prev => ({
           ...prev,
-          teamTokens: payload.teamTokens
+          teamTokens: payload.teamTokens,
+          questionsAnswered: payload.questionsAnswered,
+          totalQuestions: payload.totalQuestions
+        }));
+        break;
+
+      case MessageType.IMAGE_PREVIEW:
+        setGameState(prev => ({
+          ...prev,
+          imagePreview: payload
         }));
         break;
 
       case MessageType.PUZZLE_PHASE_LOAD:
-        setPhase(GamePhase.PUZZLE_ASSEMBLY);
+        if (!payload.isHost) {
+          setPhase(GamePhase.PUZZLE_ASSEMBLY);
+          setGameState(prev => ({
+            ...prev,
+            puzzleData: payload,
+            individualPuzzleComplete: false
+          }));
+        }
+        break;
+
+      case MessageType.PUZZLE_PHASE_START:
         setGameState(prev => ({
           ...prev,
-          puzzleData: payload
+          puzzleTimer: {
+            startTime: payload.startTimestamp,
+            totalTime: payload.totalTime
+          }
+        }));
+        break;
+
+      case MessageType.SEGMENT_COMPLETION_ACK:
+        setGameState(prev => ({
+          ...prev,
+          individualPuzzleComplete: true,
+          gridPosition: payload.gridPosition
+        }));
+        break;
+
+      case MessageType.PERSONAL_PUZZLE_STATE:
+        setGameState(prev => ({
+          ...prev,
+          personalPuzzleState: payload.personalView
+        }));
+        break;
+
+      case MessageType.CENTRAL_PUZZLE_STATE:
+        setGameState(prev => ({
+          ...prev,
+          centralPuzzleState: payload
+        }));
+        break;
+
+      case MessageType.FRAGMENT_MOVE_RESPONSE:
+        // Handle move response if needed
+        break;
+
+      case MessageType.PIECE_RECOMMENDATION:
+        // Handle incoming recommendation
+        setGameState(prev => ({
+          ...prev,
+          incomingRecommendation: payload
         }));
         break;
 
@@ -112,16 +180,21 @@ function App() {
           },
           resourceHashes: {},
           currentQuestion: null,
+          imagePreview: null,
           puzzleData: null,
           analyticsData: null,
           playerRole: null,
-          playerSpecialties: []
+          playerSpecialties: [],
+          puzzleTimer: null,
+          individualPuzzleComplete: false,
+          centralPuzzleState: null,
+          personalPuzzleState: null
         });
         break;
 
       case MessageType.ERROR:
         console.error('Game error:', payload);
-        // Handle error display if needed
+        // Could show error toast here
         break;
 
       default:
@@ -138,31 +211,26 @@ function App() {
     
     sendMessage({
       type,
-      payload: {
-        auth: { playerId },
-        payload
-      }
+      auth: { playerId },
+      payload
     });
   }, [playerId, sendMessage]);
 
-  // Update game state when player selects role
+  // Event handlers
   const handleRoleSelection = useCallback((role) => {
     setGameState(prev => ({ ...prev, playerRole: role }));
     sendAuthenticatedMessage(MessageType.ROLE_SELECTION, { role });
   }, [sendAuthenticatedMessage]);
 
-  // Update game state when player selects specialties
   const handleSpecialtySelection = useCallback((specialties) => {
     setGameState(prev => ({ ...prev, playerSpecialties: specialties }));
     sendAuthenticatedMessage(MessageType.TRIVIA_SPECIALTY_SELECTION, { specialties });
   }, [sendAuthenticatedMessage]);
 
-  // Handle location verification
   const handleLocationVerified = useCallback((hash) => {
     sendAuthenticatedMessage(MessageType.RESOURCE_LOCATION_VERIFIED, { verifiedHash: hash });
   }, [sendAuthenticatedMessage]);
 
-  // Handle trivia answer submission
   const handleAnswerSubmit = useCallback((questionId, answer) => {
     sendAuthenticatedMessage(MessageType.TRIVIA_ANSWER, { 
       questionId, 
@@ -171,7 +239,6 @@ function App() {
     });
   }, [sendAuthenticatedMessage]);
 
-  // Handle segment completion
   const handleSegmentCompleted = useCallback((segmentId) => {
     sendAuthenticatedMessage(MessageType.SEGMENT_COMPLETED, {
       segmentId,
@@ -179,7 +246,6 @@ function App() {
     });
   }, [sendAuthenticatedMessage]);
 
-  // Handle fragment move request
   const handleFragmentMoveRequest = useCallback((fragmentId, newPosition) => {
     sendAuthenticatedMessage(MessageType.FRAGMENT_MOVE_REQUEST, {
       fragmentId,
@@ -188,20 +254,28 @@ function App() {
     });
   }, [sendAuthenticatedMessage]);
 
+  const handleRecommendationRequest = useCallback((data) => {
+    sendAuthenticatedMessage(MessageType.PIECE_RECOMMENDATION_REQUEST, data);
+  }, [sendAuthenticatedMessage]);
+
+  const handleRecommendationResponse = useCallback((recommendationId, accepted) => {
+    sendAuthenticatedMessage(MessageType.PIECE_RECOMMENDATION_RESPONSE, {
+      recommendationId,
+      accepted
+    });
+  }, [sendAuthenticatedMessage]);
+
   return (
     <div className="App">
-      {/* Connection overlay for disconnections/reconnections */}
       <ConnectionOverlay 
         isConnected={isConnected} 
         isReconnecting={isReconnecting} 
       />
 
-      {/* Token header visible during resource gathering and puzzle assembly */}
       {(phase === GamePhase.RESOURCE_GATHERING || phase === GamePhase.PUZZLE_ASSEMBLY) && (
         <TokenHeader tokens={gameState.teamTokens} />
       )}
 
-      {/* Main game content */}
       <AnimatePresence mode="wait">
         {phase === GamePhase.SETUP && (
           <SetupPhase
@@ -212,6 +286,7 @@ function App() {
             onSpecialtySelect={handleSpecialtySelection}
             playerRole={gameState.playerRole}
             playerSpecialties={gameState.playerSpecialties}
+            lobbyStatus={gameState.lobbyStatus}
           />
         )}
 
@@ -222,6 +297,9 @@ function App() {
             currentQuestion={gameState.currentQuestion}
             onLocationVerified={handleLocationVerified}
             onAnswerSubmit={handleAnswerSubmit}
+            teamTokens={gameState.teamTokens}
+            questionsAnswered={gameState.questionsAnswered}
+            totalQuestions={gameState.totalQuestions}
           />
         )}
 
@@ -229,10 +307,17 @@ function App() {
           <PuzzleAssemblyPhase
             key="puzzle"
             puzzleData={gameState.puzzleData}
+            imagePreview={gameState.imagePreview}
+            puzzleTimer={gameState.puzzleTimer}
             playerId={playerId}
+            individualPuzzleComplete={gameState.individualPuzzleComplete}
+            centralPuzzleState={gameState.centralPuzzleState}
+            personalPuzzleState={gameState.personalPuzzleState}
+            incomingRecommendation={gameState.incomingRecommendation}
             onSegmentCompleted={handleSegmentCompleted}
             onFragmentMoveRequest={handleFragmentMoveRequest}
-            sendMessage={sendAuthenticatedMessage}
+            onRecommendationRequest={handleRecommendationRequest}
+            onRecommendationResponse={handleRecommendationResponse}
           />
         )}
 

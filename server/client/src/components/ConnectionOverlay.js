@@ -18,31 +18,27 @@ const ConnectionOverlay = ({ isConnected, isReconnecting }) => {
           <div className="connection-content">
             {isReconnecting ? (
               <>
-                <motion.div
-                  className="reconnecting-spinner"
-                  animate={{ rotate: 360 }}
-                  transition={{ duration: 2, repeat: Infinity, ease: "linear" }}
-                >
-                  <div className="spinner-ring">
-                    <div className="spinner-dot" />
-                    <div className="spinner-dot" />
-                    <div className="spinner-dot" />
-                    <div className="spinner-dot" />
+                <div className="reconnecting-spinner">
+                  <div className="spinner-dots">
+                    <span></span>
+                    <span></span>
+                    <span></span>
+                    <span></span>
                   </div>
-                </motion.div>
+                </div>
                 <motion.h2
                   initial={{ opacity: 0, y: 20 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: 0.2 }}
                 >
-                  Syncing...
+                  Reconnecting...
                 </motion.h2>
                 <motion.p
                   initial={{ opacity: 0 }}
                   animate={{ opacity: 1 }}
                   transition={{ delay: 0.4 }}
                 >
-                  Reconnecting to game server
+                  Please wait while we restore your connection
                 </motion.p>
               </>
             ) : (

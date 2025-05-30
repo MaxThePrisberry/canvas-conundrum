@@ -14,7 +14,6 @@ const ManualCodeEntry = ({ onCodeSubmit, onCancel }) => {
       setError(true);
       setTimeout(() => setError(false), 500);
       
-      // Error haptic feedback
       if (window.navigator && window.navigator.vibrate) {
         window.navigator.vibrate([50, 30, 50]);
       }
@@ -22,36 +21,59 @@ const ManualCodeEntry = ({ onCodeSubmit, onCancel }) => {
   };
 
   const handleInputChange = (e) => {
-    setCode(e.target.value);
+    setCode(e.target.value.toUpperCase());
     setError(false);
   };
 
   return (
     <motion.div
       className="manual-code-entry"
-      initial={{ opacity: 0, y: 50 }}
-      animate={{ opacity: 1, y: 0 }}
-      exit={{ opacity: 0, y: 50 }}
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
       transition={{ duration: 0.3 }}
     >
-      <div className="manual-entry-content">
-        <h3>Enter Code Manually</h3>
-        <p>Having trouble scanning? Enter the code below the QR code.</p>
+      <motion.div
+        className="manual-entry-content"
+        initial={{ scale: 0.9, y: 50 }}
+        animate={{ scale: 1, y: 0 }}
+        exit={{ scale: 0.9, y: 50 }}
+        transition={{ type: "spring", stiffness: 200 }}
+      >
+        <button
+          type="button"
+          className="close-button"
+          onClick={onCancel}
+          aria-label="Close"
+        >
+          ×
+        </button>
+
+        <h3>Enter Station Code</h3>
+        <p>Can't scan? Enter the code shown below the QR code</p>
         
         <form onSubmit={handleSubmit}>
-          <motion.input
-            type="text"
-            value={code}
-            onChange={handleInputChange}
-            placeholder="Enter station code"
-            className={`code-input ${error ? 'error' : ''}`}
-            autoFocus
-            autoComplete="off"
-            autoCorrect="off"
-            autoCapitalize="characters"
-            animate={error ? { x: [-10, 10, -10, 10, 0] } : {}}
-            transition={{ duration: 0.3 }}
-          />
+          <div className="input-wrapper">
+            <input
+              type="text"
+              value={code}
+              onChange={handleInputChange}
+              placeholder="Enter code here"
+              className={`code-input ${error ? 'error' : ''}`}
+              autoFocus
+              autoComplete="off"
+              autoCorrect="off"
+              autoCapitalize="characters"
+              maxLength="30"
+            />
+            {error && (
+              <motion.div
+                className="error-shake"
+                animate={{ x: [-10, 10, -10, 10, 0] }}
+                transition={{ duration: 0.5 }}
+              />
+            )}
+          </div>
           
           <div className="manual-entry-buttons">
             <button
@@ -59,7 +81,7 @@ const ManualCodeEntry = ({ onCodeSubmit, onCancel }) => {
               className="btn-secondary"
               onClick={onCancel}
             >
-              Back to Scanner
+              Cancel
             </button>
             <button
               type="submit"
@@ -72,9 +94,9 @@ const ManualCodeEntry = ({ onCodeSubmit, onCancel }) => {
         </form>
         
         <p className="code-hint">
-          The code is usually 20+ characters long
+          Station codes are typically 20-30 characters long
         </p>
-      </div>
+      </motion.div>
     </motion.div>
   );
 };

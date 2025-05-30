@@ -1,34 +1,52 @@
-/* CSS Reset and Global Styles - Ocean/Sky Theme */
+/* CSS Reset and Global Styles - Sky Blue Theme */
 :root {
-  /* Ocean/Sky Color Palette */
-  --color-ocean-50: #F0F9FF;
-  --color-ocean-100: #E0F2FE;
-  --color-ocean-200: #BAE6FD;
-  --color-ocean-300: #7DD3FC;
-  --color-ocean-400: #38BDF8;
-  --color-ocean-500: #0EA5E9;
-  --color-ocean-600: #0284C7;
-  --color-ocean-700: #0369A1;
-  --color-ocean-800: #075985;
-  --color-ocean-900: #0C4A6E;
+  /* Sky Blue Color Palette */
+  --color-primary: #87CEEB;
+  --color-secondary: #B0E0E6;
+  --color-tertiary: #E0F2FE;
+  --color-accent: #4A9FD5;
   
-  /* Prevent text size adjustment on orientation change */
+  --color-background: #FFFFFF;
+  --color-surface: #F8FBFF;
+  --color-surface-alt: #F0F7FF;
+  
+  --color-text-primary: #1A365D;
+  --color-text-secondary: #2C5282;
+  --color-text-light: #718096;
+  
+  /* Token Colors - Pastel */
+  --color-token-anchor: #C4B5FD;
+  --color-token-chronos: #93C5FD;
+  --color-token-guide: #86EFAC;
+  --color-token-clarity: #FDE68A;
+  
+  /* Status Colors */
+  --color-success: #34D399;
+  --color-error: #EF4444;
+  --color-warning: #F59E0B;
+  --color-info: #60A5FA;
+  
+  /* Gradients */
+  --gradient-light: linear-gradient(135deg, #FFFFFF 0%, #F0F9FF 50%, #E0F2FE 100%);
+  --gradient-sky: linear-gradient(135deg, #87CEEB 0%, #B0E0E6 100%);
+  
+  /* Animations */
+  --animation-short: 0.3s;
+  --animation-medium: 0.6s;
+  --animation-long: 1s;
+  
+  /* Shadows */
+  --shadow-sm: 0 2px 4px rgba(0, 0, 0, 0.05);
+  --shadow-md: 0 4px 8px rgba(0, 0, 0, 0.1);
+  --shadow-lg: 0 8px 16px rgba(0, 0, 0, 0.15);
+  --shadow-xl: 0 16px 32px rgba(0, 0, 0, 0.2);
+  
+  /* Prevent text size adjustment */
   -webkit-text-size-adjust: 100%;
-  -moz-text-size-adjust: 100%;
-  -ms-text-size-adjust: 100%;
   text-size-adjust: 100%;
-  
-  /* Prevent tap highlight on mobile */
-  -webkit-tap-highlight-color: transparent;
   
   /* Smooth scrolling */
   scroll-behavior: smooth;
-  
-  /* Safe area insets for notched devices */
-  --safe-area-inset-top: env(safe-area-inset-top);
-  --safe-area-inset-right: env(safe-area-inset-right);
-  --safe-area-inset-bottom: env(safe-area-inset-bottom);
-  --safe-area-inset-left: env(safe-area-inset-left);
 }
 
 * {
@@ -38,7 +56,6 @@
 }
 
 html {
-  /* Prevent overscroll bounce */
   overscroll-behavior: none;
   overflow: hidden;
   position: fixed;
@@ -51,34 +68,20 @@ body {
   height: 100%;
   overflow: auto;
   -webkit-overflow-scrolling: touch;
-  position: relative;
-  
-  /* System font stack */
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
     'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
     sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  
-  /* Prevent text selection by default */
+  background: var(--color-background);
+  color: var(--color-text-primary);
   -webkit-user-select: none;
-  -moz-user-select: none;
-  -ms-user-select: none;
   user-select: none;
-  
-  /* Prevent callout on long press */
   -webkit-touch-callout: none;
-  
-  /* Prevent highlighting */
   -webkit-tap-highlight-color: transparent;
-  
-  /* Ocean gradient background */
-  background: linear-gradient(180deg, #E0F2FE 0%, #BAE6FD 20%, #7DD3FC 40%, #38BDF8 60%, #0EA5E9 80%, #0284C7 100%);
-  background-attachment: fixed;
-  color: #0F172A;
 }
 
-/* Ocean wave overlay */
+/* Subtle gradient background */
 body::before {
   content: '';
   position: fixed;
@@ -86,142 +89,20 @@ body::before {
   left: 0;
   right: 0;
   bottom: 0;
-  background: 
-    radial-gradient(ellipse at top, transparent 0%, rgba(255, 255, 255, 0.1) 100%),
-    radial-gradient(ellipse at bottom, rgba(3, 105, 161, 0.2) 0%, transparent 100%);
+  background: var(--gradient-light);
   pointer-events: none;
-  z-index: 1;
+  z-index: 0;
 }
 
-/* Allow text selection in specific areas */
-.selectable {
-  -webkit-user-select: text;
-  -moz-user-select: text;
-  -ms-user-select: text;
-  user-select: text;
-}
-
-/* Prevent pull-to-refresh */
 #root {
-  overscroll-behavior-y: none;
+  position: relative;
+  z-index: 1;
   min-height: 100vh;
   min-height: -webkit-fill-available;
-  position: relative;
-  z-index: 2;
 }
 
-/* Input and textarea resets */
-input,
-textarea,
-select,
-button {
-  font-family: inherit;
-  font-size: 100%;
-  line-height: 1.15;
-  margin: 0;
-  padding: 0;
-  border: none;
-  outline: none;
-  background: none;
-  -webkit-appearance: none;
-  -moz-appearance: none;
-  appearance: none;
-  border-radius: 0;
-}
-
-/* Prevent zoom on input focus */
-input,
-textarea,
-select {
-  font-size: 16px !important;
-}
-
-/* Button resets */
-button {
-  cursor: pointer;
-  text-align: center;
-  text-decoration: none;
-  -webkit-tap-highlight-color: transparent;
-}
-
-/* Image resets */
-img {
-  max-width: 100%;
-  height: auto;
-  display: block;
-  -webkit-user-drag: none;
-  -khtml-user-drag: none;
-  -moz-user-drag: none;
-  -o-user-drag: none;
-  user-drag: none;
-}
-
-/* Link resets */
-a {
-  color: inherit;
-  text-decoration: none;
-  -webkit-tap-highlight-color: transparent;
-}
-
-/* List resets */
-ul,
-ol {
-  list-style: none;
-}
-
-/* Focus styles */
-:focus {
-  outline: none;
-}
-
-:focus-visible {
-  outline: 3px solid #0EA5E9;
-  outline-offset: 2px;
-  border-radius: 4px;
-}
-
-/* Scrollbar styles for webkit browsers */
-::-webkit-scrollbar {
-  width: 10px;
-  height: 10px;
-}
-
-::-webkit-scrollbar-track {
-  background: rgba(224, 242, 254, 0.5);
-  border-radius: 5px;
-}
-
-::-webkit-scrollbar-thumb {
-  background: linear-gradient(180deg, #0EA5E9 0%, #0284C7 100%);
-  border-radius: 5px;
-  border: 2px solid rgba(255, 255, 255, 0.3);
-}
-
-::-webkit-scrollbar-thumb:hover {
-  background: linear-gradient(180deg, #0284C7 0%, #0369A1 100%);
-}
-
-/* Loading state */
-.loading {
-  opacity: 0.6;
-  pointer-events: none;
-}
-
-/* Utility classes */
-.no-scroll {
-  overflow: hidden !important;
-}
-
-.hidden {
-  display: none !important;
-}
-
-.invisible {
-  visibility: hidden !important;
-}
-
-/* Animations */
-@keyframes fade-in {
+/* Beautiful animations */
+@keyframes fadeIn {
   from {
     opacity: 0;
   }
@@ -230,9 +111,9 @@ ol {
   }
 }
 
-@keyframes slide-up {
+@keyframes slideUp {
   from {
-    transform: translateY(20px);
+    transform: translateY(30px);
     opacity: 0;
   }
   to {
@@ -241,7 +122,18 @@ ol {
   }
 }
 
-@keyframes scale-in {
+@keyframes slideDown {
+  from {
+    transform: translateY(-30px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+@keyframes scaleIn {
   from {
     transform: scale(0.9);
     opacity: 0;
@@ -252,77 +144,190 @@ ol {
   }
 }
 
-/* React root */
-#root {
-  width: 100%;
-  height: 100%;
-  position: relative;
-}
-
-/* Performance optimizations */
-* {
-  /* Optimize animations */
-  will-change: auto;
-  
-  /* Hardware acceleration for transforms */
-  -webkit-transform: translateZ(0);
-  -moz-transform: translateZ(0);
-  -ms-transform: translateZ(0);
-  -o-transform: translateZ(0);
-  transform: translateZ(0);
-  
-  /* Optimize text rendering */
-  text-rendering: optimizeLegibility;
-}
-
-/* Prevent FOUC (Flash of Unstyled Content) */
-html {
-  visibility: visible;
-}
-
-/* Print styles */
-@media print {
-  * {
-    background: transparent !important;
-    color: #000 !important;
-    box-shadow: none !important;
-    text-shadow: none !important;
-  }
-}
-
-/* Ocean-themed animations */
-@keyframes ocean-drift {
+@keyframes float {
   0%, 100% {
-    transform: translateX(0) translateY(0);
-  }
-  25% {
-    transform: translateX(-20px) translateY(-10px);
+    transform: translateY(0);
   }
   50% {
-    transform: translateX(20px) translateY(5px);
-  }
-  75% {
-    transform: translateX(-10px) translateY(10px);
+    transform: translateY(-10px);
   }
 }
 
-@keyframes bubble-rise {
+@keyframes pulse {
+  0%, 100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  50% {
+    transform: scale(1.05);
+    opacity: 0.8;
+  }
+}
+
+@keyframes shimmer {
   0% {
-    transform: translateY(100vh) scale(0);
-    opacity: 0;
-  }
-  10% {
-    transform: translateY(90vh) scale(1);
-    opacity: 0.7;
-  }
-  90% {
-    transform: translateY(10vh) scale(1);
-    opacity: 0.7;
+    background-position: -200% center;
   }
   100% {
-    transform: translateY(0) scale(0);
+    background-position: 200% center;
+  }
+}
+
+/* Ripple effect */
+@keyframes ripple {
+  0% {
+    transform: scale(0);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(4);
     opacity: 0;
   }
+}
+
+/* Button base styles */
+button {
+  font-family: inherit;
+  cursor: pointer;
+  border: none;
+  outline: none;
+  background: none;
+  -webkit-tap-highlight-color: transparent;
+  position: relative;
+  overflow: hidden;
+  transition: all var(--animation-short) ease;
+}
+
+/* Ripple effect for buttons */
+button::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 0;
+  height: 0;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.5);
+  transform: translate(-50%, -50%);
+  transition: width 0.6s, height 0.6s;
+}
+
+button:active::after {
+  width: 300px;
+  height: 300px;
+}
+
+/* Primary button style */
+.btn-primary {
+  background: var(--gradient-sky);
+  color: white;
+  padding: 1rem 2rem;
+  border-radius: 12px;
+  font-weight: 600;
+  box-shadow: var(--shadow-md);
+  transform: translateY(0);
+}
+
+.btn-primary:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-lg);
+}
+
+.btn-primary:active {
+  transform: translateY(0);
+}
+
+/* Secondary button style */
+.btn-secondary {
+  background: white;
+  color: var(--color-primary);
+  padding: 1rem 2rem;
+  border-radius: 12px;
+  font-weight: 600;
+  border: 2px solid var(--color-primary);
+  box-shadow: var(--shadow-sm);
+}
+
+.btn-secondary:hover {
+  background: var(--color-surface);
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-md);
+}
+
+/* Card styles */
+.card {
+  background: white;
+  border-radius: 16px;
+  padding: 1.5rem;
+  box-shadow: var(--shadow-md);
+  transition: all var(--animation-short) ease;
+}
+
+.card:hover {
+  transform: translateY(-4px);
+  box-shadow: var(--shadow-lg);
+}
+
+/* Loading spinner */
+.spinner {
+  display: inline-block;
+  width: 20px;
+  height: 20px;
+  border: 3px solid rgba(135, 206, 235, 0.3);
+  border-radius: 50%;
+  border-top-color: var(--color-primary);
+  animation: spin 1s ease-in-out infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Utility classes */
+.fade-in {
+  animation: fadeIn var(--animation-medium) ease-out;
+}
+
+.slide-up {
+  animation: slideUp var(--animation-medium) ease-out;
+}
+
+.slide-down {
+  animation: slideDown var(--animation-medium) ease-out;
+}
+
+.scale-in {
+  animation: scaleIn var(--animation-medium) ease-out;
+}
+
+.float {
+  animation: float 3s ease-in-out infinite;
+}
+
+.pulse {
+  animation: pulse 2s ease-in-out infinite;
+}
+
+/* Scrollbar styling */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--color-surface);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--color-secondary);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-primary);
 }
 
 /* Responsive typography */
@@ -342,15 +347,11 @@ html {
   }
 }
 
-/* High contrast mode support */
-@media (prefers-contrast: high) {
-  :focus-visible {
-    outline-width: 4px;
-  }
-  
-  body {
-    background: white;
-  }
+/* Focus styles */
+:focus-visible {
+  outline: 3px solid var(--color-primary);
+  outline-offset: 2px;
+  border-radius: 4px;
 }
 
 /* Reduced motion support */
@@ -361,6 +362,5 @@ html {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
-    scroll-behavior: auto !important;
   }
 }

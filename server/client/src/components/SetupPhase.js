@@ -9,7 +9,8 @@ const SetupPhase = ({
   onRoleSelect, 
   onSpecialtySelect,
   playerRole,
-  playerSpecialties
+  playerSpecialties,
+  lobbyStatus
 }) => {
   const [currentStep, setCurrentStep] = useState(playerRole ? 'specialties' : 'role');
   const [selectedRole, setSelectedRole] = useState(playerRole);
@@ -21,24 +22,28 @@ const SetupPhase = ({
       title: 'Art Enthusiast',
       description: 'Bonus to Clarity tokens',
       icon: '🎨',
+      image: '/images/roles/art_enthusiast.png',
       color: Colors.token.clarity
     },
     [RoleType.DETECTIVE]: {
       title: 'Detective',
       description: 'Bonus to Guide tokens',
       icon: '🔍',
+      image: '/images/roles/detective.png',
       color: Colors.token.guide
     },
     [RoleType.TOURIST]: {
       title: 'Tourist',
       description: 'Bonus to Time tokens',
       icon: '📸',
+      image: '/images/roles/tourist.png',
       color: Colors.token.chronos
     },
     [RoleType.JANITOR]: {
       title: 'Janitor',
       description: 'Bonus to Anchor tokens',
       icon: '🧹',
+      image: '/images/roles/janitor.png',
       color: Colors.token.anchor
     }
   };
@@ -48,7 +53,6 @@ const SetupPhase = ({
     onRoleSelect(role);
     setCurrentStep('specialties');
 
-    // Haptic feedback
     if (window.navigator && window.navigator.vibrate) {
       window.navigator.vibrate(30);
     }
@@ -62,7 +66,6 @@ const SetupPhase = ({
     if (newSpecialties.length <= 2) {
       setSelectedSpecialties(newSpecialties);
       
-      // Haptic feedback
       if (window.navigator && window.navigator.vibrate) {
         window.navigator.vibrate(20);
       }
@@ -74,7 +77,6 @@ const SetupPhase = ({
       onSpecialtySelect(selectedSpecialties);
       setIsWaiting(true);
 
-      // Haptic feedback
       if (window.navigator && window.navigator.vibrate) {
         window.navigator.vibrate(50);
       }
@@ -87,226 +89,147 @@ const SetupPhase = ({
         {!isWaiting ? (
           <motion.div
             key={currentStep}
-            initial={{ opacity: 0, x: 100 }}
-            animate={{ opacity: 1, x: 0 }}
-            exit={{ opacity: 0, x: -100 }}
-            transition={{ duration: 0.5, ease: "easeInOut" }}
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -20 }}
+            transition={{ duration: 0.5 }}
             className="setup-content"
           >
             {currentStep === 'role' ? (
               <>
-                <motion.h1
-                  initial={{ opacity: 0, y: -20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: 0.2 }}
-                  className="setup-title"
-                >
-                  Choose Your Role
-                </motion.h1>
-                
-                <motion.p
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  transition={{ delay: 0.3 }}
-                  className="setup-subtitle"
-                >
-                  Each role provides unique bonuses
-                </motion.p>
+                <h1 className="setup-title slide-down">Choose Your Role</h1>
+                <p className="setup-subtitle fade-in">Each role provides unique bonuses</p>
 
                 <div className="role-grid">
                   {availableRoles.map((role, index) => {
                     const info = roleInfo[role.role];
                     return (
-                      <motion.button
+                      <button
                         key={role.role}
                         className={`role-card ${!role.available ? 'disabled' : ''}`}
                         onClick={() => role.available && handleRoleSelect(role.role)}
                         disabled={!role.available}
-                        initial={{ opacity: 0, scale: 0.8 }}
-                        animate={{ opacity: 1, scale: 1 }}
-                        transition={{ delay: index * 0.1 + 0.4 }}
-                        whileHover={role.available ? { scale: 1.05 } : {}}
-                        whileTap={role.available ? { scale: 0.95 } : {}}
                         style={{
-                          '--role-color': info.color
+                          '--role-color': info.color,
+                          '--animation-delay': `${index * 0.1}s`
                         }}
                       >
-                        <div className="role-icon">{info.icon}</div>
+                        <div className="role-image-container">
+                          <img 
+                            src={info.image} 
+                            alt={info.title}
+                            className="role-image"
+                            onError={(e) => {
+                              e.target.style.display = 'none';
+                              e.target.nextSibling.style.display = 'flex';
+                            }}
+                          />
+                          <div className="role-icon-fallback" style={{ display: 'none' }}>
+                            {info.icon}
+                          </div>
+                        </div>
                         <h3>{info.title}</h3>
                         <p>{info.description}</p>
                         {!role.available && (
                           <div className="role-taken">Taken</div>
                         )}
-                      </motion.button>
+                      </button>
                     );
                   })}
                 </div>
               </>
             ) : (
               <>
-                <motion.h1
-                  initial={{ opacity: 0, y: -20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: 0.2 }}
-                  className="setup-title"
-                >
-                  Choose Your Specialties
-                </motion.h1>
-                
-                <motion.p
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  transition={{ delay: 0.3 }}
-                  className="setup-subtitle"
-                >
-                  Select 1-2 trivia categories for bonus points
-                </motion.p>
+                <h1 className="setup-title slide-down">Choose Your Specialties</h1>
+                <p className="setup-subtitle fade-in">Select 1-2 trivia categories for bonus points</p>
 
                 <div className="specialty-grid">
                   {triviaCategories.map((category, index) => (
-                    <motion.button
+                    <button
                       key={category}
                       className={`specialty-card ${
                         selectedSpecialties.includes(category) ? 'selected' : ''
                       }`}
                       onClick={() => handleSpecialtyToggle(category)}
-                      initial={{ opacity: 0, scale: 0.8 }}
-                      animate={{ opacity: 1, scale: 1 }}
-                      transition={{ delay: index * 0.05 + 0.4 }}
-                      whileHover={{ scale: 1.05 }}
-                      whileTap={{ scale: 0.95 }}
+                      style={{ '--animation-delay': `${index * 0.05}s` }}
                     >
-                      <motion.div
-                        className="specialty-check"
-                        initial={false}
-                        animate={selectedSpecialties.includes(category) ? 
-                          { scale: 1, opacity: 1 } : 
-                          { scale: 0, opacity: 0 }
-                        }
-                      >
-                        ✓
-                      </motion.div>
+                      <div className="specialty-icon">
+                        {category === 'general' && '🌍'}
+                        {category === 'geography' && '🗺️'}
+                        {category === 'history' && '📚'}
+                        {category === 'music' && '🎵'}
+                        {category === 'science' && '🔬'}
+                        {category === 'video_games' && '🎮'}
+                      </div>
                       <span>{category.replace('_', ' ')}</span>
-                    </motion.button>
+                      {selectedSpecialties.includes(category) && (
+                        <div className="specialty-check">✓</div>
+                      )}
+                    </button>
                   ))}
                 </div>
 
-                <motion.div
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  transition={{ delay: 0.6 }}
-                  className="selection-info"
-                >
+                <div className="selection-info">
                   {selectedSpecialties.length}/2 selected
-                </motion.div>
+                </div>
 
-                <motion.button
+                <button
                   className="btn-primary confirm-button"
                   onClick={handleSpecialtyConfirm}
                   disabled={selectedSpecialties.length === 0}
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: 0.7 }}
-                  whileHover={{ scale: 1.05 }}
-                  whileTap={{ scale: 0.95 }}
                 >
                   Confirm Selection
-                </motion.button>
+                </button>
               </>
             )}
           </motion.div>
         ) : (
           <motion.div
             key="waiting"
-            initial={{ opacity: 0, scale: 0.8 }}
+            initial={{ opacity: 0, scale: 0.9 }}
             animate={{ opacity: 1, scale: 1 }}
-            exit={{ opacity: 0, scale: 0.8 }}
+            exit={{ opacity: 0, scale: 0.9 }}
             className="waiting-screen"
           >
             <div className="waiting-animation">
-              {/* Central galaxy with orbiting elements */}
-              <div className="galaxy-center" />
-              
-              {/* Orbital rings */}
-              <div className="orbital-ring" />
-              <div className="orbital-ring" />
-              <div className="orbital-ring" />
-              
-              {/* Orbiting planets */}
-              <motion.div
-                className="planet planet-1"
-                animate={{
-                  rotate: 360,
-                }}
-                transition={{
-                  duration: 10,
-                  repeat: Infinity,
-                  ease: "linear"
-                }}
-              />
-              <motion.div
-                className="planet planet-2"
-                animate={{
-                  rotate: -360,
-                }}
-                transition={{
-                  duration: 15,
-                  repeat: Infinity,
-                  ease: "linear"
-                }}
-              />
-              <motion.div
-                className="planet planet-3"
-                animate={{
-                  rotate: 360,
-                }}
-                transition={{
-                  duration: 20,
-                  repeat: Infinity,
-                  ease: "linear"
-                }}
-              />
-              
-              {/* Floating stars */}
-              <div className="stars">
-                <div className="star" />
-                <div className="star" />
-                <div className="star" />
-                <div className="star" />
-                <div className="star" />
-                <div className="star" />
+              <div className="waiting-circles">
+                <div className="circle circle-1"></div>
+                <div className="circle circle-2"></div>
+                <div className="circle circle-3"></div>
               </div>
               
               <motion.div
-                className="center-icon"
-                animate={{ 
-                  scale: [1, 1.1, 1],
-                  rotate: [0, 5, -5, 0]
-                }}
-                transition={{
-                  duration: 4,
-                  repeat: Infinity,
-                  ease: "easeInOut"
-                }}
+                className="center-role"
+                animate={{ rotate: [0, 10, -10, 0] }}
+                transition={{ duration: 4, repeat: Infinity }}
               >
-                {roleInfo[selectedRole]?.icon}
+                <img 
+                  src={roleInfo[selectedRole]?.image} 
+                  alt={roleInfo[selectedRole]?.title}
+                  className="role-image"
+                  onError={(e) => {
+                    e.target.style.display = 'none';
+                    e.target.nextSibling.style.display = 'flex';
+                  }}
+                />
+                <div className="role-icon-fallback" style={{ display: 'none' }}>
+                  {roleInfo[selectedRole]?.icon}
+                </div>
               </motion.div>
             </div>
 
-            <motion.h2
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.5 }}
-            >
-              Waiting for Game to Start
-            </motion.h2>
+            <h2>Waiting for Game to Start</h2>
 
-            <motion.div
-              className="player-info"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              transition={{ delay: 0.7 }}
-            >
+            {lobbyStatus && (
+              <div className="lobby-info">
+                <p>{lobbyStatus.waitingMessage || `${lobbyStatus.currentPlayers} players connected`}</p>
+                {lobbyStatus.gameStarting && (
+                  <div className="starting-soon">Game starting soon!</div>
+                )}
+              </div>
+            )}
+
+            <div className="player-info card">
               <div className="info-item">
                 <span className="label">Role:</span>
                 <span className="value">{roleInfo[selectedRole]?.title}</span>
@@ -317,29 +240,13 @@ const SetupPhase = ({
                   {selectedSpecialties.map(s => s.replace('_', ' ')).join(', ')}
                 </span>
               </div>
-            </motion.div>
+            </div>
 
-            <motion.div
-              className="waiting-dots"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              transition={{ delay: 1 }}
-            >
-              {[0, 1, 2].map((i) => (
-                <motion.span
-                  key={i}
-                  animate={{ opacity: [0.3, 1, 0.3] }}
-                  transition={{
-                    duration: 1.5,
-                    delay: i * 0.2,
-                    repeat: Infinity,
-                    ease: "easeInOut"
-                  }}
-                >
-                  •
-                </motion.span>
-              ))}
-            </motion.div>
+            <div className="waiting-dots">
+              <span></span>
+              <span></span>
+              <span></span>
+            </div>
           </motion.div>
         )}
       </AnimatePresence>

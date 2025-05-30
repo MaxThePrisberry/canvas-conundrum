@@ -9,27 +9,23 @@ const TokenHeader = ({ tokens }) => {
   const [thresholdReached, setThresholdReached] = useState({});
 
   useEffect(() => {
-    // Check for token increases
     const newAnimatingTokens = {};
     const newThresholdReached = {};
 
     Object.entries(tokens).forEach(([key, value]) => {
       const prevValue = prevTokens[key] || 0;
       
-      // Check if token count increased
       if (value > prevValue) {
         newAnimatingTokens[key] = true;
         setTimeout(() => {
           setAnimatingTokens(prev => ({ ...prev, [key]: false }));
         }, 600);
 
-        // Haptic feedback on token increase
         if (window.navigator && window.navigator.vibrate) {
           window.navigator.vibrate(30);
         }
       }
 
-      // Check if threshold reached
       const tokenType = key.replace('Tokens', '').toUpperCase();
       const threshold = TokenThresholds[tokenType];
       const prevThresholdLevel = Math.floor(prevValue / threshold);
@@ -41,7 +37,6 @@ const TokenHeader = ({ tokens }) => {
           setThresholdReached(prev => ({ ...prev, [key]: false }));
         }, 2000);
 
-        // Stronger haptic feedback for threshold
         if (window.navigator && window.navigator.vibrate) {
           window.navigator.vibrate([50, 30, 50]);
         }
@@ -78,7 +73,7 @@ const TokenHeader = ({ tokens }) => {
       <div className="token-grid">
         {tokenConfig.map(({ key, type, label, icon }) => {
           const value = tokens[key] || 0;
-          const { progress, level, threshold } = getTokenProgress(key, value);
+          const { progress, level } = getTokenProgress(key, value);
           const isAnimating = animatingTokens[key];
           const hasReachedThreshold = thresholdReached[key];
 
@@ -86,8 +81,9 @@ const TokenHeader = ({ tokens }) => {
             <motion.div
               key={key}
               className={`token-item ${isAnimating ? 'animating' : ''}`}
-              animate={isAnimating ? { scale: [1, 1.2, 1] } : {}}
-              transition={{ duration: 0.6 }}
+              animate={isAnimating ? { scale: [1, 1.15, 1] } : {}}
+              transition={{ duration: 0.5 }}
+              style={{ '--token-color': Colors.token[type] }}
             >
               <AnimatePresence>
                 {hasReachedThreshold && (
@@ -103,11 +99,19 @@ const TokenHeader = ({ tokens }) => {
                 )}
               </AnimatePresence>
 
-              <div 
-                className="token-icon"
-                style={{ backgroundColor: Colors.token[type] }}
-              >
-                <span>{icon}</span>
+              <div className="token-icon-wrapper">
+                <img 
+                  src={`/images/tokens/${type}.png`} 
+                  alt={label}
+                  className="token-image"
+                  onError={(e) => {
+                    e.target.style.display = 'none';
+                    e.target.nextSibling.style.display = 'flex';
+                  }}
+                />
+                <div className="token-icon-fallback" style={{ display: 'none' }}>
+                  {icon}
+                </div>
               </div>
 
               <div className="token-info">
@@ -127,14 +131,11 @@ const TokenHeader = ({ tokens }) => {
                 <div className="progress-bar">
                   <motion.div
                     className="progress-fill"
-                    style={{ backgroundColor: Colors.token[type] }}
                     animate={{ width: `${progress}%` }}
                     transition={{ duration: 0.5, ease: "easeOut" }}
                   />
                 </div>
-                <div className="progress-text">
-                  Lvl {level}
-                </div>
+                <div className="progress-text">Lvl {level}</div>
               </div>
 
               {isAnimating && (

@@ -1,4 +1,4 @@
-// Game Constants - Ocean/Sky Theme
+// Game Constants - Sky Blue Theme
 
 // Game Phases
 export const GamePhase = {
@@ -8,33 +8,36 @@ export const GamePhase = {
   POST_GAME: 'POST_GAME'
 };
 
-// WebSocket Message Types - Server to Client
+// WebSocket Message Types - Matching server protocol
 export const MessageType = {
+  // Server to Client
   AVAILABLE_ROLES: 'available_roles',
   GAME_LOBBY_STATUS: 'game_lobby_status',
   RESOURCE_PHASE_START: 'resource_phase_start',
   TRIVIA_QUESTION: 'trivia_question',
   TEAM_PROGRESS_UPDATE: 'team_progress_update',
+  IMAGE_PREVIEW: 'image_preview',
   PUZZLE_PHASE_LOAD: 'puzzle_phase_load',
   PUZZLE_PHASE_START: 'puzzle_phase_start',
   SEGMENT_COMPLETION_ACK: 'segment_completion_ack',
-  FRAGMENT_MOVE_RESPONSE: 'fragment_move_response',
+  PERSONAL_PUZZLE_STATE: 'personal_puzzle_state',
   CENTRAL_PUZZLE_STATE: 'central_puzzle_state',
+  FRAGMENT_MOVE_RESPONSE: 'fragment_move_response',
+  PIECE_RECOMMENDATION: 'piece_recommendation',
   GAME_ANALYTICS: 'game_analytics',
   GAME_RESET: 'game_reset',
   ERROR: 'error',
   HOST_UPDATE: 'host_update',
-  COUNTDOWN: 'countdown',
   
   // Client to Server
-  PLAYER_JOIN: 'player_join',
   ROLE_SELECTION: 'role_selection',
   TRIVIA_SPECIALTY_SELECTION: 'trivia_specialty_selection',
   RESOURCE_LOCATION_VERIFIED: 'resource_location_verified',
   TRIVIA_ANSWER: 'trivia_answer',
   SEGMENT_COMPLETED: 'segment_completed',
   FRAGMENT_MOVE_REQUEST: 'fragment_move_request',
-  PLAYER_READY: 'player_ready',
+  PIECE_RECOMMENDATION_REQUEST: 'piece_recommendation_request',
+  PIECE_RECOMMENDATION_RESPONSE: 'piece_recommendation_response',
   HOST_START_GAME: 'host_start_game',
   HOST_START_PUZZLE: 'host_start_puzzle'
 };
@@ -55,52 +58,45 @@ export const RoleType = {
   JANITOR: 'janitor'
 };
 
-// Ocean/Sky Color Palette
+// Sky Blue Color Palette
 export const Colors = {
-  // Primary ocean colors
-  primary: '#0EA5E9',      // Sky blue
-  secondary: '#0284C7',    // Ocean blue
-  tertiary: '#0369A1',     // Deep ocean
-  accent: '#38BDF8',       // Light sky
+  // Primary colors
+  primary: '#87CEEB',      // Sky blue
+  secondary: '#B0E0E6',    // Powder blue
+  tertiary: '#E0F2FE',     // Light sky
+  accent: '#4A9FD5',       // Bright blue accent
   
   // Backgrounds
   background: '#FFFFFF',
-  surface: '#F0F9FF',      // Light ocean
-  surfaceAlt: '#E0F2FE',   // Lighter ocean
+  surface: '#F8FBFF',      // Very light blue
+  surfaceAlt: '#F0F7FF',   // Slightly darker light blue
   
   // Text colors
   text: {
-    primary: '#0F172A',    // Dark navy
-    secondary: '#334155',  // Medium gray
-    light: '#64748B'       // Light gray
+    primary: '#1A365D',    // Dark blue
+    secondary: '#2C5282',  // Medium blue
+    light: '#718096'       // Gray blue
   },
   
-  // Token colors - Ocean themed
+  // Token colors - Pastel versions
   token: {
-    anchor: '#7C3AED',     // Purple (mystic ocean)
-    chronos: '#2563EB',    // Blue (time ocean)
-    guide: '#10B981',      // Green (sea green)
-    clarity: '#F59E0B'     // Amber (sunset)
+    anchor: '#C4B5FD',     // Pastel purple
+    chronos: '#93C5FD',    // Pastel blue
+    guide: '#86EFAC',      // Pastel green
+    clarity: '#FDE68A'     // Pastel yellow
   },
   
   // Status colors
-  success: '#10B981',      // Sea green
+  success: '#34D399',      // Mint green
   error: '#EF4444',        // Coral red
-  warning: '#F59E0B',      // Sunset orange
-  info: '#0EA5E9',         // Sky blue
+  warning: '#F59E0B',      // Amber
+  info: '#60A5FA',         // Light blue
   
-  // Ocean gradient stops
-  ocean: {
-    50: '#F0F9FF',
-    100: '#E0F2FE',
-    200: '#BAE6FD',
-    300: '#7DD3FC',
-    400: '#38BDF8',
-    500: '#0EA5E9',
-    600: '#0284C7',
-    700: '#0369A1',
-    800: '#075985',
-    900: '#0C4A6E'
+  // Gradient colors
+  gradient: {
+    start: '#FFFFFF',
+    middle: '#F0F9FF',
+    end: '#E0F2FE'
   }
 };
 
@@ -113,7 +109,15 @@ export const AnimationDuration = {
   CELEBRATION: 2.0
 };
 
-// Token Thresholds (matching server constants)
+// Resource Station Hashes (from server)
+export const RESOURCE_HASHES = {
+  ANCHOR: 'HASH_ANCHOR_STATION_2025',
+  CHRONOS: 'HASH_CHRONOS_STATION_2025',
+  GUIDE: 'HASH_GUIDE_STATION_2025',
+  CLARITY: 'HASH_CLARITY_STATION_2025'
+};
+
+// Token Thresholds
 export const TokenThresholds = {
   ANCHOR: 5,
   CHRONOS: 5,
@@ -121,29 +125,20 @@ export const TokenThresholds = {
   CLARITY: 5
 };
 
-// Base tokens per correct answer
-export const BASE_TOKENS_PER_ANSWER = 10;
-
-// Swap Request Timeout
-export const SWAP_REQUEST_TIMEOUT = 10000; // 10 seconds
+// Game Configuration
+export const GAME_CONFIG = {
+  MIN_PLAYERS: 4,
+  MAX_PLAYERS: 64,
+  INDIVIDUAL_PUZZLE_PIECES: 16,
+  MOVEMENT_COOLDOWN: 1000, // 1 second
+  BASE_PUZZLE_TIME: 300,   // 5 minutes
+  CHRONOS_TIME_BONUS: 20,  // seconds per threshold
+  CLARITY_PREVIEW_BASE: 3, // base seconds
+  CLARITY_PREVIEW_BONUS: 1 // seconds per threshold
+};
 
 // WebSocket Configuration
 export const WS_URL = process.env.REACT_APP_WS_URL || 'ws://localhost:8080/ws';
-
-// Puzzle Configuration
-export const PUZZLE_GRID_SIZE = 4; // 4x4 grid for individual puzzle
-export const PUZZLE_PIECES = 16;
-
-// Trivia Configuration
-export const TRIVIA_TIME_WARNING = 5; // Show warning when 5 seconds remain
-export const TRIVIA_CATEGORIES = [
-  'general',
-  'geography',
-  'history',
-  'music',
-  'science',
-  'video_games'
-];
 
 // QR Scanner Configuration
 export const QR_SCANNER_CONFIG = {
@@ -160,79 +155,66 @@ export const RESOURCE_STATIONS = {
   [TokenType.ANCHOR]: {
     name: 'Anchor Station',
     icon: '⚓',
-    description: 'Stability tokens'
+    description: 'Pre-solve puzzle pieces',
+    color: Colors.token.anchor
   },
   [TokenType.CHRONOS]: {
     name: 'Time Station',
     icon: '⏰',
-    description: 'Time extension tokens'
+    description: 'Extend puzzle time',
+    color: Colors.token.chronos
   },
   [TokenType.GUIDE]: {
     name: 'Guide Station',
     icon: '🧭',
-    description: 'Hint tokens'
+    description: 'Get placement hints',
+    color: Colors.token.guide
   },
   [TokenType.CLARITY]: {
     name: 'Clarity Station',
     icon: '💎',
-    description: 'Preview time tokens'
+    description: 'Preview complete image',
+    color: Colors.token.clarity
   }
 };
 
-// Phase Icons
-export const PHASE_ICONS = {
-  [GamePhase.SETUP]: '🎯',
-  [GamePhase.RESOURCE_GATHERING]: '🏃‍♂️',
-  [GamePhase.PUZZLE_ASSEMBLY]: '🧩',
-  [GamePhase.POST_GAME]: '🏆'
-};
+// Trivia Configuration
+export const TRIVIA_CATEGORIES = [
+  'general',
+  'geography',
+  'history',
+  'music',
+  'science',
+  'video_games'
+];
 
 // Error Messages
 export const ERROR_MESSAGES = {
-  CONNECTION_FAILED: 'Unable to connect to game server. Please check your connection.',
-  CAMERA_PERMISSION_DENIED: 'Camera permission denied. Please enable camera access to scan QR codes.',
-  QR_SCAN_FAILED: 'Failed to scan QR code. Please try again or enter the code manually.',
-  INVALID_CODE: 'Invalid station code. Please check and try again.',
-  WEBSOCKET_ERROR: 'Connection error. Attempting to reconnect...',
-  ROLE_UNAVAILABLE: 'This role is no longer available. Please choose another.',
-  GAME_FULL: 'The game is full. Please wait for the next game.',
-  PHASE_ERROR: 'Unable to proceed to the next phase. Please wait.'
+  CONNECTION_FAILED: 'Unable to connect to game server',
+  CAMERA_PERMISSION_DENIED: 'Camera permission required for QR scanning',
+  QR_SCAN_FAILED: 'QR scan failed - try manual entry',
+  INVALID_CODE: 'Invalid station code',
+  WEBSOCKET_ERROR: 'Connection error - reconnecting...',
+  ROLE_UNAVAILABLE: 'Role unavailable - please choose another',
+  MOVEMENT_COOLDOWN: 'Please wait before moving again',
+  OWNERSHIP_ERROR: 'You can only move your own fragment'
 };
 
 // Success Messages
 export const SUCCESS_MESSAGES = {
-  CONNECTED: 'Connected to game server!',
-  LOCATION_VERIFIED: 'Location verified successfully!',
-  ANSWER_CORRECT: 'Correct! +10 tokens earned',
-  SEGMENT_COMPLETED: 'Puzzle segment completed!',
-  GAME_WON: 'Victory! Masterpiece restored!'
+  CONNECTED: 'Connected to game!',
+  LOCATION_VERIFIED: 'Location verified!',
+  ANSWER_CORRECT: 'Correct! Tokens earned',
+  PUZZLE_COMPLETE: 'Puzzle complete!',
+  FRAGMENT_MOVED: 'Fragment moved successfully'
 };
 
-// Haptic Patterns (in milliseconds)
+// Haptic Patterns
 export const HAPTIC_PATTERNS = {
   LIGHT: 20,
   MEDIUM: 30,
   STRONG: 50,
   SUCCESS: [50, 30, 50],
   ERROR: [100, 50, 100],
-  VICTORY: [100, 50, 100, 50, 200]
-};
-
-// Local Storage Keys
-export const STORAGE_KEYS = {
-  PLAYER_ID: 'canvas_conundrum_player_id',
-  SOUND_ENABLED: 'canvas_conundrum_sound_enabled',
-  HAPTIC_ENABLED: 'canvas_conundrum_haptic_enabled'
-};
-
-// Game Configuration
-export const GAME_CONFIG = {
-  MIN_PLAYERS: 4,
-  MAX_PLAYERS: 64,
-  RECONNECT_ATTEMPTS: 5,
-  RECONNECT_DELAY: 1000, // Base delay, exponential backoff
-  LOBBY_COUNTDOWN: 30,
-  RESOURCE_ROUND_DURATION: 180,
-  PUZZLE_BASE_TIME: 300,
-  POST_GAME_DURATION: 60
+  VICTORY: [100, 50, 100, 50, 200, 100, 300]
 };

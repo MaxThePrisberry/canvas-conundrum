@@ -13,23 +13,15 @@ const PhaseTransition = ({ title, subtitle, celebration = false }) => {
     >
       <div className="transition-content">
         {celebration && (
-          <motion.div
-            className="celebration-burst"
-            initial={{ scale: 0 }}
-            animate={{ scale: [0, 1.5, 1.2] }}
-            transition={{ duration: 0.8, times: [0, 0.6, 1] }}
-          >
-            {[...Array(8)].map((_, i) => (
-              <motion.div
+          <div className="celebration-burst">
+            {[...Array(12)].map((_, i) => (
+              <div
                 key={i}
-                className="burst-line"
-                style={{ '--rotation': `${i * 45}deg` }}
-                initial={{ scaleY: 0 }}
-                animate={{ scaleY: [0, 1, 0] }}
-                transition={{ duration: 1, delay: 0.2 }}
+                className="burst-star"
+                style={{ '--rotation': `${i * 30}deg` }}
               />
             ))}
-          </motion.div>
+          </div>
         )}
 
         <motion.div
@@ -44,7 +36,12 @@ const PhaseTransition = ({ title, subtitle, celebration = false }) => {
           }}
         >
           <div className="transition-icon">
-            {celebration ? '🎉' : '🎯'}
+            {celebration ? '🎉' : '✨'}
+          </div>
+          <div className="icon-rings">
+            <div className="ring ring-1"></div>
+            <div className="ring ring-2"></div>
+            <div className="ring ring-3"></div>
           </div>
         </motion.div>
 
@@ -69,41 +66,27 @@ const PhaseTransition = ({ title, subtitle, celebration = false }) => {
         )}
 
         <motion.div
-          className="transition-dots"
+          className="transition-loader"
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           transition={{ delay: 1 }}
         >
-          {[0, 1, 2].map((i) => (
-            <motion.span
-              key={i}
-              className="dot"
-              animate={{ 
-                scale: [1, 1.5, 1],
-                opacity: [0.3, 1, 0.3]
-              }}
-              transition={{
-                duration: 1.5,
-                delay: i * 0.2,
-                repeat: Infinity,
-                ease: "easeInOut"
-              }}
-            />
-          ))}
+          <div className="loader-dots">
+            <span></span>
+            <span></span>
+            <span></span>
+          </div>
         </motion.div>
       </div>
 
-      {/* Animated particles */}
-      <div className="transition-particles">
-        {[...Array(10)].map((_, i) => (
-          <div key={i} className="particle" />
-        ))}
-      </div>
-
-      {/* Underwater bubbles */}
-      <div className="bubbles">
+      {/* Floating elements */}
+      <div className="floating-elements">
         {[...Array(6)].map((_, i) => (
-          <div key={i} className="bubble" />
+          <div
+            key={i}
+            className="floating-shape"
+            style={{ '--delay': `${i * 0.5}s` }}
+          />
         ))}
       </div>
     </motion.div>

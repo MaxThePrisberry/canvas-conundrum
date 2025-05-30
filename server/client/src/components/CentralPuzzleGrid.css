@@ -1,0 +1,250 @@
+/* Central Puzzle Grid - Sky Blue Theme */
+.central-puzzle-grid {
+  width: 100%;
+  max-width: 600px;
+  margin: 0 auto;
+  padding: 1rem;
+}
+
+.grid-header {
+  text-align: center;
+  margin-bottom: 1.5rem;
+  padding: 1rem;
+  background: white;
+  border-radius: 12px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+}
+
+.grid-header h3 {
+  font-size: 1.5rem;
+  color: var(--color-text-primary);
+  font-weight: 700;
+  margin-bottom: 0.5rem;
+}
+
+.grid-header p {
+  color: var(--color-text-secondary);
+  font-size: 0.95rem;
+}
+
+.master-grid {
+  display: grid;
+  gap: 0.5rem;
+  aspect-ratio: 1;
+  padding: 1rem;
+  background: white;
+  border-radius: 16px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  margin-bottom: 1rem;
+}
+
+.grid-cell {
+  background: var(--color-surface);
+  border: 2px solid transparent;
+  border-radius: 8px;
+  aspect-ratio: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+  position: relative;
+  overflow: hidden;
+}
+
+.grid-cell:hover {
+  transform: scale(1.05);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  border-color: var(--color-primary);
+  z-index: 10;
+}
+
+.grid-cell.selected {
+  background: linear-gradient(135deg, #E0F2FE 0%, #F0F9FF 100%);
+  border-color: var(--color-primary);
+  transform: scale(1.08);
+  box-shadow: 0 6px 16px rgba(135, 206, 235, 0.3);
+  z-index: 20;
+}
+
+.grid-cell.highlighted {
+  background: linear-gradient(135deg, rgba(134, 239, 172, 0.2) 0%, rgba(134, 239, 172, 0.1) 100%);
+  border-color: var(--color-token-guide);
+  animation: highlightPulse 2s ease-in-out infinite;
+}
+
+@keyframes highlightPulse {
+  0%, 100% {
+    box-shadow: 0 0 0 0 rgba(134, 239, 172, 0.4);
+  }
+  50% {
+    box-shadow: 0 0 0 8px rgba(134, 239, 172, 0);
+  }
+}
+
+.cell-label {
+  font-size: 1.2rem;
+  font-weight: 700;
+  color: var(--color-text-secondary);
+  opacity: 0.5;
+}
+
+.fragment {
+  width: 100%;
+  height: 100%;
+  background-size: cover;
+  background-position: center;
+  border-radius: 6px;
+  position: relative;
+  transition: transform 0.3s ease;
+}
+
+.fragment.owned {
+  box-shadow: inset 0 0 0 3px var(--color-primary);
+}
+
+.fragment.unassigned {
+  opacity: 0.8;
+  box-shadow: inset 0 0 0 2px var(--color-text-light);
+}
+
+.ownership-indicator {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  background: var(--color-primary);
+  color: white;
+  padding: 0.25rem 0.5rem;
+  border-radius: 6px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+}
+
+/* Recommendation Popup */
+.recommendation-popup {
+  position: fixed;
+  bottom: 2rem;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 90%;
+  max-width: 400px;
+  background: white;
+  border-radius: 16px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
+  padding: 1.5rem;
+  z-index: 100;
+}
+
+.recommendation-content h4 {
+  font-size: 1.2rem;
+  color: var(--color-text-primary);
+  margin-bottom: 0.5rem;
+  font-weight: 700;
+}
+
+.recommendation-content p {
+  color: var(--color-text-secondary);
+  margin-bottom: 1rem;
+}
+
+.recommendation-details {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+  font-size: 1.5rem;
+  font-weight: 700;
+}
+
+.from-pos,
+.to-pos {
+  padding: 0.5rem 1rem;
+  background: var(--color-surface);
+  border-radius: 8px;
+  color: var(--color-text-primary);
+}
+
+.arrow {
+  color: var(--color-primary);
+  animation: slideArrow 1s ease-in-out infinite;
+}
+
+@keyframes slideArrow {
+  0%, 100% {
+    transform: translateX(0);
+  }
+  50% {
+    transform: translateX(5px);
+  }
+}
+
+.recommendation-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+}
+
+.grid-info {
+  text-align: center;
+  padding: 1rem;
+  background: white;
+  border-radius: 12px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+}
+
+.grid-info p {
+  color: var(--color-text-secondary);
+  font-size: 0.95rem;
+  margin: 0.25rem 0;
+}
+
+.guide-hint {
+  color: var(--color-token-guide) !important;
+  font-weight: 600;
+}
+
+/* Movement cooldown indicator */
+.grid-cell.cooldown {
+  pointer-events: none;
+  opacity: 0.7;
+}
+
+.grid-cell.cooldown::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    to right,
+    transparent 0%,
+    rgba(255, 255, 255, 0.5) 50%,
+    transparent 100%
+  );
+  animation: cooldownSweep 1s linear;
+}
+
+@keyframes cooldownSweep {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(100%);
+  }
+}
+
+/* Responsive adjustments */
+@media (max-width: 480px) {
+  .master-grid {
+    gap: 0.375rem;
+    padding: 0.75rem;
+  }
+  
+  .grid-cell {
+    border-radius: 6px;
+  }
+  
+  .cell-label {
+    font-size: 1rem;
+  }
+}

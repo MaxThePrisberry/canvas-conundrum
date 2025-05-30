@@ -1,11 +1,11 @@
-/* Phase Transition - Ocean/Sky Theme */
+/* Phase Transition - Sky Blue Theme */
 .phase-transition {
   position: fixed;
   top: 0;
   left: 0;
   right: 0;
   bottom: 0;
-  background: linear-gradient(135deg, #0369A1 0%, #0284C7 25%, #0EA5E9 50%, #38BDF8 75%, #7DD3FC 100%);
+  background: linear-gradient(135deg, #87CEEB 0%, #B0E0E6 50%, #E0F2FE 100%);
   z-index: 9999;
   display: flex;
   align-items: center;
@@ -13,40 +13,30 @@
   overflow: hidden;
 }
 
-/* Animated ocean waves */
-.phase-transition::before,
-.phase-transition::after {
+/* Animated background pattern */
+.phase-transition::before {
   content: '';
   position: absolute;
+  top: -50%;
   left: -50%;
-  right: -50%;
+  width: 200%;
   height: 200%;
   background: repeating-linear-gradient(
     45deg,
     transparent,
-    transparent 100px,
-    rgba(255, 255, 255, 0.05) 100px,
-    rgba(255, 255, 255, 0.05) 200px
+    transparent 50px,
+    rgba(255, 255, 255, 0.1) 50px,
+    rgba(255, 255, 255, 0.1) 100px
   );
-  animation: waveMotion 20s linear infinite;
+  animation: patternRotate 20s linear infinite;
 }
 
-.phase-transition::before {
-  bottom: -50%;
-  animation-direction: reverse;
-}
-
-.phase-transition::after {
-  top: -50%;
-  opacity: 0.5;
-}
-
-@keyframes waveMotion {
-  0% {
-    transform: translateX(0) rotate(0deg);
+@keyframes patternRotate {
+  from {
+    transform: rotate(0deg);
   }
-  100% {
-    transform: translateX(200px) rotate(2deg);
+  to {
+    transform: rotate(360deg);
   }
 }
 
@@ -60,87 +50,69 @@
 .transition-icon-container {
   width: 150px;
   height: 150px;
-  margin: 0 auto 2.5rem;
+  margin: 0 auto 2rem;
   position: relative;
   display: flex;
   align-items: center;
   justify-content: center;
-}
-
-/* Ripple effects */
-.transition-icon-container::before,
-.transition-icon-container::after {
-  content: '';
-  position: absolute;
-  border: 2px solid rgba(255, 255, 255, 0.3);
-  border-radius: 50%;
-  width: 100%;
-  height: 100%;
-  animation: ripple 2s ease-out infinite;
-}
-
-.transition-icon-container::after {
-  animation-delay: 1s;
-}
-
-@keyframes ripple {
-  0% {
-    transform: scale(1);
-    opacity: 1;
-  }
-  100% {
-    transform: scale(2);
-    opacity: 0;
-  }
 }
 
 .transition-icon {
-  font-size: 5rem;
+  font-size: 4rem;
   filter: drop-shadow(0 8px 16px rgba(0, 0, 0, 0.2));
-  background: rgba(255, 255, 255, 0.95);
-  width: 120px;
-  height: 120px;
+  background: white;
+  width: 100px;
+  height: 100px;
   border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
-  box-shadow: 
-    0 10px 40px rgba(0, 0, 0, 0.2),
-    inset 0 2px 4px rgba(255, 255, 255, 0.9);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
   position: relative;
-  overflow: hidden;
+  z-index: 2;
   animation: iconFloat 3s ease-in-out infinite;
 }
 
 @keyframes iconFloat {
   0%, 100% {
-    transform: translateY(0) rotate(0deg);
+    transform: translateY(0);
   }
-  25% {
-    transform: translateY(-10px) rotate(-5deg);
-  }
-  75% {
-    transform: translateY(10px) rotate(5deg);
+  50% {
+    transform: translateY(-10px);
   }
 }
 
-.transition-icon::before {
-  content: '';
+.icon-rings {
   position: absolute;
-  top: -50%;
-  left: -50%;
-  width: 200%;
-  height: 200%;
-  background: linear-gradient(45deg, transparent 30%, rgba(255, 255, 255, 0.7) 50%, transparent 70%);
-  animation: iconShine 3s ease-in-out infinite;
+  inset: -25px;
 }
 
-@keyframes iconShine {
+.ring {
+  position: absolute;
+  inset: 0;
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  border-radius: 50%;
+  animation: ringPulse 3s ease-out infinite;
+}
+
+.ring-2 {
+  inset: 20px;
+  animation-delay: 0.5s;
+}
+
+.ring-3 {
+  inset: 40px;
+  animation-delay: 1s;
+}
+
+@keyframes ringPulse {
   0% {
-    transform: translateX(-100%) translateY(-100%) rotate(45deg);
+    transform: scale(1);
+    opacity: 0.6;
   }
   100% {
-    transform: translateX(100%) translateY(100%) rotate(45deg);
+    transform: scale(1.3);
+    opacity: 0;
   }
 }
 
@@ -149,11 +121,9 @@
   color: white;
   margin-bottom: 0.75rem;
   font-weight: 800;
-  text-shadow: 
-    3px 3px 6px rgba(0, 0, 0, 0.3),
-    0 0 40px rgba(255, 255, 255, 0.3);
-  letter-spacing: -1px;
-  animation: titleSlide 0.8s ease-out;
+  text-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+  letter-spacing: -0.5px;
+  animation: titleSlide 0.8s cubic-bezier(0.25, 0.46, 0.45, 0.94);
 }
 
 @keyframes titleSlide {
@@ -168,89 +138,50 @@
 }
 
 .transition-subtitle {
-  font-size: 1.4rem;
+  font-size: 1.3rem;
   color: rgba(255, 255, 255, 0.95);
-  margin-bottom: 2.5rem;
+  margin-bottom: 2rem;
   font-weight: 600;
   max-width: 400px;
   margin-left: auto;
   margin-right: auto;
-  text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.2);
-  animation: subtitleFade 1s ease-out 0.3s both;
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
 }
 
-@keyframes subtitleFade {
-  from {
-    transform: translateY(20px);
-    opacity: 0;
-  }
-  to {
-    transform: translateY(0);
-    opacity: 1;
-  }
+.transition-loader {
+  margin-top: 2rem;
 }
 
-.transition-dots {
+.loader-dots {
   display: flex;
-  gap: 1rem;
+  gap: 0.75rem;
   justify-content: center;
   align-items: center;
 }
 
-.dot {
-  width: 16px;
-  height: 16px;
+.loader-dots span {
+  width: 12px;
+  height: 12px;
   background: white;
   border-radius: 50%;
-  display: inline-block;
-  box-shadow: 
-    0 4px 12px rgba(0, 0, 0, 0.2),
-    inset 0 1px 2px rgba(255, 255, 255, 0.8);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+  animation: dotBounce 1.4s ease-in-out infinite;
 }
 
-/* Particle system */
-.transition-particles {
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  overflow: hidden;
-  pointer-events: none;
-}
+.loader-dots span:nth-child(1) { animation-delay: 0s; }
+.loader-dots span:nth-child(2) { animation-delay: 0.2s; }
+.loader-dots span:nth-child(3) { animation-delay: 0.4s; }
 
-.particle {
-  position: absolute;
-  width: 4px;
-  height: 4px;
-  background: white;
-  border-radius: 50%;
-  opacity: 0.8;
-  animation: particleFloat 10s linear infinite;
-}
-
-@keyframes particleFloat {
-  from {
-    transform: translateY(100vh) rotate(0deg);
+@keyframes dotBounce {
+  0%, 60%, 100% {
+    transform: translateY(0) scale(1);
   }
-  to {
-    transform: translateY(-100px) rotate(360deg);
+  30% {
+    transform: translateY(-20px) scale(1.2);
   }
 }
 
-/* Generate multiple particles */
-.particle:nth-child(1) { left: 10%; animation-delay: 0s; animation-duration: 8s; }
-.particle:nth-child(2) { left: 20%; animation-delay: 2s; animation-duration: 10s; opacity: 0.6; }
-.particle:nth-child(3) { left: 30%; animation-delay: 4s; animation-duration: 9s; }
-.particle:nth-child(4) { left: 40%; animation-delay: 1s; animation-duration: 7s; opacity: 0.7; }
-.particle:nth-child(5) { left: 50%; animation-delay: 3s; animation-duration: 11s; }
-.particle:nth-child(6) { left: 60%; animation-delay: 5s; animation-duration: 8s; opacity: 0.5; }
-.particle:nth-child(7) { left: 70%; animation-delay: 2s; animation-duration: 9s; }
-.particle:nth-child(8) { left: 80%; animation-delay: 6s; animation-duration: 10s; opacity: 0.8; }
-.particle:nth-child(9) { left: 90%; animation-delay: 1s; animation-duration: 7s; }
-.particle:nth-child(10) { left: 95%; animation-delay: 4s; animation-duration: 12s; opacity: 0.6; }
-
-/* Celebration burst for victory */
+/* Celebration burst */
 .celebration-burst {
   position: absolute;
   top: 50%;
@@ -261,7 +192,7 @@
   pointer-events: none;
 }
 
-.burst-line {
+.burst-star {
   position: absolute;
   top: 50%;
   left: 50%;
@@ -288,53 +219,49 @@
   }
 }
 
-/* Underwater bubble effect */
-.bubbles {
+/* Floating elements */
+.floating-elements {
   position: absolute;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  height: 100%;
+  inset: 0;
   overflow: hidden;
+  pointer-events: none;
 }
 
-.bubble {
+.floating-shape {
   position: absolute;
-  bottom: -50px;
-  background: radial-gradient(circle at 30% 30%, rgba(255, 255, 255, 0.8), rgba(255, 255, 255, 0.4));
+  width: 60px;
+  height: 60px;
+  background: radial-gradient(circle, rgba(255, 255, 255, 0.8) 0%, rgba(255, 255, 255, 0) 70%);
   border-radius: 50%;
-  opacity: 0.7;
-  animation: bubbleRise 8s ease-in-out infinite;
+  animation: floatUp 10s ease-in-out infinite;
+  animation-delay: var(--delay);
 }
 
-@keyframes bubbleRise {
+.floating-shape:nth-child(1) { left: 10%; }
+.floating-shape:nth-child(2) { left: 25%; }
+.floating-shape:nth-child(3) { left: 40%; }
+.floating-shape:nth-child(4) { left: 60%; }
+.floating-shape:nth-child(5) { left: 75%; }
+.floating-shape:nth-child(6) { left: 90%; }
+
+@keyframes floatUp {
   0% {
-    transform: translateY(0) translateX(0) scale(1);
+    transform: translateY(100vh) scale(0);
+    opacity: 0;
   }
-  20% {
-    transform: translateY(-20vh) translateX(10px) scale(1.1);
+  10% {
+    opacity: 0.6;
+    transform: translateY(90vh) scale(1);
   }
-  40% {
-    transform: translateY(-40vh) translateX(-10px) scale(0.9);
-  }
-  60% {
-    transform: translateY(-60vh) translateX(15px) scale(1.05);
-  }
-  80% {
-    transform: translateY(-80vh) translateX(-5px) scale(0.95);
+  90% {
+    opacity: 0.6;
+    transform: translateY(10vh) scale(1);
   }
   100% {
-    transform: translateY(-100vh) translateX(0) scale(0.8);
+    transform: translateY(-100px) scale(0);
     opacity: 0;
   }
 }
-
-.bubble:nth-child(1) { left: 10%; width: 20px; height: 20px; animation-delay: 0s; }
-.bubble:nth-child(2) { left: 25%; width: 15px; height: 15px; animation-delay: 2s; animation-duration: 10s; }
-.bubble:nth-child(3) { left: 40%; width: 25px; height: 25px; animation-delay: 4s; animation-duration: 9s; }
-.bubble:nth-child(4) { left: 55%; width: 18px; height: 18px; animation-delay: 1s; }
-.bubble:nth-child(5) { left: 70%; width: 22px; height: 22px; animation-delay: 3s; animation-duration: 11s; }
-.bubble:nth-child(6) { left: 85%; width: 16px; height: 16px; animation-delay: 5s; }
 
 /* Responsive adjustments */
 @media (max-width: 480px) {
@@ -343,7 +270,7 @@
   }
   
   .transition-subtitle {
-    font-size: 1.2rem;
+    font-size: 1.1rem;
   }
   
   .transition-icon-container {
@@ -352,8 +279,8 @@
   }
   
   .transition-icon {
-    width: 100px;
-    height: 100px;
-    font-size: 4rem;
+    width: 80px;
+    height: 80px;
+    font-size: 3rem;
   }
 }

@@ -11,9 +11,12 @@ const ResourceGatheringPhase = ({
   resourceHashes, 
   currentQuestion, 
   onLocationVerified, 
-  onAnswerSubmit 
+  onAnswerSubmit,
+  teamTokens,
+  questionsAnswered,
+  totalQuestions
 }) => {
-  const [currentView, setCurrentView] = useState('menu'); // menu, scanner, waiting, question
+  const [currentView, setCurrentView] = useState('menu');
   const [selectedResource, setSelectedResource] = useState(null);
   const [verifiedLocation, setVerifiedLocation] = useState(null);
   const [showTransition, setShowTransition] = useState(true);
@@ -24,13 +27,11 @@ const ResourceGatheringPhase = ({
   const scannerInstanceRef = useRef(null);
 
   useEffect(() => {
-    // Hide transition after animation
     const timer = setTimeout(() => setShowTransition(false), 2000);
     return () => clearTimeout(timer);
   }, []);
 
   useEffect(() => {
-    // Handle question arrival
     if (currentQuestion && currentView === 'waiting') {
       setCurrentView('question');
       setLastAnswerCorrect(null);
@@ -42,7 +43,6 @@ const ResourceGatheringPhase = ({
     setCurrentView('scanner');
     setScanError(null);
 
-    // Haptic feedback
     if (window.navigator && window.navigator.vibrate) {
       window.navigator.vibrate(HAPTIC_PATTERNS.MEDIUM);
     }
@@ -54,7 +54,6 @@ const ResourceGatheringPhase = ({
   };
 
   const handleScanError = (errorMessage) => {
-    // Ignore continuous scan errors, they're normal
     if (errorMessage?.includes('NotFoundException')) {
       return;
     }
@@ -62,7 +61,6 @@ const ResourceGatheringPhase = ({
   };
 
   const verifyCode = (code) => {
-    // Check if scanned QR matches any resource hash
     const matchedResource = Object.entries(resourceHashes).find(
       ([_, hash]) => hash === code
     );
@@ -70,31 +68,26 @@ const ResourceGatheringPhase = ({
     if (matchedResource) {
       const [resourceType] = matchedResource;
       
-      // Stop scanner if active
       if (scannerInstanceRef.current) {
         scannerInstanceRef.current.clear().catch(console.error);
         scannerInstanceRef.current = null;
       }
 
-      // Verify location
       setVerifiedLocation(resourceType);
       onLocationVerified(code);
       setCurrentView('waiting');
       setShowManualEntry(false);
       setScanError(null);
 
-      // Success haptic feedback
       if (window.navigator && window.navigator.vibrate) {
         window.navigator.vibrate(HAPTIC_PATTERNS.SUCCESS);
       }
     } else {
-      // Invalid QR code - show error feedback
       setScanError(ERROR_MESSAGES.INVALID_CODE);
       if (window.navigator && window.navigator.vibrate) {
         window.navigator.vibrate(HAPTIC_PATTERNS.ERROR);
       }
       
-      // Show manual entry option after error
       setTimeout(() => {
         setShowManualEntry(true);
       }, 1000);
@@ -102,7 +95,6 @@ const ResourceGatheringPhase = ({
   };
 
   const handleBackToMenu = () => {
-    // Stop scanner if active
     if (scannerInstanceRef.current) {
       scannerInstanceRef.current.clear().catch(console.error);
       scannerInstanceRef.current = null;
@@ -118,20 +110,18 @@ const ResourceGatheringPhase = ({
     onAnswerSubmit(currentQuestion.questionId, answer);
     setLastAnswerCorrect(isCorrect);
     
-    // After showing result, go back to waiting
     setTimeout(() => {
       setCurrentView('waiting');
     }, 2000);
   };
 
-  // Initialize QR scanner when scanner view is active
   useEffect(() => {
     if (currentView === 'scanner' && scannerRef.current && !scannerInstanceRef.current) {
       try {
         const scanner = new Html5QrcodeScanner(
           "qr-reader",
           QR_SCANNER_CONFIG,
-          false // verbose
+          false
         );
 
         scannerInstanceRef.current = scanner;
@@ -171,8 +161,16 @@ const ResourceGatheringPhase = ({
             exit={{ opacity: 0, y: -20 }}
             transition={{ duration: 0.5 }}
           >
-            <h2 className="menu-title">Select a Resource Station</h2>
-            <p className="menu-subtitle">Scan the QR code at your chosen location</p>
+            <div className="menu-header">
+              <h2 className="menu-title">Select a Station</h2>
+              <p className="menu-subtitle">Move to a physical location and scan its QR code</p>
+              
+              {questionsAnswered !== undefined && (
+                <div className="progress-info">
+                  <span>Round {questionsAnswered + 1} of {totalQuestions}</span>
+                </div>
+              )}
+            </div>
 
             <div className="resource-grid">
               {Object.entries(RESOURCE_STATIONS).map(([type, config], index) => (
@@ -180,28 +178,49 @@ const ResourceGatheringPhase = ({
                   key={type}
                   className="resource-card"
                   onClick={() => handleResourceSelect(type)}
-                  initial={{ opacity: 0, scale: 0.8 }}
-                  animate={{ opacity: 1, scale: 1 }}
+                  initial={{ opacity: 0, y: 30 }}
+                  animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: index * 0.1 }}
-                  whileHover={{ scale: 1.05 }}
+                  whileHover={{ y: -8 }}
                   whileTap={{ scale: 0.95 }}
-                  style={{ '--resource-color': Colors.token[type] }}
+                  style={{ '--resource-color': config.color }}
                 >
-                  <div className="resource-icon">{config.icon}</div>
-                  <h3>{config.name}</h3>
-                  <p>{config.description}</p>
+                  <div className="resource-glow"></div>
+                  <div className="resource-content">
+                    <div className="resource-icon-container">
+                      <img 
+                        src={`/images/tokens/${type}.png`} 
+                        alt={config.name}
+                        className="resource-image"
+                        onError={(e) => {
+                          e.target.style.display = 'none';
+                          e.target.nextSibling.style.display = 'flex';
+                        }}
+                      />
+                      <div className="resource-icon-fallback" style={{ display: 'none' }}>
+                        {config.icon}
+                      </div>
+                    </div>
+                    <h3>{config.name}</h3>
+                    <p>{config.description}</p>
+                    
+                    <div className="token-count">
+                      <span className="count-value">{teamTokens[type + 'Tokens'] || 0}</span>
+                      <span className="count-label">collected</span>
+                    </div>
+                  </div>
                 </motion.button>
               ))}
             </div>
 
             {verifiedLocation && (
               <motion.div
-                className="current-location"
+                className="current-location card"
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
               >
-                <span>Current Location:</span>
-                <strong>{RESOURCE_STATIONS[verifiedLocation].name}</strong>
+                <span className="location-icon">📍</span>
+                <span>Current Location: <strong>{RESOURCE_STATIONS[verifiedLocation].name}</strong></span>
               </motion.div>
             )}
           </motion.div>
@@ -226,14 +245,13 @@ const ResourceGatheringPhase = ({
             <div className="scanner-container">
               <div id="qr-reader" ref={scannerRef}></div>
               
-              <motion.div
-                className="scan-frame"
-                animate={{ opacity: [0.5, 1, 0.5] }}
-                transition={{ duration: 2, repeat: Infinity }}
-              >
-                <span></span>
-                <span></span>
-              </motion.div>
+              <div className="scan-frame">
+                <div className="corner corner-tl"></div>
+                <div className="corner corner-tr"></div>
+                <div className="corner corner-bl"></div>
+                <div className="corner corner-br"></div>
+                <div className="scan-line"></div>
+              </div>
             </div>
 
             {scanError && (
@@ -241,14 +259,13 @@ const ResourceGatheringPhase = ({
                 className="scanner-error"
                 initial={{ opacity: 0, y: -10 }}
                 animate={{ opacity: 1, y: 0 }}
-                style={{ color: Colors.error, textAlign: 'center', marginTop: '1rem' }}
               >
                 {scanError}
               </motion.p>
             )}
 
             <p className="scanner-hint">
-              Point your camera at the QR code
+              Align the QR code within the frame
             </p>
             
             <button 
@@ -269,40 +286,39 @@ const ResourceGatheringPhase = ({
             exit={{ opacity: 0, scale: 0.8 }}
             transition={{ duration: 0.5 }}
           >
-            <motion.div
-              className="verified-animation"
-              initial={{ scale: 0 }}
-              animate={{ scale: 1 }}
-              transition={{ type: "spring", stiffness: 200 }}
-            >
-              <motion.div
-                className="verified-icon"
-                style={{ backgroundColor: Colors.token[verifiedLocation] }}
-                animate={{ rotate: [0, 10, -10, 0] }}
-                transition={{ duration: 2, repeat: Infinity }}
-              >
-                {RESOURCE_STATIONS[verifiedLocation]?.icon}
-              </motion.div>
+            <div className="verified-animation">
+              <div className="verified-icon" style={{ backgroundColor: RESOURCE_STATIONS[verifiedLocation]?.color }}>
+                <img 
+                  src={`/images/tokens/${verifiedLocation}.png`} 
+                  alt={RESOURCE_STATIONS[verifiedLocation]?.name}
+                  className="token-image"
+                  onError={(e) => {
+                    e.target.style.display = 'none';
+                    e.target.nextSibling.style.display = 'block';
+                  }}
+                />
+                <span style={{ display: 'none' }}>{RESOURCE_STATIONS[verifiedLocation]?.icon}</span>
+              </div>
               
-              <motion.div
-                className="verified-ring"
-                animate={{ scale: [1, 1.2, 1] }}
-                transition={{ duration: 2, repeat: Infinity }}
-                style={{ borderColor: Colors.token[verifiedLocation] }}
-              />
-            </motion.div>
+              <div className="verified-rings">
+                <div className="ring ring-1"></div>
+                <div className="ring ring-2"></div>
+                <div className="ring ring-3"></div>
+              </div>
+            </div>
 
             <h2>Location Verified!</h2>
-            <p>Waiting for trivia question...</p>
+            <p>Get ready for your trivia question...</p>
 
             {lastAnswerCorrect !== null && (
               <motion.div
                 className={`answer-result ${lastAnswerCorrect ? 'correct' : 'incorrect'}`}
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -20 }}
+                initial={{ opacity: 0, scale: 0.8 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.8 }}
+                transition={{ type: "spring", stiffness: 200 }}
               >
-                {lastAnswerCorrect ? SUCCESS_MESSAGES.ANSWER_CORRECT : '✗ Incorrect'}
+                {lastAnswerCorrect ? '✓ Correct! Tokens earned' : '✗ Incorrect - Keep trying!'}
               </motion.div>
             )}
 

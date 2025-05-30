@@ -35,16 +35,14 @@ const TriviaQuestion = ({ question, onAnswer }) => {
     setSelectedAnswer(answer);
     setShowResult(true);
     
-    // Check if answer is correct (this would normally come from server)
-    const correct = answer === question.options[0]; // Assuming first option is correct
+    // In real implementation, server would validate
+    const correct = answer === question.options[0];
     setIsCorrect(correct);
     
-    // Haptic feedback
     if (window.navigator && window.navigator.vibrate) {
       window.navigator.vibrate(correct ? [50, 30, 50] : [100, 50, 100]);
     }
 
-    // Play sound effect
     if (correct) {
       playSuccessSound();
     }
@@ -53,7 +51,6 @@ const TriviaQuestion = ({ question, onAnswer }) => {
   };
 
   const playSuccessSound = () => {
-    // Create a simple success chime using Web Audio API
     const audioContext = new (window.AudioContext || window.webkitAudioContext)();
     const oscillator = audioContext.createOscillator();
     const gainNode = audioContext.createGain();
@@ -61,9 +58,9 @@ const TriviaQuestion = ({ question, onAnswer }) => {
     oscillator.connect(gainNode);
     gainNode.connect(audioContext.destination);
 
-    oscillator.frequency.setValueAtTime(523.25, audioContext.currentTime); // C5
-    oscillator.frequency.setValueAtTime(659.25, audioContext.currentTime + 0.1); // E5
-    oscillator.frequency.setValueAtTime(783.99, audioContext.currentTime + 0.2); // G5
+    oscillator.frequency.setValueAtTime(523.25, audioContext.currentTime);
+    oscillator.frequency.setValueAtTime(659.25, audioContext.currentTime + 0.1);
+    oscillator.frequency.setValueAtTime(783.99, audioContext.currentTime + 0.2);
 
     gainNode.gain.setValueAtTime(0.3, audioContext.currentTime);
     gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.5);
@@ -73,7 +70,7 @@ const TriviaQuestion = ({ question, onAnswer }) => {
   };
 
   const getTimeColor = () => {
-    if (timeRemaining > 20) return '#10B981';
+    if (timeRemaining > 20) return '#34D399';
     if (timeRemaining > 10) return '#F59E0B';
     return '#EF4444';
   };
@@ -83,6 +80,18 @@ const TriviaQuestion = ({ question, onAnswer }) => {
     const circumference = 2 * Math.PI * radius;
     const progress = timeRemaining / question.timeLimit;
     return circumference * (1 - progress);
+  };
+
+  const getCategoryIcon = (category) => {
+    const icons = {
+      general: '🌍',
+      geography: '🗺️',
+      history: '📚',
+      music: '🎵',
+      science: '🔬',
+      video_games: '🎮'
+    };
+    return icons[category] || '❓';
   };
 
   return (
@@ -106,8 +115,8 @@ const TriviaQuestion = ({ question, onAnswer }) => {
               cy="50"
               r="45"
               fill="none"
-              stroke="#F0FDFA"
-              strokeWidth="8"
+              stroke="#E0F2FE"
+              strokeWidth="6"
             />
             <motion.circle
               className="timer-progress"
@@ -116,7 +125,7 @@ const TriviaQuestion = ({ question, onAnswer }) => {
               r="45"
               fill="none"
               stroke={getTimeColor()}
-              strokeWidth="8"
+              strokeWidth="6"
               strokeLinecap="round"
               strokeDasharray={`${2 * Math.PI * 45}`}
               strokeDashoffset={getTimerRadius()}
@@ -130,7 +139,9 @@ const TriviaQuestion = ({ question, onAnswer }) => {
         </motion.div>
 
         <div className="category-badge">
-          {question.category.replace('_', ' ')}
+          <span className="category-icon">{getCategoryIcon(question.category)}</span>
+          <span>{question.category.replace('_', ' ')}</span>
+          {question.isSpecialty && <span className="specialty-star">⭐</span>}
         </div>
       </div>
 
@@ -157,8 +168,8 @@ const TriviaQuestion = ({ question, onAnswer }) => {
             initial={{ opacity: 0, x: -20 }}
             animate={{ opacity: 1, x: 0 }}
             transition={{ delay: 0.3 + index * 0.1 }}
-            whileHover={!showResult ? { scale: 1.03 } : {}}
-            whileTap={!showResult ? { scale: 0.97 } : {}}
+            whileHover={!showResult ? { scale: 1.02, x: 10 } : {}}
+            whileTap={!showResult ? { scale: 0.98 } : {}}
           >
             <span className="option-letter">
               {String.fromCharCode(65 + index)}
@@ -176,18 +187,7 @@ const TriviaQuestion = ({ question, onAnswer }) => {
               </motion.div>
             )}
 
-            {showResult && selectedAnswer === option && (
-              <AnimatePresence>
-                <motion.div
-                  className="spinner-container"
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  exit={{ opacity: 0 }}
-                >
-                  <div className="spinner" />
-                </motion.div>
-              </AnimatePresence>
-            )}
+            <div className="option-ripple"></div>
           </motion.button>
         ))}
       </div>
@@ -201,17 +201,14 @@ const TriviaQuestion = ({ question, onAnswer }) => {
             exit={{ opacity: 0, y: -20 }}
             transition={{ delay: 0.5 }}
           >
-            {isCorrect ? (
-              <>
-                <span className="result-icon">🎉</span>
-                <span>Correct! +10 tokens earned</span>
-              </>
-            ) : (
-              <>
-                <span className="result-icon">💭</span>
-                <span>Not quite! Keep trying</span>
-              </>
-            )}
+            <div className="result-icon-wrapper">
+              <span className="result-icon">
+                {isCorrect ? '🎉' : '💭'}
+              </span>
+            </div>
+            <span className="result-text">
+              {isCorrect ? 'Correct! Tokens earned' : 'Not quite right'}
+            </span>
           </motion.div>
         )}
       </AnimatePresence>

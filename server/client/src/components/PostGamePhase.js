@@ -6,6 +6,7 @@ import {
   ResponsiveContainer, PolarGrid, PolarAngleAxis, PolarRadiusAxis
 } from 'recharts';
 import { CircularProgressbar, buildStyles } from 'react-circular-progressbar';
+import 'react-circular-progressbar/dist/styles.css';
 import Confetti from 'react-confetti';
 import { Colors } from '../constants';
 import PhaseTransition from './PhaseTransition';
@@ -24,7 +25,6 @@ const PostGamePhase = ({ analyticsData }) => {
         setShowConfetti(true);
         playVictorySound();
         
-        // Haptic celebration
         if (window.navigator && window.navigator.vibrate) {
           window.navigator.vibrate([100, 50, 100, 50, 200, 100, 300]);
         }
@@ -35,7 +35,7 @@ const PostGamePhase = ({ analyticsData }) => {
 
   const playVictorySound = () => {
     const audioContext = new (window.AudioContext || window.webkitAudioContext)();
-    const notes = [523.25, 659.25, 783.99, 1046.50]; // C5, E5, G5, C6
+    const notes = [523.25, 659.25, 783.99, 1046.50];
     
     notes.forEach((frequency, index) => {
       const oscillator = audioContext.createOscillator();
@@ -61,7 +61,7 @@ const PostGamePhase = ({ analyticsData }) => {
 
   const getPersonalData = () => {
     if (!personalAnalytics || personalAnalytics.length === 0) return null;
-    return personalAnalytics[0]; // Assuming first entry is current player
+    return personalAnalytics[0];
   };
 
   const renderOverview = () => {
@@ -86,7 +86,7 @@ const PostGamePhase = ({ analyticsData }) => {
           </motion.div>
           <h1>{gameSuccess ? 'Victory!' : 'Game Complete'}</h1>
           <p className="result-subtitle">
-            {gameSuccess ? 'Masterpiece restored!' : 'Better luck next time!'}
+            {gameSuccess ? 'Masterpiece restored!' : 'Great effort!'}
           </p>
         </div>
 
@@ -97,6 +97,7 @@ const PostGamePhase = ({ analyticsData }) => {
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.6 }}
           >
+            <div className="stat-icon">⏱️</div>
             <h3>Team Performance</h3>
             <div className="stat-value">{formatTime(teamAnalytics.overallPerformance.totalTime)}</div>
             <p className="stat-label">Total Time</p>
@@ -119,6 +120,7 @@ const PostGamePhase = ({ analyticsData }) => {
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.7 }}
           >
+            <div className="stat-icon">🎯</div>
             <h3>Your Performance</h3>
             <div className="stat-value">
               {personalData.triviaPerformance.correctAnswers}/{personalData.triviaPerformance.totalQuestions}
@@ -127,7 +129,16 @@ const PostGamePhase = ({ analyticsData }) => {
             <div className="token-stats">
               {Object.entries(personalData.tokenCollection).map(([token, count]) => (
                 <div key={token} className="token-stat">
-                  <span className="token-icon" style={{ color: Colors.token[token] }}>
+                  <img 
+                    src={`/images/tokens/${token}.png`} 
+                    alt={token}
+                    className="token-image"
+                    onError={(e) => {
+                      e.target.style.display = 'none';
+                      e.target.nextSibling.style.display = 'block';
+                    }}
+                  />
+                  <span className="token-icon" style={{ display: 'none', color: Colors.token[token] }}>
                     {token === 'anchor' ? '⚓' : token === 'chronos' ? '⏰' : token === 'guide' ? '🧭' : '💎'}
                   </span>
                   <span className="token-count">{count}</span>
@@ -142,6 +153,7 @@ const PostGamePhase = ({ analyticsData }) => {
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.8 }}
           >
+            <div className="stat-icon">🏅</div>
             <h3>Team Score</h3>
             <div className="stat-value">{teamAnalytics.overallPerformance.totalScore}</div>
             <p className="stat-label">Points</p>
@@ -185,7 +197,6 @@ const PostGamePhase = ({ analyticsData }) => {
     const personalData = getPersonalData();
     if (!personalData || !teamAnalytics) return null;
 
-    // Prepare data for charts
     const categoryData = Object.entries(personalData.triviaPerformance.accuracyByCategory).map(
       ([category, accuracy]) => ({
         category: category.replace('_', ' '),
@@ -223,7 +234,7 @@ const PostGamePhase = ({ analyticsData }) => {
             animate={{ opacity: 1, scale: 1 }}
             transition={{ delay: 0.2 }}
           >
-            <h3>Trivia Performance by Category</h3>
+            <h3>Trivia Performance</h3>
             <ResponsiveContainer width="100%" height={200}>
               <RadarChart data={categoryData}>
                 <PolarGrid stroke="#E0F2FE" />
@@ -342,7 +353,7 @@ const PostGamePhase = ({ analyticsData }) => {
           height={window.innerHeight}
           numberOfPieces={200}
           gravity={0.1}
-          colors={[Colors.primary, Colors.secondary, Colors.tertiary, Colors.accent]}
+          colors={[Colors.primary, Colors.secondary, Colors.token.anchor, Colors.token.chronos, Colors.token.guide, Colors.token.clarity]}
           recycle={false}
         />
       )}

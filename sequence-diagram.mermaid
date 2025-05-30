@@ -10,7 +10,7 @@ sequenceDiagram
     H->>S: Navigate to /host frontend endpoint
     Note over H: Host enters UUID in web form
     H->>S: WebSocket Connection to /ws/host/{uuid}
-    S->>H: available_roles (isHost: true, playerId, welcome message)
+    S->>H: host_connection_confirmed (playerId, welcome message)
 
     %% Player Connections
     P1->>S: WebSocket Connection to /ws
@@ -70,6 +70,7 @@ sequenceDiagram
 
     S-->>P1: image_preview (if clarity tokens earned)
     S-->>P2: image_preview (if clarity tokens earned)
+    Note over S,H: Host does not receive image_preview (player-only benefit)
 
     S->>P1: puzzle_phase_load (imageId, segmentId, gridSize, preSolved)
     S->>P2: puzzle_phase_load (imageId, segmentId, gridSize, preSolved)

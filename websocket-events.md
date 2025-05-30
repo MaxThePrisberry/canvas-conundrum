@@ -28,6 +28,12 @@ Canvas Conundrum uses a dual-connection system with dedicated host and player en
 - Server generates unique player identifier (UUID v4)
 - All subsequent messages require authentication wrapper
 
+### Packet Distribution Principles
+- **Host-Only Packets**: Game management, monitoring, and control events
+- **Player-Only Packets**: Role selection, trivia, resource gathering, puzzle solving
+- **Shared Packets**: Game state updates, phase transitions (when applicable to both)
+- **Important**: Hosts do not receive player participation packets (available_roles, trivia_question, image_preview, etc.)
+
 ### Authentication Format
 All client-to-server events after initial connection use this wrapper:
 ```json
@@ -64,7 +70,9 @@ All client-to-server events after initial connection use this wrapper:
 2. Host enters UUID in web form interface
 3. Client connects to `/ws/host/{uuid}` (UUID from server logs/API)
 4. Server validates no existing host
-5. Server creates host player and sends confirmation
+5. Server creates host player and sends `host_connection_confirmed`
+
+**IMPORTANT**: Hosts do NOT receive the `available_roles` packet since they cannot select roles or specialties. They receive only the `host_connection_confirmed` packet.
 
 #### Server to Client Events
 
@@ -99,7 +107,7 @@ All client-to-server events after initial connection use this wrapper:
 }
 ```
 
-**Available Roles (Sent to Host):**
+**Host Connection Confirmed (Sent to Host Only):**
 ```json
 {
   "playerId": "uuid-generated-by-server",
@@ -189,7 +197,7 @@ All client-to-server events after initial connection use this wrapper:
 ### 2. Resource Gathering Phase
 
 #### Phase Start
-**Resource Phase Start (All Players):**
+**Resource Phase Start (Players Only):**
 ```json
 {
   "resourceHashes": {
@@ -200,6 +208,7 @@ All client-to-server events after initial connection use this wrapper:
   }
 }
 ```
+**Note**: Hosts do not receive this packet since they don't participate in resource gathering. Hosts receive `host_update` with phase information instead.
 
 #### Trivia System
 
@@ -277,14 +286,14 @@ All client-to-server events after initial connection use this wrapper:
 
 #### Phase Initialization
 
-**Image Preview (All Players):**
+**Image Preview (Players Only):**
 ```json
 {
   "imageId": "masterpiece_001",
   "duration": 3
 }
 ```
-*Duration based on clarity tokens earned*
+*Duration based on clarity tokens earned. Hosts do not receive this packet since clarity tokens are a player benefit.*
 
 **Puzzle Phase Load (Players):**
 ```json

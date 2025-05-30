@@ -7,7 +7,8 @@ Canvas Conundrum uses a dual-connection system with dedicated host and player en
 ### Host vs Player System
 
 **Host Connection:**
-- **Endpoint**: `/ws/host/{unique-uuid}` (UUID generated fresh each server start)
+- **Frontend Endpoint**: `/host` (web interface for hosts to enter UUID and connect)
+- **WebSocket Endpoint**: `/ws/host/{unique-uuid}` (UUID generated fresh each server start)
 - **Role**: Game moderator and controller
 - **Capabilities**: Start games, monitor progress, control game flow, view analytics
 - **Limitations**: Cannot participate in trivia or puzzle solving
@@ -59,9 +60,11 @@ All client-to-server events after initial connection use this wrapper:
 3. Server sends `available_roles` with player ID and options
 
 **Host Connection:**
-1. Client connects to `/ws/host/{uuid}` (UUID from server logs/API)
-2. Server validates no existing host
-3. Server creates host player and sends confirmation
+1. Client navigates to `/host` frontend endpoint
+2. Host enters UUID in web form interface
+3. Client connects to `/ws/host/{uuid}` (UUID from server logs/API)
+4. Server validates no existing host
+5. Server creates host player and sends confirmation
 
 #### Server to Client Events
 

@@ -7,6 +7,8 @@ sequenceDiagram
     Note over H,P2: Connection Phase
 
     %% Host Connection
+    H->>S: Navigate to /host frontend endpoint
+    Note over H: Host enters UUID in web form
     H->>S: WebSocket Connection to /ws/host/{uuid}
     S->>H: available_roles (isHost: true, playerId, welcome message)
 

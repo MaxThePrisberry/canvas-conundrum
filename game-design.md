@@ -9,7 +9,8 @@ A collaborative puzzle-solving game where players recover a stolen masterpiece b
 Canvas Conundrum uses a dedicated host model for reliable game management:
 
 **Host Connection & Role:**
-- **Endpoint**: `/ws/host/{unique-uuid}` (UUID generated fresh each server start)
+- **Frontend Endpoint**: `/host` (web interface for hosts to enter UUID and connect)
+- **WebSocket Endpoint**: `/ws/host/{unique-uuid}` (UUID generated fresh each server start)
 - **Capabilities**:
   - Start and control game flow
   - Monitor all player progress in real-time

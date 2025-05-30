@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"log"
+	"time"
 )
 
 // sendToPlayer sends a message to a specific player
@@ -28,6 +29,9 @@ func sendToPlayer(player *Player, msgType string, payload interface{}) error {
 	// Synchronize WebSocket writes to prevent concurrent access
 	player.writeMu.Lock()
 	defer player.writeMu.Unlock()
+
+	// Set write deadline to prevent hanging on slow connections
+	conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
 
 	return conn.WriteJSON(msg)
 }

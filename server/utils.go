@@ -25,6 +25,10 @@ func sendToPlayer(player *Player, msgType string, payload interface{}) error {
 		Payload: payloadBytes,
 	}
 
+	// Synchronize WebSocket writes to prevent concurrent access
+	player.writeMu.Lock()
+	defer player.writeMu.Unlock()
+
 	return conn.WriteJSON(msg)
 }
 

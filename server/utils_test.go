@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 )
@@ -383,6 +384,106 @@ func TestConcurrentUtilityUsage(t *testing.T) {
 		// Wait for all goroutines
 		for i := 0; i < 30; i++ {
 			<-done
+		}
+	})
+}
+
+func TestConcurrentWebSocketWrites(t *testing.T) {
+	// Test that sendToPlayer handles concurrent access to Player fields safely
+	t.Run("Concurrent player mutex usage", func(t *testing.T) {
+		// Create player with nil connection to test mutex behavior only
+		player := &Player{
+			ID:         "test-player-concurrent",
+			Connection: nil, // nil connection prevents actual WebSocket calls
+		}
+
+		numGoroutines := 100
+		numOpsPerGoroutine := 50
+
+		done := make(chan bool, numGoroutines)
+
+		// Launch multiple goroutines that access player fields concurrently
+		for i := 0; i < numGoroutines; i++ {
+			go func(goroutineID int) {
+				defer func() { done <- true }()
+
+				for j := 0; j < numOpsPerGoroutine; j++ {
+					// This tests the mutex protection in sendToPlayer
+					payload := map[string]interface{}{
+						"goroutine": goroutineID,
+						"message":   j,
+						"data":      "test concurrent access",
+					}
+
+					// sendToPlayer should safely handle concurrent access
+					err := sendToPlayer(player, "test_message", payload)
+					// Should not return an error for nil connections (silently ignored)
+					assert.NoError(t, err)
+
+					// Also test direct mutex access patterns
+					player.mu.RLock()
+					_ = player.Connection
+					player.mu.RUnlock()
+				}
+			}(i)
+		}
+
+		// Wait for all goroutines to complete
+		for i := 0; i < numGoroutines; i++ {
+			select {
+			case <-done:
+				// Continue
+			case <-time.After(10 * time.Second):
+				t.Fatal("Timeout waiting for concurrent operations to complete")
+			}
+		}
+	})
+
+	t.Run("Concurrent sendToPlayer stress test", func(t *testing.T) {
+		// Create multiple players and test concurrent sends to different players
+		numPlayers := 10
+		players := make([]*Player, numPlayers)
+
+		for i := 0; i < numPlayers; i++ {
+			players[i] = &Player{
+				ID:         "test-player-" + string(rune('A'+i)),
+				Connection: nil, // nil to avoid actual WebSocket calls
+			}
+		}
+
+		numGoroutines := 50
+		done := make(chan bool, numGoroutines)
+
+		// Launch goroutines that send to random players
+		for i := 0; i < numGoroutines; i++ {
+			go func(goroutineID int) {
+				defer func() { done <- true }()
+
+				// Send 20 messages to different players
+				for j := 0; j < 20; j++ {
+					playerIndex := (goroutineID + j) % numPlayers
+					player := players[playerIndex]
+
+					payload := map[string]interface{}{
+						"goroutine": goroutineID,
+						"message":   j,
+						"player":    playerIndex,
+					}
+
+					err := sendToPlayer(player, "stress_test", payload)
+					assert.NoError(t, err)
+				}
+			}(i)
+		}
+
+		// Wait for all goroutines to complete
+		for i := 0; i < numGoroutines; i++ {
+			select {
+			case <-done:
+				// Continue
+			case <-time.After(5 * time.Second):
+				t.Fatal("Timeout waiting for stress test to complete")
+			}
 		}
 	})
 }

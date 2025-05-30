@@ -1,0 +1,375 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <link rel="icon" href="%PUBLIC_URL%/favicon.ico" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+    <meta name="theme-color" content="#87CEEB" />
+    <meta name="description" content="Canvas Conundrum Host Dashboard - Manage collaborative puzzle-solving games" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="apple-mobile-web-app-title" content="Canvas Host" />
+    <link rel="apple-touch-icon" href="%PUBLIC_URL%/logo192.png" />
+    
+    <!-- Prevent zooming on desktop -->
+    <meta name="HandheldFriendly" content="true" />
+    
+    <!-- PWA manifest -->
+    <link rel="manifest" href="%PUBLIC_URL%/manifest.json" />
+    
+    <!-- Preload fonts for better performance -->
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    
+    <!-- Host-specific meta tags -->
+    <meta name="robots" content="noindex, nofollow" />
+    <meta name="author" content="Canvas Conundrum" />
+    <meta name="application-name" content="Canvas Conundrum Host" />
+    
+    <!-- Inline critical CSS for faster initial render -->
+    <style>
+      /* Host-specific loading screen */
+      body {
+        margin: 0;
+        padding: 0;
+        overflow: hidden;
+        background: linear-gradient(135deg, #FFFFFF 0%, #F0F9FF 50%, #E0F2FE 100%);
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
+          'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue', sans-serif;
+        -webkit-font-smoothing: antialiased;
+        -moz-osx-font-smoothing: grayscale;
+        -webkit-user-select: none;
+        user-select: none;
+        -webkit-touch-callout: none;
+        -webkit-tap-highlight-color: transparent;
+      }
+      
+      /* Initial loading screen */
+      .initial-loader {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: linear-gradient(135deg, #87CEEB 0%, #B0E0E6 50%, #E0F2FE 100%);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 9999;
+        flex-direction: column;
+      }
+      
+      .loader-content {
+        text-align: center;
+        color: white;
+        position: relative;
+      }
+      
+      .host-crown {
+        width: 120px;
+        height: 120px;
+        margin: 0 auto 2rem;
+        position: relative;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: linear-gradient(135deg, #FFD700 0%, #FFA500 100%);
+        border-radius: 50%;
+        box-shadow: 0 8px 32px rgba(255, 215, 0, 0.4);
+        animation: crownFloat 3s ease-in-out infinite;
+      }
+      
+      .crown-icon {
+        font-size: 4rem;
+        filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.2));
+      }
+      
+      .crown-rings {
+        position: absolute;
+        inset: -20px;
+      }
+      
+      .crown-ring {
+        position: absolute;
+        inset: 0;
+        border: 3px solid rgba(255, 255, 255, 0.4);
+        border-radius: 50%;
+        animation: ringExpand 3s ease-out infinite;
+      }
+      
+      .crown-ring-2 {
+        inset: 15px;
+        animation-delay: 1s;
+      }
+      
+      .crown-ring-3 {
+        inset: 30px;
+        animation-delay: 2s;
+      }
+      
+      @keyframes crownFloat {
+        0%, 100% {
+          transform: translateY(0) rotate(0deg);
+        }
+        50% {
+          transform: translateY(-15px) rotate(5deg);
+        }
+      }
+      
+      @keyframes ringExpand {
+        0% {
+          transform: scale(1);
+          opacity: 0.6;
+        }
+        100% {
+          transform: scale(1.4);
+          opacity: 0;
+        }
+      }
+      
+      .loader-title {
+        font-size: 2.5rem;
+        font-weight: 800;
+        margin-bottom: 0.5rem;
+        text-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+        letter-spacing: -1px;
+        animation: titleSlide 1s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+      }
+      
+      .loader-subtitle {
+        font-size: 1.3rem;
+        opacity: 0.95;
+        font-weight: 600;
+        margin-bottom: 2rem;
+        text-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        animation: subtitleFade 1.2s ease-out;
+      }
+      
+      @keyframes titleSlide {
+        from {
+          transform: translateY(-30px);
+          opacity: 0;
+        }
+        to {
+          transform: translateY(0);
+          opacity: 1;
+        }
+      }
+      
+      @keyframes subtitleFade {
+        from {
+          opacity: 0;
+        }
+        to {
+          opacity: 0.95;
+        }
+      }
+      
+      .host-badge {
+        background: linear-gradient(135deg, #FFD700 0%, #FFA500 100%);
+        color: #8B4513;
+        padding: 0.75rem 1.5rem;
+        border-radius: 25px;
+        font-size: 1rem;
+        font-weight: 700;
+        box-shadow: 0 4px 16px rgba(255, 215, 0, 0.3);
+        text-transform: uppercase;
+        letter-spacing: 1px;
+        margin-bottom: 2rem;
+        display: inline-flex;
+        align-items: center;
+        gap: 0.5rem;
+        animation: badgePulse 2s ease-in-out infinite;
+      }
+      
+      @keyframes badgePulse {
+        0%, 100% {
+          transform: scale(1);
+        }
+        50% {
+          transform: scale(1.05);
+        }
+      }
+      
+      .loader-dots {
+        display: flex;
+        gap: 0.75rem;
+        justify-content: center;
+        align-items: center;
+      }
+      
+      .loader-dots span {
+        width: 12px;
+        height: 12px;
+        background: white;
+        border-radius: 50%;
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+        animation: dotBounce 1.4s ease-in-out infinite;
+      }
+      
+      .loader-dots span:nth-child(1) { animation-delay: 0s; }
+      .loader-dots span:nth-child(2) { animation-delay: 0.2s; }
+      .loader-dots span:nth-child(3) { animation-delay: 0.4s; }
+      
+      @keyframes dotBounce {
+        0%, 60%, 100% {
+          transform: translateY(0) scale(1);
+        }
+        30% {
+          transform: translateY(-20px) scale(1.2);
+        }
+      }
+      
+      /* Hide loader when React loads */
+      body.loaded .initial-loader {
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity 0.5s ease;
+      }
+      
+      /* Floating background elements */
+      .floating-bg {
+        position: absolute;
+        inset: 0;
+        overflow: hidden;
+        pointer-events: none;
+      }
+      
+      .floating-shape {
+        position: absolute;
+        border-radius: 50%;
+        background: radial-gradient(circle, rgba(255, 255, 255, 0.1) 0%, transparent 70%);
+        animation: floatShape 15s ease-in-out infinite;
+      }
+      
+      .shape-1 {
+        width: 200px;
+        height: 200px;
+        top: 10%;
+        left: 15%;
+        animation-delay: 0s;
+      }
+      
+      .shape-2 {
+        width: 150px;
+        height: 150px;
+        top: 70%;
+        right: 20%;
+        animation-delay: -5s;
+      }
+      
+      .shape-3 {
+        width: 100px;
+        height: 100px;
+        bottom: 20%;
+        left: 70%;
+        animation-delay: -10s;
+      }
+      
+      @keyframes floatShape {
+        0%, 100% {
+          transform: translate(0, 0) scale(1);
+          opacity: 0.3;
+        }
+        33% {
+          transform: translate(30px, -20px) scale(1.1);
+          opacity: 0.5;
+        }
+        66% {
+          transform: translate(-20px, 30px) scale(0.9);
+          opacity: 0.4;
+        }
+      }
+    </style>
+    
+    <title>Canvas Conundrum - Host Dashboard</title>
+  </head>
+  <body>
+    <noscript>You need to enable JavaScript to run the Host Dashboard.</noscript>
+    
+    <!-- Initial loading screen -->
+    <div class="initial-loader" id="initial-loader">
+      <div class="floating-bg">
+        <div class="floating-shape shape-1"></div>
+        <div class="floating-shape shape-2"></div>
+        <div class="floating-shape shape-3"></div>
+      </div>
+      
+      <div class="loader-content">
+        <div class="host-crown">
+          <div class="crown-icon">👑</div>
+          <div class="crown-rings">
+            <div class="crown-ring crown-ring-1"></div>
+            <div class="crown-ring crown-ring-2"></div>
+            <div class="crown-ring crown-ring-3"></div>
+          </div>
+        </div>
+        
+        <div class="host-badge">
+          <span>👑 HOST DASHBOARD</span>
+        </div>
+        
+        <div class="loader-title">Canvas Conundrum</div>
+        <div class="loader-subtitle">Host Control Center</div>
+        
+        <div class="loader-dots">
+          <span></span>
+          <span></span>
+          <span></span>
+        </div>
+      </div>
+    </div>
+    
+    <div id="root"></div>
+    
+    <script>
+      // Remove loader once React is loaded
+      window.addEventListener('load', function() {
+        setTimeout(function() {
+          document.body.classList.add('loaded');
+        }, 100);
+      });
+      
+      // Prevent context menu on right click (host security)
+      document.addEventListener('contextmenu', function(e) {
+        e.preventDefault();
+      });
+      
+      // Prevent certain keyboard shortcuts
+      document.addEventListener('keydown', function(e) {
+        // Prevent F12, Ctrl+Shift+I, Ctrl+U (view source)
+        if (e.key === 'F12' || 
+            (e.ctrlKey && e.shiftKey && e.key === 'I') || 
+            (e.ctrlKey && e.key === 'u')) {
+          e.preventDefault();
+        }
+      });
+      
+      // Host-specific error handling
+      window.addEventListener('error', function(e) {
+        console.error('Host application error:', e.error);
+      });
+      
+      // Prevent drag and drop
+      document.addEventListener('dragover', function(e) {
+        e.preventDefault();
+      });
+      
+      document.addEventListener('drop', function(e) {
+        e.preventDefault();
+      });
+      
+      // Set document title with connection status
+      function updateTitle(status) {
+        const baseTitle = 'Canvas Conundrum - Host Dashboard';
+        if (status) {
+          document.title = `${baseTitle} - ${status}`;
+        } else {
+          document.title = baseTitle;
+        }
+      }
+      
+      // Make updateTitle available globally
+      window.updateHostTitle = updateTitle;
+    </script>
+  </body>
+</html>

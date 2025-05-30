@@ -276,3 +276,50 @@ func TestConcurrentConnections(t *testing.T) {
 		assert.NoError(t, err, "Player ID should be valid UUID")
 	}
 }
+
+func TestPlayerIDValidationInConnection(t *testing.T) {
+	// Test player ID validation during connection
+	tests := []struct {
+		name        string
+		playerID    string
+		expectError bool
+	}{
+		{
+			name:        "Valid UUID format",
+			playerID:    "123e4567-e89b-12d3-a456-426614174000",
+			expectError: false,
+		},
+		{
+			name:        "Empty player ID",
+			playerID:    "",
+			expectError: true, // validatePlayerID rejects empty strings
+		},
+		{
+			name:        "Invalid UUID format - too short",
+			playerID:    "123e4567-e89b",
+			expectError: true,
+		},
+		{
+			name:        "Invalid UUID format - wrong pattern",
+			playerID:    "not-a-uuid-at-all",
+			expectError: true,
+		},
+		{
+			name:        "Invalid UUID format - missing hyphens",
+			playerID:    "123e4567e89b12d3a456426614174000",
+			expectError: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Test the validatePlayerID function directly
+			err := validatePlayerID(tt.playerID)
+			if tt.expectError {
+				assert.NotNil(t, err, "Expected validation error for player ID: %s", tt.playerID)
+			} else {
+				assert.Nil(t, err, "Expected no validation error for player ID: %s", tt.playerID)
+			}
+		})
+	}
+}

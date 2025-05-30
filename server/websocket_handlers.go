@@ -56,7 +56,7 @@ func (wsh *WebSocketHandler) HandleConnection(w http.ResponseWriter, r *http.Req
 
 	// Validate player ID format if provided
 	if playerID != "" {
-		if err := validatePlayerID(playerID); err.Field != "" {
+		if err := validatePlayerID(playerID); err != nil {
 			log.Printf("Invalid player ID format in connection: %s", playerID)
 			http.Error(w, "Invalid player ID format", http.StatusBadRequest)
 			return

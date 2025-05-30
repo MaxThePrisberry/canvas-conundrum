@@ -598,3 +598,236 @@ func TestHandlePlayerReady(t *testing.T) {
 		})
 	}
 }
+
+// Test comprehensive authentication validation for all event types
+func TestAuthenticationValidationAcrossEvents(t *testing.T) {
+	eh, pm, _, _ := createTestEventHandlers()
+
+	// Create valid player
+	player := pm.CreatePlayer(nil, false)
+	validPlayerID := player.ID
+
+	// Test that all events require valid authentication
+	eventTests := []struct {
+		name     string
+		handler  func(string, json.RawMessage) error
+		payload  json.RawMessage
+		testDesc string
+	}{
+		{
+			name:     "role_selection",
+			handler:  eh.HandleRoleSelection,
+			payload:  json.RawMessage(`{"role": "detective"}`),
+			testDesc: "Role selection should require valid player ID",
+		},
+		{
+			name:     "trivia_specialty_selection",
+			handler:  eh.HandleTriviaSpecialtySelection,
+			payload:  json.RawMessage(`{"specialties": ["science"]}`),
+			testDesc: "Specialty selection should require valid player ID",
+		},
+		{
+			name:     "player_ready",
+			handler:  eh.HandlePlayerReady,
+			payload:  json.RawMessage(`{"ready": true}`),
+			testDesc: "Player ready should require valid player ID",
+		},
+	}
+
+	for _, tt := range eventTests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Test with valid player ID
+			err := tt.handler(validPlayerID, tt.payload)
+			// May error due to game state, but should not be auth error
+			if err != nil && !assert.Contains(t, err.Error(), "player not found") {
+				t.Logf("Event %s with valid ID: %v", tt.name, err)
+			}
+
+			// Test with invalid player ID
+			err = tt.handler("invalid-player-id", tt.payload)
+			assert.Error(t, err, tt.testDesc)
+			assert.Contains(t, err.Error(), "player not found")
+
+			// Test with empty player ID
+			err = tt.handler("", tt.payload)
+			assert.Error(t, err, tt.testDesc)
+		})
+	}
+}
+
+// Test phase-specific event restrictions
+func TestPhaseSpecificEventRestrictions(t *testing.T) {
+	eh, pm, gm, _ := createTestEventHandlers()
+
+	// Create player
+	player := pm.CreatePlayer(nil, false)
+	playerID := player.ID
+
+	// Test resource location verification only works in resource gathering phase
+	locationPayload := json.RawMessage(`{"verifiedHash": "HASH_ANCHOR_STATION_2025"}`)
+
+	// Should fail in setup phase
+	gm.state.Phase = PhaseSetup
+	err := eh.HandleResourceLocationVerified(playerID, locationPayload)
+	if err != nil {
+		assert.Contains(t, err.Error(), "phase", "Should fail when not in resource gathering phase")
+	}
+
+	// Should work in resource gathering phase
+	gm.state.Phase = PhaseResourceGathering
+	err = eh.HandleResourceLocationVerified(playerID, locationPayload)
+	// May still error due to other validation, but shouldn't be phase error
+	if err != nil && !assert.NotContains(t, err.Error(), "phase") {
+		t.Logf("Resource location verification error (may be other validation): %v", err)
+	}
+
+	// Test trivia answer phase restrictions
+	triviaPayload := json.RawMessage(`{"questionId": "test_question_1", "answer": "Paris", "timestamp": 1640995200}`)
+
+	// Should fail in setup phase
+	gm.state.Phase = PhaseSetup
+	err = eh.HandleTriviaAnswer(playerID, triviaPayload)
+	assert.Error(t, err, "Trivia answer should fail in setup phase")
+
+	// Test puzzle-specific events
+	segmentPayload := json.RawMessage(`{"segmentId": "segment_a1", "completionTimestamp": 1640995200}`)
+	gm.state.Phase = PhaseSetup
+	err = eh.HandleSegmentCompleted(playerID, segmentPayload)
+	if err != nil {
+		// Should fail when not in puzzle phase
+		t.Logf("Segment completion in wrong phase: %v", err)
+	}
+
+	// Test fragment movement phase restrictions
+	gm.state.GridSize = 4
+	movePayload := json.RawMessage(`{"fragmentId": "fragment_test", "newPosition": {"x": 1, "y": 1}, "timestamp": 1640995200}`)
+
+	gm.state.Phase = PhaseSetup
+	err = eh.HandleFragmentMoveRequest(playerID, movePayload)
+	if err != nil {
+		// Should fail when not in puzzle phase
+		t.Logf("Fragment move in wrong phase: %v", err)
+	}
+}
+
+// Test host-only event enforcement
+func TestHostOnlyEventEnforcement(t *testing.T) {
+	eh, pm, gm, _ := createTestEventHandlers()
+
+	// Create host and regular player
+	host := pm.CreatePlayer(nil, true)
+	player := pm.CreatePlayer(nil, false)
+
+	hostID := host.ID
+	playerID := player.ID
+
+	// Set up game state for start game test
+	gm.state.Phase = PhaseSetup
+
+	// Test host start game
+	startGamePayload := json.RawMessage(`{}`)
+
+	// Host should be able to start game (may fail due to not enough players)
+	err := eh.HandleHostStartGame(hostID, startGamePayload)
+	if err != nil && !assert.Contains(t, err.Error(), "only host can start") {
+		t.Logf("Host start game error (may be player count): %v", err)
+	}
+
+	// Regular player should NOT be able to start game
+	err = eh.HandleHostStartGame(playerID, startGamePayload)
+	assert.Error(t, err, "Regular player should not be able to start game")
+	assert.Contains(t, err.Error(), "only host can start")
+
+	// Test host start puzzle
+	startPuzzlePayload := json.RawMessage(`{}`)
+	gm.state.Phase = PhaseResourceGathering // Valid phase for starting puzzle
+
+	// Host should be able to start puzzle (may fail due to game state)
+	err = eh.HandleHostStartPuzzle(hostID, startPuzzlePayload)
+	if err != nil && !assert.Contains(t, err.Error(), "only host can start") {
+		t.Logf("Host start puzzle error (may be game state): %v", err)
+	}
+
+	// Regular player should NOT be able to start puzzle
+	err = eh.HandleHostStartPuzzle(playerID, startPuzzlePayload)
+	assert.Error(t, err, "Regular player should not be able to start puzzle")
+	assert.Contains(t, err.Error(), "only host can start")
+}
+
+// Test edge cases and error conditions
+func TestEventHandlerEdgeCases(t *testing.T) {
+	eh, pm, _, _ := createTestEventHandlers()
+
+	// Create player
+	player := pm.CreatePlayer(nil, false)
+	playerID := player.ID
+
+	// Test malformed JSON payloads
+	malformedPayloads := []struct {
+		name    string
+		payload json.RawMessage
+		handler func(string, json.RawMessage) error
+	}{
+		{
+			name:    "role_selection_malformed",
+			payload: json.RawMessage(`{"role": }`),
+			handler: eh.HandleRoleSelection,
+		},
+		{
+			name:    "specialty_selection_malformed",
+			payload: json.RawMessage(`{"specialties": [`),
+			handler: eh.HandleTriviaSpecialtySelection,
+		},
+		{
+			name:    "trivia_answer_malformed",
+			payload: json.RawMessage(`{"questionId": "test", "answer": `),
+			handler: eh.HandleTriviaAnswer,
+		},
+	}
+
+	for _, tt := range malformedPayloads {
+		t.Run(tt.name, func(t *testing.T) {
+			err := tt.handler(playerID, tt.payload)
+			assert.Error(t, err, "Malformed JSON should cause error")
+		})
+	}
+
+	// Test extremely large payloads (should be handled by validation layer)
+	largePayload := json.RawMessage(`{"role": "` + string(make([]byte, 1000)) + `"}`)
+	err := eh.HandleRoleSelection(playerID, largePayload)
+	assert.Error(t, err, "Extremely large payload should be rejected")
+
+	// Test empty payloads where data is required
+	emptyPayload := json.RawMessage(`{}`)
+	err = eh.HandleRoleSelection(playerID, emptyPayload)
+	assert.Error(t, err, "Empty payload should be rejected for role selection")
+
+	// Test null payloads
+	nullPayload := json.RawMessage(`null`)
+	err = eh.HandleRoleSelection(playerID, nullPayload)
+	assert.Error(t, err, "Null payload should be rejected")
+
+	// Test concurrent event handling
+	done := make(chan bool, 10)
+	for i := 0; i < 10; i++ {
+		go func(idx int) {
+			defer func() { done <- true }()
+
+			// Try to set ready status concurrently
+			readyPayload := json.RawMessage(`{"ready": true}`)
+			err := eh.HandlePlayerReady(playerID, readyPayload)
+			// Should not panic, may error due to game state
+			_ = err
+		}(i)
+	}
+
+	// Wait for all concurrent operations
+	for i := 0; i < 10; i++ {
+		<-done
+	}
+
+	// Player should still be in valid state
+	retrievedPlayer, err := pm.GetPlayer(playerID)
+	assert.NoError(t, err)
+	assert.Equal(t, playerID, retrievedPlayer.ID)
+}

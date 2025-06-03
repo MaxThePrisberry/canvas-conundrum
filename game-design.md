@@ -52,7 +52,7 @@ All communication after initial connection requires authentication:
 ```json
 {
   "auth": {
-    "playerId": "uuid-generated-by-server"
+    "token": "uuid-generated-by-server"
   },
   "payload": {
     // Event-specific data
@@ -72,14 +72,14 @@ All communication after initial connection requires authentication:
 
 ### Role Selection (Players Only)
 **4 Available Roles:**
-1. **Art Enthusiast** → Clarity Token Bonus (1.5x multiplier)
-2. **Detective** → Guide Token Bonus (1.5x multiplier)
-3. **Tourist** → Chronos Token Bonus (1.5x multiplier)
-4. **Janitor** → Anchor Token Bonus (1.5x multiplier)
+1. **Art Enthusiast** → Clarity Token Bonus (`constants.RoleResourceMultiplier`)
+2. **Detective** → Guide Token Bonus (`constants.RoleResourceMultiplier`)
+3. **Tourist** → Chronos Token Bonus (`constants.RoleResourceMultiplier`)
+4. **Janitor** → Anchor Token Bonus (`constants.RoleResourceMultiplier`)
 
 **Role Mechanics:**
 - Each role provides bonus collection for specific token type
-- Bonus multiplier: `constants.RoleResourceMultiplier` (1.5x)
+- Bonus multiplier: `constants.RoleResourceMultiplier`
 - Even distribution enforced across players
 - Host does not select a role
 
@@ -96,8 +96,8 @@ All communication after initial connection requires authentication:
 - Players select 1-2 categories as specialties
 - Specialty questions are harder difficulty (+1 level)
 - Same time limits as regular questions (no extension)
-- Specialty bonus: `constants.SpecialtyPointMultiplier` (2.0x points)
-- Players auto-marked ready after specialty selection
+- Specialty bonus: `constants.SpecialtyPointMultiplier`
+- Players are immediately marked as ready upon successful specialty selection
 
 **Specialty Question Frequency:**
 - Easy Mode: 20% chance per question
@@ -108,9 +108,11 @@ All communication after initial connection requires authentication:
 
 ### Phase 1: Resource Gathering
 **Duration**: Configurable rounds and duration per round
-- Default: `constants.ResourceGatheringRounds` rounds (5)
-- Default: `constants.ResourceGatheringRoundDuration` seconds per round (60)
-- Each round = one trivia question sent to all players
+- Number of rounds: `constants.ResourceGatheringRounds`
+- Round duration: `constants.ResourceGatheringRoundDuration` seconds per round
+- Each gathering round = one trivia round = one trivia question sent to all players
+- First 30 seconds: Players select their answer from multiple choice options
+- Last 30 seconds: Answers locked in, marked right/wrong, grace period for location changes and team discussion
 **Location**: Multiple QR code stations in physical spaces
 **Participants**: Players only (host monitors)
 
@@ -120,12 +122,13 @@ All communication after initial connection requires authentication:
 - Each station corresponds to different token type
 - Location verification only required when changing stations
 - QR codes contain cryptographic hashes for validation
+- Station hashes stored as constants: `constants.HashAnchorStation`, `constants.HashChronosStation`, `constants.HashGuideStation`, `constants.HashClarityStation`
 
 **Trivia System:**
-- One question delivered per round (every `constants.ResourceGatheringRoundDuration` seconds)
-- Questions sourced from comprehensive categorized database
+- One question delivered per gathering round (every `constants.ResourceGatheringRoundDuration` seconds)
+- Questions presented as distinct multiple-choice options
+- No fuzzy matching - clear right/wrong based on selected option
 - Automatic question cycling prevents repetition
-- Enhanced answer validation with fuzzy matching
 - All questions have same time limit regardless of specialty status
 
 #### Enhanced Trivia Features
@@ -136,46 +139,51 @@ All communication after initial connection requires authentication:
 - Support for HTML entity decoding and text normalization
 
 **Answer Validation:**
-- Exact match after normalization (case-insensitive, punctuation-removed)
-- Abbreviation recognition (USA/United States, UK/United Kingdom)
-- Partial matching for complex answers
+- Multiple-choice selection with clear right/wrong determination
+- No fuzzy matching or partial credit
+- Answer selection locked after first 30 seconds of round
 - Comprehensive logging for debugging and analysis
 
 #### Resource Token System
 **Token Types & Effects:**
 
-1. **Anchor Tokens** → Pre-solved Puzzle Pieces
-   - Thresholds: `teamTokens / (5 × difficultyModifier)`
-   - Effect: Up to 12 of 16 individual puzzle pieces pre-solved
-   - Leaves minimum 4 pieces for player to solve
-   - Reduces individual workload significantly
+1. **Anchor Tokens** → Pre-solved Individual Puzzle Pieces
+   - 6 thresholds: `teamAnchorTokens / constants.AnchorTokenThreshold`
+   - Effect: Each threshold pre-solves 2 pieces of the 16-piece individual puzzle
+   - Maximum 12 pieces pre-solved (6 thresholds × 2 pieces)
+   - Pre-solved pieces are visually locked and unmovable
+   - Only affects individual puzzle solving, NOT the central grid
+   - Leaves minimum 4 pieces for manual solving
 
 2. **Chronos Tokens** → Extended Puzzle Time
-   - Thresholds: `teamTokens / (5 × difficultyModifier)`
+   - 6 thresholds: `teamChronosTokens / constants.ChronosTokenThreshold`
    - Effect: +20 seconds per threshold to puzzle assembly time
-   - Base time: 300 seconds (adjustable by difficulty)
-   - Critical for complex puzzles or larger groups
+   - Maximum +120 seconds (6 thresholds × 20 seconds)
+   - Base time: `constants.PuzzleBaseTime` seconds
+   - Team-wide benefit applied to entire puzzle phase
 
-3. **Guide Tokens** → Linear Placement Guidance
-   - Multiple thresholds with linear progression
-   - Effect: Highlighted area on personal puzzle view
-   - First threshold: Large area guidance (quarter of grid)
-   - Middle thresholds: Progressively smaller highlighted areas
-   - Final threshold: Precise guidance (2 possible positions)
-   - Personal puzzle view shows all visible fragments and movement
-   - Only applies to player's own fragment positioning
+3. **Guide Tokens** → Fragment Placement Guidance on Central Grid
+   - 6 thresholds: `teamGuideTokens / constants.GuideTokenThreshold`
+   - Effect: Highlights possible positions for player's fragment on central grid
+   - Each threshold removes (gridSize × gridSize) / 7 highlighted squares
+   - Progression from many possible positions to precise guidance
+   - Individual hints visible only to each player for their own fragment
+   - Fragment positions publicly visible on host screen
+   - Only applies after individual puzzle completion
 
-4. **Clarity Tokens** → Image Preview
-   - Thresholds: `teamTokens / (5 × difficultyModifier)`
+4. **Clarity Tokens** → Complete Image Preview
+   - 6 thresholds: `teamClarityTokens / constants.ClarityTokenThreshold`
    - Effect: +1 second per threshold of complete image display
-   - Shown before puzzle phase begins
+   - Maximum 6 seconds additional preview time
+   - Base preview time: `constants.ClarityBasePreviewTime` seconds
+   - Shown automatically at puzzle phase start
    - Helps with spatial understanding and planning
 
 #### Scoring System
 **Base Scoring:**
-- Correct Answer: `constants.BaseTokensPerCorrectAnswer` (10 tokens)
-- Role Bonus: 1.5x multiplier when at matching station
-- Specialty Bonus: 2.0x multiplier for specialty questions
+- Correct Answer: `constants.BaseTokensPerCorrectAnswer` tokens
+- Role Bonus: `constants.RoleResourceMultiplier` when at matching station
+- Specialty Bonus: `constants.SpecialtyPointMultiplier` for specialty questions
 - Difficulty Modifier: Applied to final token awards
 
 **Token Distribution:**
@@ -203,19 +211,30 @@ All communication after initial connection requires authentication:
 - **Private Workspace**: Each player works in their own private puzzle-solving environment
 
 **Individual Puzzle Mechanics:**
-- **Assignment**: Each player receives exactly one unique 16-piece puzzle segment (e.g., `segment_a5`, `segment_b2`)
-- **Content**: Each segment contains 16 individual jigsaw pieces that form part of the larger artwork
+- **Assignment**: Each player receives exactly one unique segment ID (e.g., `segment_a5`, `segment_b2`)
+- **Client Responsibilities**: 
+  - Load segment image using provided ID
+  - Split segment into 16 individual jigsaw pieces
+  - Shuffle pieces randomly for puzzle challenge
+  - Choose which pieces to pre-solve based on anchor token count
+  - Mark pre-solved pieces as locked and unmovable
+  - Handle all piece movement and swapping logic
+  - Validate when puzzle is correctly assembled
 - **Solving Process**: Players arrange these 16 pieces into the correct configuration privately
-- **Pre-solving Effects**: Anchor tokens can pre-solve up to 12 of these 16 pieces, leaving minimum 4 for manual solving
+- **Pre-solving Effects**: Anchor tokens provide count of pieces to pre-solve (up to 12), client chooses which pieces
 - **No Interaction**: Other players cannot see, help with, or influence individual puzzle progress
 - **Host Blindness**: Host cannot monitor or view individual puzzle progress in real-time
 
 **Individual Puzzle Workflow:**
-1. **Phase Start**: Player receives `puzzle_phase_load` with their unique `segmentId`
-2. **Private Solving**: Player works on 16-piece puzzle completely invisibly
-3. **No Broadcasting**: No progress updates sent to other players or host
-4. **Completion Trigger**: Player completes arrangement and sends `segment_completed` message
-5. **Transformation**: Individual puzzle immediately converts to central grid fragment
+1. **Phase Start**: Server sends initial grid configuration showing all empty squares
+2. **Segment Assignment**: Player receives `puzzle_phase_load` with their unique `segmentId` and all other segment IDs for preloading
+3. **Client Processing**: Client loads segment, splits into 16 pieces, shuffles, and applies pre-solving
+4. **Private Solving**: Player works on 16-piece puzzle completely invisibly (Phase 2)
+5. **Small Grid Display**: Client shows miniature grids of all other players' segments, updating as they complete
+6. **Completion Trigger**: Player completes arrangement and sends `segment_completed` message
+7. **Server Processing**: Server places completed segment in random unoccupied grid square
+8. **Phase Transition**: Player receives updated grid state and transitions to Phase 3 (collaborative solving)
+9. **Periodic Updates**: Players receive grid updates every `constants.GridUpdateInterval` seconds
 
 ### System 2: Central Shared Puzzle Grid (Public & Collaborative)
 
@@ -252,9 +271,10 @@ This is the single most important transition in the entire game system:
 
 3. **Instant Transformation**:
    - Individual 16-piece puzzle instantly becomes one single fragment
-   - Fragment appears at designated position on central shared grid
+   - Server places fragment at random unoccupied position on central shared grid
    - Fragment becomes visible to all players and host immediately
    - Fragment becomes movable according to ownership rules
+   - Player transitions from Phase 2 to Phase 3
 
 4. **Post-Completion State**:
    - Individual puzzle workspace no longer exists for that player
@@ -298,12 +318,16 @@ Player Count → Grid Size → Total Fragments
    - Can be moved by any remaining player
    - Maintains correct solution but loses ownership
 
-**Movement Mechanics:**
-- **Movement Cooldown**: 1000ms enforced consistently across all fragment types
-- **Position Validation**: All moves validated against grid boundaries (0 to gridSize-1)
-- **Collision Resolution**: Fragments swap positions when movement causes collision
+**Movement Mechanics (Switches/Swaps):**
+- **Movement Type**: All movements are direct swaps between two fragments
+- **Movement Cooldown**: `constants.FragmentMoveCooldown` ms enforced consistently
+- **Terminology**: Also called fragment move requests, piece recommendations, or switch requests
+- **Position Validation**: All swaps validated against grid boundaries (0 to gridSize-1)
+- **Collision Resolution**: Fragments swap positions (this is the only movement type)
 - **Permission Checking**: Server validates ownership before allowing movement
-- **State Synchronization**: All movements immediately broadcast to all participants
+- **State Synchronization**: 
+  - Host: Immediate updates on all movements
+  - Players: Updates every `constants.GridUpdateInterval` seconds
 
 #### Fragment Visibility and State Management
 
@@ -314,10 +338,13 @@ Player Count → Grid Size → Total Fragments
 - **Personal View Consistency**: Each player sees identical central grid state
 
 **State Broadcasting:**
-- **Central Puzzle State**: Complete grid state sent to all players and host
+- **Central Puzzle State**: Complete grid state sent to all players every `constants.GridUpdateInterval` seconds
+- **Host Updates**: Receives immediate updates on all fragment movements and state changes
 - **Personal Puzzle State**: Individual view with guide highlighting (guide tokens only)
-- **Host Monitoring**: Comprehensive view including fragment ownership and movement history
-- **Real-Time Updates**: State changes broadcast immediately upon fragment movement
+- **Update Frequency**: 
+  - Players: Periodic updates every `constants.GridUpdateInterval` seconds (default 3s)
+  - Host: Immediate updates on all changes
+- **Phase Tracking**: Server implicitly tracks each player as Phase 2 (individual) or Phase 3 (collaborative)
 
 #### Strategic Collaboration System
 
@@ -342,29 +369,30 @@ Player Count → Grid Size → Total Fragments
 #### Token Effects in Puzzle Phase
 
 **Guide Token Implementation:**
-- **Personal Highlighting**: Shows highlighted area on player's personal puzzle view
-- **Progressive Precision**: Linear progression from large area to 2-position precision
-- **Own Fragment Only**: Guidance applies only to player's own fragment positioning
-- **Threshold Levels**: Multiple thresholds provide increasingly precise guidance
-- **Visual Integration**: Highlighting overlays on personal puzzle grid view
+- **Central Grid Highlighting**: Shows highlighted squares on central grid where player's fragment should go
+- **Progressive Precision**: Each threshold removes (gridSize²) / 7 possible positions
+- **Individual View**: Each player sees highlights only for their own fragment
+- **Always Active**: Highlights visible throughout puzzle phase after individual completion
+- **Public vs Private**: Fragment positions public on host screen, highlights private to player
 
 **Anchor Token Pre-Solving:**
-- **Individual Puzzle Pre-Solving**: Up to 12 of 16 pieces in individual puzzles pre-solved
-- **Central Grid Pre-Population**: Some fragments appear immediately as unassigned
-- **Reduced Workload**: Players solve fewer individual pieces before grid participation
+- **Individual Puzzle Only**: Pre-solves pieces in 16-piece individual puzzles
+- **Visual Lock**: Pre-solved pieces marked as locked and unmovable
+- **No Central Grid Effect**: Does NOT pre-place fragments on central grid
+- **Progressive Unlock**: 2 pieces pre-solved per threshold (max 12 pieces)
 - **Balanced Challenge**: Minimum 4 pieces always require manual solving
 
 **Chronos Token Time Extension:**
-- **Base Time**: 300 seconds for puzzle assembly phase
+- **Base Time**: `constants.PuzzleBaseTime` seconds for puzzle assembly phase
 - **Threshold Bonuses**: +20 seconds per threshold level achieved
 - **Total Time Calculation**: Base + (thresholds × 20) + difficulty modifiers
-- **Shared Benefit**: Extended time applies to entire team collaboration period
+- **Team Benefit**: Extended time applies to entire team collaboration period
 
 **Clarity Token Preview:**
-- **Complete Image Display**: Shows full assembled artwork before puzzle phase
-- **Duration Calculation**: Base 3 seconds + 1 second per threshold level
-- **Strategic Value**: Helps players understand spatial relationships and planning
-- **Timing**: Displayed immediately before puzzle phase begins
+- **Automatic Display**: Shows complete image automatically at puzzle phase start
+- **Duration Calculation**: `constants.ClarityBasePreviewTime` + (thresholds × 1) seconds
+- **Maximum Preview**: Up to 6 seconds additional preview time
+- **Strategic Value**: Helps players understand spatial relationships before solving
 
 #### Puzzle Completion Logic
 
@@ -393,10 +421,11 @@ Player Count → Grid Size → Total Fragments
 - **No Reconnection**: No reconnection permitted during puzzle assembly phase
 
 **Host Disconnection:**
-- **Game Pause**: Puzzle timer pauses until host reconnects
+- **During Setup/Resource Phases**: Game pauses until host reconnects
+- **During Puzzle Phase**: Game continues without interruption
 - **Player Notification**: All players notified of host disconnection
 - **State Preservation**: Complete game state maintained for host reconnection
-- **Automatic Recovery**: Game resumes when host reconnects to host endpoint
+- **Automatic Recovery**: Host can reconnect to resume monitoring
 
 ### Phase 3: Post-Game Analytics
 **Duration**: 60 seconds display time before reset
@@ -446,22 +475,23 @@ Individual Score =
 ## Difficulty Levels and Modifiers
 
 ### Difficulty Settings Impact
-**Easy Mode (0.7× / 1.3× / 0.8×):**
+**Easy Mode:**
 - Easier trivia question selection
-- 30% more time for all phases
-- 20% fewer tokens required for thresholds
-- 20% specialty question probability
+- Time multiplier: `constants.EasyTimeMultiplier`
+- Token threshold multiplier: `constants.EasyThresholdMultiplier`
+- Specialty question probability: `constants.EasySpecialtyProbability`
 
-**Medium Mode (1.0× / 1.0× / 1.0×):**
+**Medium Mode:**
 - Baseline difficulty for all aspects
-- Standard time limits and token requirements
-- 30% specialty question probability
+- Time multiplier: `constants.MediumTimeMultiplier`
+- Token threshold multiplier: `constants.MediumThresholdMultiplier`
+- Specialty question probability: `constants.MediumSpecialtyProbability`
 
-**Hard Mode (1.4× / 0.7× / 1.3×):**
+**Hard Mode:**
 - Harder trivia questions prioritized
-- 30% less time for all phases
-- 30% more tokens required for thresholds
-- 40% specialty question probability
+- Time multiplier: `constants.HardTimeMultiplier`
+- Token threshold multiplier: `constants.HardThresholdMultiplier`
+- Specialty question probability: `constants.HardSpecialtyProbability`
 
 ### Dynamic Scaling Applications
 - Trivia question difficulty selection
@@ -538,23 +568,28 @@ Individual Score =
 - Maximum Players: 64 (excluding host)
 
 **Phase Timing:**
-- Resource Gathering Rounds: `constants.ResourceGatheringRounds` (default: 5)
-- Resource Gathering Round Duration: `constants.ResourceGatheringRoundDuration` (default: 60 seconds)
-- One trivia question per round
-- Puzzle Base Time: 300 seconds
-- Post-Game Analytics: 60 seconds
+- Resource Gathering Rounds: `constants.ResourceGatheringRounds`
+- Resource Gathering Round Duration: `constants.ResourceGatheringRoundDuration` seconds
+- One trivia question per gathering round
+- Puzzle Base Time: `constants.PuzzleBaseTime` seconds
+- Post-Game Analytics: `constants.PostGameDuration` seconds
 
 **Token Economics:**
-- Base Tokens Per Answer: 10
-- Role Multiplier: 1.5x
-- Specialty Multiplier: 2.0x
-- Threshold Calculations: 5 tokens per threshold level
+- Base Tokens Per Answer: `constants.BaseTokensPerCorrectAnswer`
+- Role Multiplier: `constants.RoleResourceMultiplier`
+- Specialty Multiplier: `constants.SpecialtyPointMultiplier`
+- Anchor Token Threshold: `constants.AnchorTokenThreshold`
+- Chronos Token Threshold: `constants.ChronosTokenThreshold`
+- Guide Token Threshold: `constants.GuideTokenThreshold`
+- Clarity Token Threshold: `constants.ClarityTokenThreshold`
 
 **Game Balance:**
-- Fragment Movement Cooldown: 1000ms
-- Individual Puzzle Pieces: 16 per player
-- Answer Timeout: 30 seconds
-- Max Specialties Per Player: 2
+- Fragment Movement Cooldown: `constants.FragmentMoveCooldown` ms
+- Individual Puzzle Pieces: `constants.IndividualPuzzlePieces` per player
+- Answer Selection Time: 30 seconds (first half of round)
+- Grace Period Time: 30 seconds (second half of round)
+- Max Specialties Per Player: `constants.MaxSpecialtiesPerPlayer`
+- Grid Update Interval: `constants.GridUpdateInterval` seconds (default 3s)
 
 ### Deployment Configuration
 **Environment Variables:**

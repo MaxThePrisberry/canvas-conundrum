@@ -2,8 +2,8 @@ import React from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import './ConnectionOverlay.css';
 
-const ConnectionOverlay = ({ isConnected, isReconnecting }) => {
-  const showOverlay = !isConnected || isReconnecting;
+const ConnectionOverlay = ({ isConnected, isReconnecting, isConnecting = false }) => {
+  const showOverlay = !isConnected || isReconnecting || isConnecting;
 
   return (
     <AnimatePresence>
@@ -39,6 +39,31 @@ const ConnectionOverlay = ({ isConnected, isReconnecting }) => {
                   transition={{ delay: 0.4 }}
                 >
                   Please wait while we restore your connection
+                </motion.p>
+              </>
+            ) : isConnecting ? (
+              <>
+                <div className="reconnecting-spinner">
+                  <div className="spinner-dots">
+                    <span></span>
+                    <span></span>
+                    <span></span>
+                    <span></span>
+                  </div>
+                </div>
+                <motion.h2
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: 0.2 }}
+                >
+                  Connecting...
+                </motion.h2>
+                <motion.p
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  transition={{ delay: 0.4 }}
+                >
+                  Establishing connection to game server
                 </motion.p>
               </>
             ) : (

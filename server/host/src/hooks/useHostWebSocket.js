@@ -9,7 +9,36 @@ export const useHostWebSocket = () => {
   const reconnectAttempts = useRef(0);
   const hostCode = useRef(null);
   const messageQueue = useRef([]);
-  const isIntentionalClose = useRef(false); // Track intentional disconnections
+  const isIntentionalClose = useRef(false);
+
+  // Helper function to get message type for logging
+  const getMessageTypeForLogging = (message) => {
+    if (message.type) {
+      return message.type;
+    }
+    
+    // Infer type for logging purposes
+    if (message.isHost !== undefined) {
+      return 'available_roles';
+    }
+    if (message.phase !== undefined && message.connectedPlayers !== undefined) {
+      return 'host_update';
+    }
+    if (message.currentPlayers !== undefined) {
+      return 'game_lobby_status';
+    }
+    if (message.personalAnalytics || message.teamAnalytics) {
+      return 'game_analytics';
+    }
+    if (message.reconnectRequired !== undefined) {
+      return 'game_reset';
+    }
+    if (message.error !== undefined) {
+      return 'error';
+    }
+    
+    return 'unknown';
+  };
 
   const connect = useCallback((code) => {
     if (code) {
@@ -25,7 +54,7 @@ export const useHostWebSocket = () => {
       // Only close existing connection if we're creating a new one with a different code
       if (ws.current && (code || ws.current.readyState === WebSocket.CONNECTING)) {
         console.log('Closing existing WebSocket connection');
-        isIntentionalClose.current = true; // Mark as intentional
+        isIntentionalClose.current = true;
         ws.current.close(1000, 'Reconnecting with new parameters');
         ws.current = null;
         // Small delay to ensure clean closure
@@ -71,10 +100,11 @@ export const useHostWebSocket = () => {
     ws.current.onmessage = (event) => {
       try {
         const message = JSON.parse(event.data);
-        console.log('Host received message:', message.type, message);
+        const messageType = getMessageTypeForLogging(message);
+        console.log('Host received message:', messageType, message);
         setLastMessage(message);
       } catch (error) {
-        console.error('Error parsing host WebSocket message:', error);
+        console.error('Error parsing host WebSocket message:', error, 'Raw data:', event.data);
       }
     };
 
@@ -118,10 +148,15 @@ export const useHostWebSocket = () => {
   }, []);
 
   const sendMessage = useCallback((message) => {
-    console.log('Host sending message:', message.type);
+    const messageType = message.type || 'unknown';
+    console.log('Host sending message:', messageType, message);
     
     if (ws.current && ws.current.readyState === WebSocket.OPEN) {
-      ws.current.send(JSON.stringify(message));
+      try {
+        ws.current.send(JSON.stringify(message));
+      } catch (error) {
+        console.error('Error sending host message:', error, message);
+      }
     } else {
       console.warn('Host WebSocket not connected, queueing message');
       messageQueue.current.push(message);

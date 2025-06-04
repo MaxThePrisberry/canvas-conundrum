@@ -22,7 +22,7 @@ Canvas Conundrum uses a dedicated host model for reliable game management:
   - Cannot solve puzzle segments
   - Cannot select roles or specialties
   - Does not count toward minimum player requirements
-- **Reconnection**: Can reconnect using same endpoint + assigned player ID
+- **Reconnection**: Can reconnect using same endpoint + assigned token
 - **Management**: Only one host allowed per game instance
 
 **Host Benefits:**
@@ -33,7 +33,8 @@ Canvas Conundrum uses a dedicated host model for reliable game management:
 
 ### Player System
 **Player Connection & Role:**
-- **Endpoint**: `/ws`
+- **Frontend Endpoint**: `/`
+- **WebSocket Endpoint**: `/ws`
 - **Capabilities**:
   - Select character roles with resource bonuses
   - Choose trivia specialty categories
@@ -42,7 +43,7 @@ Canvas Conundrum uses a dedicated host model for reliable game management:
   - Collaborate on puzzle assembly through recommendations
   - Move fragments on shared puzzle grid
 - **Requirements**: Host must be connected for game to start
-- **Reconnection**: Can reconnect using assigned player ID
+- **Reconnection**: Can reconnect using assigned token
 
 ## Authentication System
 
@@ -61,7 +62,7 @@ All communication after initial connection requires authentication:
 ```
 
 **Validation Features:**
-- UUID v4 format validation for player IDs
+- UUID v4 format validation for tokens
 - Comprehensive input validation (8KB message limit)
 - UTF-8 text validation with length limits
 - Privilege verification (host vs player actions)
@@ -72,10 +73,10 @@ All communication after initial connection requires authentication:
 
 ### Role Selection (Players Only)
 **4 Available Roles:**
-1. **Art Enthusiast** → Clarity Token Bonus (`constants.RoleResourceMultiplier`)
-2. **Detective** → Guide Token Bonus (`constants.RoleResourceMultiplier`)
-3. **Tourist** → Chronos Token Bonus (`constants.RoleResourceMultiplier`)
-4. **Janitor** → Anchor Token Bonus (`constants.RoleResourceMultiplier`)
+1. **Art Enthusiast** → Clarity Token Bonus
+2. **Detective** → Guide Token Bonus
+3. **Tourist** → Chronos Token Bonus
+4. **Janitor** → Anchor Token Bonus
 
 **Role Mechanics:**
 - Each role provides bonus collection for specific token type
@@ -100,9 +101,9 @@ All communication after initial connection requires authentication:
 - Players are immediately marked as ready upon successful specialty selection
 
 **Specialty Question Frequency:**
-- Easy Mode: 20% chance per question
-- Medium Mode: 30% chance per question
-- Hard Mode: 40% chance per question
+- Easy Mode: `constants.SpecialtyQFreqEasy`
+- Medium Mode: `constants.SpecialtyQFreqMedium`
+- Hard Mode: `constants.SpecialtyQFreqHard`
 
 ## Game Phases
 
@@ -113,7 +114,9 @@ All communication after initial connection requires authentication:
 - Each gathering round = one trivia round = one trivia question sent to all players
 - First 30 seconds: Players select their answer from multiple choice options
 - Last 30 seconds: Answers locked in, marked right/wrong, grace period for location changes and team discussion
-**Location**: Multiple QR code stations in physical spaces
+
+**Location**: 4 QR code stations in physical spaces
+
 **Participants**: Players only (host monitors)
 
 #### Core Mechanics

@@ -144,7 +144,7 @@ All communication after initial connection requires authentication:
 **Answer Validation:**
 - Multiple-choice selection with clear right/wrong determination
 - No fuzzy matching or partial credit
-- Answer selection locked after first 30 seconds of round
+- Answer selection locked and submitted after first 30 seconds of round
 - Comprehensive logging for debugging and analysis
 
 #### Resource Token System
@@ -167,11 +167,10 @@ All communication after initial connection requires authentication:
 
 3. **Guide Tokens** → Fragment Placement Guidance on Central Grid
    - 6 thresholds: `teamGuideTokens / constants.GuideTokenThreshold`
-   - Effect: Highlights possible positions for player's fragment on central grid
+   - Effect: Highlights possible positions for player's fragment on central grid on player's personal device
    - Each threshold removes (gridSize × gridSize) / 7 highlighted squares
    - Progression from many possible positions to precise guidance
    - Individual hints visible only to each player for their own fragment
-   - Fragment positions publicly visible on host screen
    - Only applies after individual puzzle completion
 
 4. **Clarity Tokens** → Complete Image Preview
@@ -197,8 +196,10 @@ All communication after initial connection requires authentication:
 
 ### Phase 2: Puzzle Assembly
 **Location**: Large central room (gymnasium recommended)
+
 **Duration**: Base 300 seconds + chronos bonuses + difficulty modifiers
-**Participants**: Players solve and collaborate (host monitors)
+
+**Participants**: Players solve and collaborate (host monitors + shows big central screen)
 
 ## CRITICAL: Dual-Puzzle System Architecture
 
@@ -229,21 +230,20 @@ All communication after initial connection requires authentication:
 - **Host Blindness**: Host cannot monitor or view individual puzzle progress in real-time
 
 **Individual Puzzle Workflow:**
-1. **Phase Start**: Server sends initial grid configuration showing all empty squares
-2. **Segment Assignment**: Player receives `puzzle_phase_load` with their unique `segmentId` and all other segment IDs for preloading
-3. **Client Processing**: Client loads segment, splits into 16 pieces, shuffles, and applies pre-solving
+1. **Phase Start**: Server sends host initial grid configuration showing all empty squares
+2. **Segment Assignment**: Player receives `puzzle_phase_load` with their unique `segmentId` and total number of central puzzle segments
+3. **Client Processing**: Client loads their segment, splits into 16 pieces, shuffles, and applies pre-solving
 4. **Private Solving**: Player works on 16-piece puzzle completely invisibly (Phase 2)
-5. **Small Grid Display**: Client shows miniature grids of all other players' segments, updating as they complete
-6. **Completion Trigger**: Player completes arrangement and sends `segment_completed` message
-7. **Server Processing**: Server places completed segment in random unoccupied grid square
-8. **Phase Transition**: Player receives updated grid state and transitions to Phase 3 (collaborative solving)
-9. **Periodic Updates**: Players receive grid updates every `constants.GridUpdateInterval` seconds
+5. **Completion Trigger**: Player completes arrangement and sends `segment_completed` message
+6. **Server Processing**: Server places completed segment in random unoccupied grid square
+7. **Phase Transition**: Player receives updated grid state and transitions to Phase 3 (collaborative solving)
+8. **Periodic Updates**: Players receive grid updates every `constants.GridUpdateInterval` seconds
 
 ### System 2: Central Shared Puzzle Grid (Public & Collaborative)
 
 **Collaborative Space Characteristics:**
 - **Full Visibility**: All activities visible to all players and host in real-time
-- **Fragment-Based**: Operates with completed puzzle fragments, not individual pieces
+- **Fragment-Based**: Operates with completed puzzle fragments of central puzzle, not individual pieces of players' segments
 - **Post-Completion Only**: Only becomes populated after individual puzzle completions
 - **Shared Control**: Players can move fragments collaboratively within ownership rules
 - **Real-Time Updates**: All movements immediately broadcast to all participants

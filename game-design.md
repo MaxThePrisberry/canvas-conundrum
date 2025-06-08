@@ -316,11 +316,10 @@ Player Count → Grid Size → Total Fragments
    - Marked as `playerId: null` in system
 
 **Movement Mechanics (Switches/Swaps):**
-- **Movement Type**: All movements are direct swaps between two fragments
-- **Movement Cooldown**: `constants.FragmentMoveCooldown` ms enforced consistently
+- **Movement Cooldown**: `constants.FragmentMoveCooldown` ms enforced consistently for swapped pieces
 - **Terminology**: Also called fragment move requests, piece recommendations, or switch requests
 - **Position Validation**: All swaps validated against grid boundaries (0 to gridSize-1)
-- **Collision Resolution**: Fragments swap positions (this is the only movement type)
+- **Collision Resolution**: Fragments swap positions or one fragment moves to open grid space
 - **Permission Checking**: Server validates ownership before allowing movement
 - **State Synchronization**: 
   - Host: Immediate updates on all movements

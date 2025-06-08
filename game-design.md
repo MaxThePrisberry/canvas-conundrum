@@ -250,7 +250,7 @@ All communication after initial connection requires authentication:
 **Central Grid Mechanics:**
 - **Dynamic Scaling**: Grid size automatically scales with player count
 - **Fragment Creation**: Each completed individual puzzle becomes one movable fragment
-- **Position Assignment**: Fragments appear at predetermined grid coordinates
+- **Unassigned Fragments**: If more fragments in central puzzle than players, unassigned fragments appear gradually as players finish individual fragments
 - **Movement Rules**: Players can move their own fragments and unassigned fragments
 - **Collaboration Features**: Recommendation system for strategic coordination
 

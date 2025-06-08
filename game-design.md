@@ -66,7 +66,7 @@ All communication after initial connection requires authentication:
 - Comprehensive input validation (8KB message limit)
 - UTF-8 text validation with length limits
 - Privilege verification (host vs player actions)
-- Rate limiting on fragment movements (1000ms cooldown)
+- Rate limiting on fragment movements (`constants.FragmentMoveCooldown`)
 
 ## Player Setup and Character Selection
 
@@ -123,7 +123,7 @@ All communication after initial connection requires authentication:
 - Players physically move between 4 QR code stations
 - Each station corresponds to different token type
 - Location verification only required when changing stations
-- QR codes contain cryptographic hashes for validation
+- QR codes' text value is the hash sent to the server for validation
 - Station hashes stored as constants: `constants.HashAnchorStation`, `constants.HashChronosStation`, `constants.HashGuideStation`, `constants.HashClarityStation`
 
 **Trivia System:**
@@ -198,7 +198,7 @@ All communication after initial connection requires authentication:
 
 **Duration**: `constants.PuzzleBaseTime` seconds + chronos bonuses + difficulty modifiers
 
-**Participants**: Players solve and collaborate (host monitors + shows big central screen)
+**Participants**: Players solve and collaborate (host monitors + shows big central grid for phase 3)
 
 ## CRITICAL: Dual-Puzzle System Architecture
 
@@ -228,15 +228,6 @@ All communication after initial connection requires authentication:
 - **No Interaction**: Other players cannot see, help with, or influence individual puzzle progress
 - **Host Blindness**: Host cannot monitor or view individual puzzle progress in real-time
 
-**Individual Puzzle Workflow:**
-1. **Phase Start**: Server sends host initial grid configuration showing all empty squares
-2. **Segment Assignment**: Player receives `puzzle_phase_load` with their unique `segmentId`, total number of central puzzle segments, and number of pieces to pre-solve due to accrued anchor tokens.
-3. **Client Processing**: Client loads their segment, splits into 16 pieces, shuffles, and applies pre-solving
-4. **Private Solving**: Player works on 16-piece puzzle completely invisibly (Phase 2)
-5. **Completion Trigger**: Player completes arrangement and sends `segment_completed` message
-6. **Server Processing**: Server places completed segment in random unoccupied grid square of the master puzzle
-7. **Phase Transition**: Player receives updated grid state and transitions to Phase 3 (collaborative solving)
-8. **Periodic Updates**: Players receive grid updates every `constants.GridUpdateInterval` seconds
 
 ### System 2: Central Shared Puzzle Grid (Public & Collaborative)
 
@@ -496,6 +487,23 @@ Individual Score =
 - Token threshold calculations for all bonus effects
 - Specialty question probability adjustments
 
+## WebSocket Events Outline
+
+### Phase 0
+1. **
+### Phase 1
+
+
+**Individual Puzzle Workflow:**
+1. **Phase Start**: Server sends host initial grid configuration showing all empty squares
+2. **Segment Assignment**: Player receives `puzzle_phase_load` with their unique `segmentId`, total number of central puzzle segments, and number of pieces to pre-solve due to accrued anchor tokens.
+3. **Client Processing**: Client loads their segment, splits into 16 pieces, shuffles, and applies pre-solving
+4. **Private Solving**: Player works on 16-piece puzzle completely invisibly (Phase 2)
+5. **Completion Trigger**: Player completes arrangement and sends `segment_completed` message
+6. **Server Processing**: Server places completed segment in random unoccupied grid square of the master puzzle
+7. **Phase Transition**: Player receives updated grid state and transitions to Phase 3 (collaborative solving)
+8. **Periodic Updates**: Players receive grid updates every `constants.GridUpdateInterval` seconds
+
 ## Technical Architecture
 
 ### Backend Infrastructure
@@ -517,7 +525,6 @@ Individual Score =
 - **Analytics**: Persistent tracking across reconnections
 
 ### Security Features
-- **CORS Validation**: Configurable allowed origins
 - **Input Validation**: Size limits, format checking, UTF-8 validation
 - **Rate Limiting**: Fragment movement cooldown enforcement
 - **Privilege Checking**: Host vs player action authorization

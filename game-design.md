@@ -310,7 +310,7 @@ Player Count → Grid Size → Total Fragments
    - Clearly identified with player ID in fragment data
    - Maintains ownership until game completion or disconnection
 
-2. **Unassigned Fragments**: Fragments that were never assigned to a player or from a player disconnecting
+2. **Unassigned Fragments**: Fragments never assigned to a player or fragments assigned to a player that disconnects
    - Any player can move these fragments
    - No specific ownership restrictions
    - Marked as `playerId: null` in system

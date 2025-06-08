@@ -230,11 +230,11 @@ All communication after initial connection requires authentication:
 
 **Individual Puzzle Workflow:**
 1. **Phase Start**: Server sends host initial grid configuration showing all empty squares
-2. **Segment Assignment**: Player receives `puzzle_phase_load` with their unique `segmentId` and total number of central puzzle segments
+2. **Segment Assignment**: Player receives `puzzle_phase_load` with their unique `segmentId`, total number of central puzzle segments, and number of pieces to pre-solve due to accrued anchor tokens.
 3. **Client Processing**: Client loads their segment, splits into 16 pieces, shuffles, and applies pre-solving
 4. **Private Solving**: Player works on 16-piece puzzle completely invisibly (Phase 2)
 5. **Completion Trigger**: Player completes arrangement and sends `segment_completed` message
-6. **Server Processing**: Server places completed segment in random unoccupied grid square
+6. **Server Processing**: Server places completed segment in random unoccupied grid square of the master puzzle
 7. **Phase Transition**: Player receives updated grid state and transitions to Phase 3 (collaborative solving)
 8. **Periodic Updates**: Players receive grid updates every `constants.GridUpdateInterval` seconds
 
@@ -245,12 +245,12 @@ All communication after initial connection requires authentication:
 - **Fragment-Based**: Operates with completed puzzle fragments of central puzzle, not individual pieces of players' segments
 - **Post-Completion Only**: Only becomes populated after individual puzzle completions
 - **Shared Control**: Players can move fragments collaboratively within ownership rules
-- **Real-Time Updates**: All movements immediately broadcast to all participants
+- **Real-Time Updates**: All movements are broadcast to all participants periodically
 
 **Central Grid Mechanics:**
 - **Dynamic Scaling**: Grid size automatically scales with player count
 - **Fragment Creation**: Each completed individual puzzle becomes one movable fragment
-- **Position Assignment**: Fragments appear at predetermined grid coordinates
+- **Position Assignment**: Fragments appear at random unoccupied grid spaces when the player assigned to the segment completes their individual puzzle
 - **Movement Rules**: Players can move their own fragments and unassigned fragments
 - **Collaboration Features**: Recommendation system for strategic coordination
 
@@ -299,8 +299,8 @@ Player Count → Grid Size → Total Fragments
 **Grid Properties:**
 - Always maintains perfect square shape
 - Each player's completed individual puzzle becomes exactly one fragment
-- Grid positions calculated deterministically
 - Supports position swapping between any fragments
+- As segments enter play they are placed on random open tiles of the grid
 
 #### Fragment Ownership and Movement System
 
@@ -310,15 +310,10 @@ Player Count → Grid Size → Total Fragments
    - Clearly identified with player ID in fragment data
    - Maintains ownership until game completion or disconnection
 
-2. **Unassigned Fragments**: Pre-solved by anchor tokens or from disconnected players
+2. **Unassigned Fragments**: Fragments that were never assigned to a player or from a player disconnecting
    - Any player can move these fragments
    - No specific ownership restrictions
    - Marked as `playerId: null` in system
-
-3. **Disconnected Player Fragments**: Auto-solved and become unassigned
-   - Immediately converted to unassigned status
-   - Can be moved by any remaining player
-   - Maintains correct solution but loses ownership
 
 **Movement Mechanics (Switches/Swaps):**
 - **Movement Type**: All movements are direct swaps between two fragments
@@ -342,7 +337,7 @@ Player Count → Grid Size → Total Fragments
 **State Broadcasting:**
 - **Central Puzzle State**: Complete grid state sent to all players every `constants.GridUpdateInterval` seconds
 - **Host Updates**: Receives immediate updates on all fragment movements and state changes
-- **Personal Puzzle State**: Individual view with guide highlighting (guide tokens only)
+- **Personal Puzzle State**: Individual view with guide highlighting (from guide tokens)
 - **Update Frequency**: 
   - Players: Periodic updates every `constants.GridUpdateInterval` seconds (default 3s)
   - Host: Immediate updates on all changes
@@ -362,8 +357,8 @@ Player Count → Grid Size → Total Fragments
 ```
 
 **Recommendation Features:**
-- **Strategic Communication**: Players can suggest optimal fragment placements
-- **Accept/Reject Mechanism**: Target player chooses whether to follow suggestions
+- **Strategic Communication**: Players can suggest optimal fragment switches between a segment they control (their own or unassigned) and any other fragment
+- **Accept/Reject Mechanism**: If the other fragment is controlled by another player (not assigned) the other player chooses whether to allow/reject the suggested switch
 - **Analytics Tracking**: All recommendations tracked for collaboration scoring
 - **No Auto-Execution**: Recommendations require explicit acceptance to take effect
 - **Verbal Coordination**: Players encouraged to communicate during collaboration

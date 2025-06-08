@@ -358,7 +358,7 @@ Player Count → Grid Size → Total Fragments
 
 **Recommendation Features:**
 - **Strategic Communication**: Players can suggest optimal fragment switches between a segment they control (their own or unassigned) and any other fragment
-- **Accept/Reject Mechanism**: If the other fragment is controlled by another player (not assigned) the other player chooses whether to allow/reject the suggested switch
+- **Accept/Reject Mechanism**: If the other fragment is controlled by another player (not unassigned) the other player chooses whether to allow/reject the suggested switch
 - **Analytics Tracking**: All recommendations tracked for collaboration scoring
 - **No Auto-Execution**: Recommendations require explicit acceptance to take effect
 - **Verbal Coordination**: Players encouraged to communicate during collaboration
@@ -369,7 +369,7 @@ Player Count → Grid Size → Total Fragments
 - **Central Grid Highlighting**: Shows highlighted squares on central grid where player's fragment should go
 - **Progressive Precision**: Each threshold removes (gridSize²) / 7 possible positions
 - **Individual View**: Each player sees highlights only for their own fragment
-- **Always Active**: Highlights visible throughout puzzle phase after individual completion
+- **Always Active**: Highlights visible throughout puzzle phase after individual completion (phase 3)
 - **Public vs Private**: Fragment positions public on host screen, highlights private to player
 
 **Anchor Token Pre-Solving:**
@@ -409,7 +409,8 @@ Player Count → Grid Size → Total Fragments
 - **Auto-Solve Trigger**: Disconnected player's individual puzzle immediately auto-solved
 - **Fragment Creation**: Auto-solved puzzle converts to unassigned fragment on central grid
 - **Random Placement**: Fragment placed at random grid position to maintain puzzle integrity
-- **Ownership Transfer**: Fragment becomes movable by any remaining player
+- **Ownership Transfer**: Fragment becomes movable by any remaining player (becomes an unassigned fragment)
+- **No Reconnection**: No reconnection permitted during puzzle assembly phase
 
 **Player Disconnection During Collaboration:**
 - **Fragment Status Change**: Player's fragment becomes unassigned immediately
@@ -425,7 +426,7 @@ Player Count → Grid Size → Total Fragments
 - **Automatic Recovery**: Host can reconnect to resume monitoring
 
 ### Phase 3: Post-Game Analytics
-**Duration**: 60 seconds display time before reset
+**Duration**: Game result and all analytics display until the host manually resets the game
 **Comprehensive Performance Tracking:**
 
 #### Individual Player Analytics
@@ -587,17 +588,6 @@ Individual Score =
 - Grace Period Time: `constants.TriviaGraceTime`
 - Max Specialties Per Player: `constants.MaxSpecialtiesPerPlayer`
 - Grid Update Interval: `constants.GridUpdateInterval` seconds (default 3s)
-
-### Deployment Configuration
-**Environment Variables:**
-- `ALLOWED_ORIGINS`: CORS configuration
-- `ADMIN_TOKEN`: Administrative endpoint access
-
-**Command Line Options:**
-- `-env`: Environment (development/staging/production)
-- `-port`: Server port (default: 8080)
-- `-cert/-key`: HTTPS certificate files
-- `-origins`: Allowed CORS origins override
 
 ---
 

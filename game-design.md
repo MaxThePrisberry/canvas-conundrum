@@ -196,7 +196,7 @@ All communication after initial connection requires authentication:
 ### Phase 2: Puzzle Assembly
 **Location**: Large central room (gymnasium recommended)
 
-**Duration**: Base 300 seconds + chronos bonuses + difficulty modifiers
+**Duration**: `constants.PuzzleBaseTime` seconds + chronos bonuses + difficulty modifiers
 
 **Participants**: Players solve and collaborate (host monitors + shows big central screen)
 

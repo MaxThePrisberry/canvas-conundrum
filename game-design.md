@@ -111,8 +111,8 @@ All communication after initial connection requires authentication:
 - Number of rounds: `constants.ResourceGatheringRounds`
 - Round duration: `constants.ResourceGatheringRoundDuration` seconds per round
 - Each gathering round = one trivia round = one trivia question sent to all players
-- First half of round: Players select their answer from multiple choice options
-- Last half of round: Answers locked in, marked right/wrong, grace period for location changes and team discussion
+- First part of round: Players select their answer from multiple choice options for `constants.TriviaAnswerTime` seconds
+- Second part of round: Answers locked in, marked right/wrong, grace period of `constants.TriviaGraceTime` seconds for location changes and team discussion
 
 **Location**: 4 QR code stations in physical spaces
 
@@ -143,7 +143,7 @@ All communication after initial connection requires authentication:
 **Answer Validation:**
 - Multiple-choice selection with clear right/wrong determination
 - No fuzzy matching or partial credit
-- Answer selection locked and marked correct or incorrect after first 30 seconds of round
+- Answer selection locked and marked correct or incorrect after `constants.TriviaAnswerTime` seconds
 - Comprehensive logging for debugging and analysis
 
 #### Resource Token System
@@ -196,7 +196,7 @@ All communication after initial connection requires authentication:
 ### Phase 2: Puzzle Assembly
 **Location**: Large central room (gymnasium recommended)
 
-**Duration**: Base 300 seconds + chronos bonuses + difficulty modifiers
+**Duration**: `constants.PuzzleBaseTime` seconds + chronos bonuses + difficulty modifiers
 
 **Participants**: Players solve and collaborate (host monitors + shows big central screen)
 
@@ -250,7 +250,7 @@ All communication after initial connection requires authentication:
 **Central Grid Mechanics:**
 - **Dynamic Scaling**: Grid size automatically scales with player count
 - **Fragment Creation**: Each completed individual puzzle becomes one movable fragment
-- **Position Assignment**: Fragments appear at random unoccupied grid spaces when the player assigned to the segment completes their individual puzzle
+- **Unassigned Fragments**: If more fragments in central puzzle than players, unassigned fragments appear gradually as players finish individual fragments
 - **Movement Rules**: Players can move their own fragments and unassigned fragments
 - **Collaboration Features**: Recommendation system for strategic coordination
 
@@ -583,8 +583,8 @@ Individual Score =
 **Game Balance:**
 - Fragment Movement Cooldown: `constants.FragmentMoveCooldown` ms
 - Individual Puzzle Pieces: `constants.IndividualPuzzlePieces` per player
-- Answer Selection Time: 30 seconds (first half of round)
-- Grace Period Time: 30 seconds (second half of round)
+- Answer Selection Time: `constants.TriviaAnswerTime`
+- Grace Period Time: `constants.TriviaGraceTime`
 - Max Specialties Per Player: `constants.MaxSpecialtiesPerPlayer`
 - Grid Update Interval: `constants.GridUpdateInterval` seconds (default 3s)
 

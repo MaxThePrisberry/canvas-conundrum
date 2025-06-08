@@ -40,7 +40,7 @@ Canvas Conundrum uses a dedicated host model for reliable game management:
   - Choose trivia specialty categories
   - Answer trivia questions during resource gathering
   - Solve individual puzzle segments privately
-  - Collaborate on puzzle assembly through recommendations
+  - Collaborate on master puzzle assembly through recommendations
   - Move fragments on shared puzzle grid
 - **Requirements**: Host must be connected for game to start
 - **Reconnection**: Can reconnect using assigned token
@@ -67,7 +67,6 @@ All communication after initial connection requires authentication:
 - UTF-8 text validation with length limits
 - Privilege verification (host vs player actions)
 - Rate limiting on fragment movements (1000ms cooldown)
-- CORS origin validation for security
 
 ## Player Setup and Character Selection
 
@@ -81,7 +80,7 @@ All communication after initial connection requires authentication:
 **Role Mechanics:**
 - Each role provides bonus collection for specific token type
 - Bonus multiplier: `constants.RoleResourceMultiplier`
-- Even distribution enforced across players
+- Even distribution of roles enforced across players
 - Host does not select a role
 
 **Character Distribution Algorithm:**
@@ -94,7 +93,7 @@ All communication after initial connection requires authentication:
 - General Knowledge, Geography, History, Music, Science, Video Games
 
 **Specialty Mechanics:**
-- Players select 1-2 categories as specialties
+- Players select 1 category as their specialty
 - Specialty questions are harder difficulty (+1 level)
 - Same time limits as regular questions (no extension)
 - Specialty bonus: `constants.SpecialtyPointMultiplier`
@@ -112,8 +111,8 @@ All communication after initial connection requires authentication:
 - Number of rounds: `constants.ResourceGatheringRounds`
 - Round duration: `constants.ResourceGatheringRoundDuration` seconds per round
 - Each gathering round = one trivia round = one trivia question sent to all players
-- First 30 seconds: Players select their answer from multiple choice options
-- Last 30 seconds: Answers locked in, marked right/wrong, grace period for location changes and team discussion
+- First half of round: Players select their answer from multiple choice options
+- Last half of round: Answers locked in, marked right/wrong, grace period for location changes and team discussion
 
 **Location**: 4 QR code stations in physical spaces
 
@@ -144,7 +143,7 @@ All communication after initial connection requires authentication:
 **Answer Validation:**
 - Multiple-choice selection with clear right/wrong determination
 - No fuzzy matching or partial credit
-- Answer selection locked and submitted after first 30 seconds of round
+- Answer selection locked and marked correct or incorrect after first 30 seconds of round
 - Comprehensive logging for debugging and analysis
 
 #### Resource Token System

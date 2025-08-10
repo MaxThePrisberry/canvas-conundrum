@@ -1,4 +1,4 @@
-# Canvas Conundrum - Comprehensive Game Design
+# Canvas Conundrum - Game Design Document
 
 ## Game Concept
 A collaborative puzzle-solving game where players recover a stolen masterpiece by gathering resources, answering trivia, and assembling a fragmented artwork. The game uses a dedicated host system for reliable game management and real-time coordination.
@@ -25,12 +25,6 @@ Canvas Conundrum uses a dedicated host model for reliable game management:
 - **Reconnection**: Can reconnect using same endpoint + assigned token
 - **Management**: Only one host allowed per game instance
 
-**Host Benefits:**
-- Reliable game progression without dependency on player actions
-- Comprehensive game monitoring and control
-- Detailed real-time analytics for educational/team-building scenarios
-- Ability to pace game according to group needs
-
 ### Player System
 **Player Connection & Role:**
 - **Frontend Endpoint**: `/`
@@ -48,16 +42,18 @@ Canvas Conundrum uses a dedicated host model for reliable game management:
 ## Authentication System
 
 ### Security Model
-All communication after initial connection requires authentication:
+All communication after initial connection requires authentication using the standardized message format:
 
 ```json
 {
+  "event": "EVENT_NAME",
   "auth": {
     "token": "uuid-generated-by-server"
   },
   "payload": {
     // Event-specific data
-  }
+  },
+  "timestamp": "2025-01-XX:XX:XX.XXXZ"
 }
 ```
 
@@ -93,7 +89,7 @@ All communication after initial connection requires authentication:
 - General Knowledge, Geography, History, Music, Science, Video Games
 
 **Specialty Mechanics:**
-- Players select 1 category as their specialty
+- Players select up to 2 categories as their specialty
 - Specialty questions are harder difficulty (+1 level)
 - Same time limits as regular questions (no extension)
 - Specialty bonus: `constants.SpecialtyPointMultiplier`
@@ -105,6 +101,9 @@ All communication after initial connection requires authentication:
 - Hard Mode: `constants.SpecialtyQFreqHard`
 
 ## Game Phases
+
+### Phase 0: Setup and Connection
+Players connect, select roles and specialties, host monitors readiness and starts the game when minimum players are ready.
 
 ### Phase 1: Resource Gathering
 **Duration**: Configurable rounds and duration per round
@@ -198,13 +197,13 @@ All communication after initial connection requires authentication:
 
 **Duration**: `constants.PuzzleBaseTime` seconds + chronos bonuses + difficulty modifiers
 
-**Participants**: Players solve and collaborate (host monitors + shows big central grid for phase 3)
+**Participants**: Players solve and collaborate (host monitors + shows big central grid for phase 2B)
 
 ## CRITICAL: Dual-Puzzle System Architecture
 
 **FUNDAMENTAL DESIGN PRINCIPLE**: Canvas Conundrum operates with two completely independent puzzle systems that remain entirely separate until a specific transition moment. Understanding this separation is crucial for proper implementation.
 
-### System 1: Individual Player Puzzles (Private & Invisible)
+### System 1: Individual Player Puzzles (Private & Invisible) - Phase 2A
 
 **Complete Isolation Characteristics:**
 - **Zero Visibility**: Individual puzzle work is completely invisible to all other players, the host, and any shared displays
@@ -228,8 +227,7 @@ All communication after initial connection requires authentication:
 - **No Interaction**: Other players cannot see, help with, or influence individual puzzle progress
 - **Host Blindness**: Host cannot monitor or view individual puzzle progress in real-time
 
-
-### System 2: Central Shared Puzzle Grid (Public & Collaborative)
+### System 2: Central Shared Puzzle Grid (Public & Collaborative) - Phase 2B
 
 **Collaborative Space Characteristics:**
 - **Full Visibility**: All activities visible to all players and host in real-time
@@ -259,7 +257,7 @@ This is the single most important transition in the entire game system:
 
 2. **Completion Trigger**:
    - Player arranges final pieces of their 16-piece puzzle
-   - Player sends `segment_completed` message with `segmentId` and timestamp
+   - Player sends `PUZZLE_TO_SERVER_SEGMENT_COMPLETED` message with `segmentId` and timestamp
    - Server validates completion and assigns grid position
 
 3. **Instant Transformation**:
@@ -267,7 +265,7 @@ This is the single most important transition in the entire game system:
    - Server places fragment at random unoccupied position on central shared grid
    - Fragment becomes visible to all players and host immediately
    - Fragment becomes movable according to ownership rules
-   - Player transitions from Phase 2 to Phase 3
+   - Player transitions from Phase 2A to Phase 2B
 
 4. **Post-Completion State**:
    - Individual puzzle workspace no longer exists for that player
@@ -331,22 +329,11 @@ Player Count → Grid Size → Total Fragments
 - **Update Frequency**: 
   - Players: Periodic updates every `constants.GridUpdateInterval` seconds (default 3s)
   - Host: Immediate updates on all changes
-- **Phase Tracking**: Server implicitly tracks each player as Phase 2 (individual) or Phase 3 (collaborative)
+- **Phase Tracking**: Server implicitly tracks each player as Phase 2A (individual) or Phase 2B (collaborative)
 
 #### Strategic Collaboration System
 
 **Piece Recommendation Protocol:**
-```json
-{
-  "toPlayerId": "target-uuid",
-  "fromFragmentId": "sender-fragment",
-  "toFragmentId": "target-fragment",
-  "suggestedFromPos": {"x": 1, "y": 2},
-  "suggestedToPos": {"x": 3, "y": 0}
-}
-```
-
-**Recommendation Features:**
 - **Strategic Communication**: Players can suggest optimal fragment switches between a segment they control (their own or unassigned) and any other fragment
 - **Accept/Reject Mechanism**: If the other fragment is controlled by another player (not unassigned) the other player chooses whether to allow/reject the suggested switch
 - **Analytics Tracking**: All recommendations tracked for collaboration scoring
@@ -359,7 +346,7 @@ Player Count → Grid Size → Total Fragments
 - **Central Grid Highlighting**: Shows highlighted squares on central grid where player's fragment should go
 - **Progressive Precision**: Each threshold removes (gridSize²) / 7 possible positions
 - **Individual View**: Each player sees highlights only for their own fragment
-- **Always Active**: Highlights visible throughout puzzle phase after individual completion (phase 3)
+- **Always Active**: Highlights visible throughout puzzle phase after individual completion (phase 2B)
 - **Public vs Private**: Fragment positions public on host screen, highlights private to player
 
 **Anchor Token Pre-Solving:**
@@ -420,27 +407,9 @@ Player Count → Grid Size → Total Fragments
 **Comprehensive Performance Tracking:**
 
 #### Individual Player Analytics
-```json
-{
-  "tokenCollection": {"anchor": 12, "chronos": 8, "guide": 15, "clarity": 10},
-  "triviaPerformance": {
-    "totalQuestions": 20,
-    "correctAnswers": 16,
-    "accuracyByCategory": {"general": 0.85, "science": 0.90},
-    "specialtyBonus": 40,
-    "specialtyCorrect": 4,
-    "specialtyTotal": 5
-  },
-  "puzzleSolvingMetrics": {
-    "fragmentSolveTime": 180,
-    "movesContributed": 8,
-    "successfulMoves": 7,
-    "recommendationsSent": 3,
-    "recommendationsReceived": 2,
-    "recommendationsAccepted": 1
-  }
-}
-```
+- **Token Collection**: Total tokens by type, role bonuses earned
+- **Trivia Performance**: Accuracy by category, specialty bonus points
+- **Puzzle Solving Metrics**: Individual solve time, fragment moves, recommendations sent/received/accepted
 
 #### Team Performance Metrics
 - **Overall Performance**: Completion rate, total time, team score
@@ -487,165 +456,6 @@ Individual Score =
 - Token threshold calculations for all bonus effects
 - Specialty question probability adjustments
 
-# WebSocket Events Outline
-
-## Phase 0: Connection and Setup
-
-### Initial Connection
-
-**Host → Server: WebSocket connection to `/ws/host/{uuid}`**
-
-**Server → Host: `host_connection_confirmed`**
-- Contains: Host authentication token
-
-**Player → Server: WebSocket connection to `/ws`**
-
-**Server → Player: `available_roles`**
-- Contains: Player authentication token, list of available roles (Art Enthusiast/Detective/Tourist/Janitor), list of trivia categories for specialty selection
-
-### Role and Specialty Selection
-
-**Player → Server: `player_setup`**
-- Contains: Selected role, selected trivia specialty category
-- Note: Sent after player completes specialty selection, automatically marks player as ready
-
-**Server → All Players: `player_update`**
-- Contains: Current number of players
-
-**Server → Host: `host_update`**
-- Contains: Detailed player roster with IDs, roles, specialties, connection status, ready states, game start eligibility
-- Note: Sent on any change to any player's status
-
-### Game Start
-
-**Host → Server: `host_start_game`**
-- Contains: Game start command with authentication
-
-**Server → All Players: `resource_phase_start`**
-- Contains: Station location hashes (Anchor/Chronos/Guide/Clarity), phase duration, number of rounds, difficulty settings, team token thresholds
-
-**Server → Host: `host_update`**
-- Contains: Game phase transition confirmation, initial team state, monitoring dashboard data
-
-## Phase 1: Resource Gathering
-
-### For Each Resource Gathering Round
-
-#### Location Verification (Optional - only when changing stations)
-
-**Player → Server: `resource_location_verified`**
-- Contains: Station hash value from QR code scan
-
-#### Trivia Question Delivery (Once per round)
-
-**Server → Individual Player: `trivia_question`**
-- Contains: Question text (unique per player), multiple choice options, category, difficulty level, answer deadline timestamp
-- Note: Each player at a resource location receives their own question
-
-#### Answer Submission
-
-**Player → Server: `trivia_answer`**
-- Contains: Selected option from multiple choice
-- Note: Sent automatically at answer deadline timestamp with locked-in selection
-
-**Server → Individual Player: `trivia_result`**
-- Contains: Correct/incorrect status, tokens earned
-
-#### Round Progress Updates
-
-**Server → All Players: `team_progress_update`**
-- Contains: Team token totals by type, rounds remaining, collective trivia accuracy
-
-**Server → Host: `host_update`**
-- Contains: Individual player performance, station distribution, answer patterns, token collection rates
-
-## Phase 2: Puzzle Assembly
-
-### Phase Initialization
-
-**Server → All Players: `puzzle_phase_load`**
-- Contains: Assigned segment ID, clarity token preview duration, guide token highlight square count, central puzzle dimensions, anchor token pre-solved piece count
-- Note: Signals players to return to host location while client prepares puzzle
-
-**Server → Host: `puzzle_phase_load`**
-- Contains: Complete puzzle metadata, all player-segment assignments, initial empty grid state, monitoring controls
-
-#### Puzzle Timer Start
-
-**Host → Server: `host_start_puzzle`**
-- Contains: Puzzle start command with authentication
-
-**Server → All Players: `puzzle_phase_start`**
-- Contains: Start timestamp, total time available (base + chronos bonuses)
-
-### Individual Puzzle Solving
-
-**Player → Server: `segment_completed`**
-- Contains: Segment ID, completion timestamp
-
-**Server → Individual Player: `personal_puzzle_state`**
-- Contains: Current central grid state, fragment ownership map, player's fragment position
-- Note: Acts as acknowledgment of segment completion and transition to Phase 3
-
-## Phase 3: Collaborative Fragment Movement
-
-### Player-Initiated Movement
-
-**Player → Server: `fragment_move_request`**
-- Contains: Fragment ID (own or unassigned), target grid position
-
-**Server → Host: `host_update`**
-- Contains: Current complete grid state
-
-### Periodic Updates
-
-**Server → All Players: `central_puzzle_state`**
-- Contains: Complete grid arrangement, fragment ownership mapping
-
-**Server → Host: `host_update`**
-- Contains: Complete grid state with detailed monitoring information
-
-### Strategic Collaboration
-
-**Server → Target Player: `piece_recommendation`**
-- Contains: Fragment move grid coordinates (from/to positions), recommendation ID
-
-**Target Player → Server: `piece_recommendation_response`**
-- Contains: Recommendation ID, acceptance decision (accept/reject)
-
-**Server → Target Player: `recommendation_removed`**
-- Contains: Recommendation ID
-- Note: Sent when a recommendation is no longer valid due to grid state changes
-
-### Puzzle Completion
-
-**Server → All Participants: `puzzle_completed`**
-- Contains: Completion time, success indicator
-
-**Server → All Participants: `puzzle_timeout`**
-- Contains: Final grid state, completion percentage
-
-## Phase 4: Post-Game Analytics
-
-### Analytics Distribution
-
-**Server → Individual Player: `game_analytics`**
-- Contains: Personal performance metrics (tokens collected by type, trivia accuracy by category, specialty performance, puzzle solve time, successful moves, recommendations sent/received/accepted), team placement, individual score breakdown
-
-**Server → All Players: `game_analytics`**
-- Contains: Team summary (total tokens by type, threshold achievements, collaborative efficiency), leaderboard rankings, notable achievements
-
-**Server → Host: `host_analytics`**
-- Contains: Complete player-by-player breakdown, team performance analysis, game duration metrics, collaboration heatmap, recommendation network, category performance distribution
-
-### Game Reset
-
-**Host → Server: `game_reset`**
-- Contains: Reset command with authentication
-
-**Server → All Participants: `game_reset`**
-- Contains: Session termination notice, reconnection instructions for new game
-
 ## Technical Architecture
 
 ### Backend Infrastructure
@@ -656,7 +466,7 @@ Individual Score =
 
 ### Communication Protocol
 - **WebSocket**: Full-duplex real-time communication
-- **Authentication**: UUID-based session management
+- **Authentication**: UUID-based session management with structured event format
 - **Validation**: Comprehensive input sanitization
 - **Error Handling**: Detailed error responses with context
 
@@ -762,3 +572,15 @@ Individual Score =
 4. **Collaborative Focus**: Central grid emphasizes teamwork and strategic coordination
 
 This dual-system architecture is fundamental to Canvas Conundrum's unique gameplay experience, ensuring both individual contribution and collaborative problem-solving while maintaining clear separation between private work and shared coordination.
+
+## WebSocket Event Reference
+
+For complete technical specifications of all WebSocket events, message formats, and communication protocols, refer to the separate **websocket-events.md** document. That document contains:
+
+- Exact JSON message structures for all 59 game events
+- Authentication and message formatting requirements
+- Detailed payload specifications for each phase
+- Error handling and system event protocols
+- Comprehensive event flow documentation
+
+The websocket-events.md serves as the authoritative technical implementation guide, while this document focuses on game design, mechanics, and conceptual architecture.

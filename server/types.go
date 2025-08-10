@@ -95,6 +95,7 @@ type Player struct {
 	Ready           bool
 	LastSeen        time.Time
 	mu              sync.RWMutex
+	writeMu         sync.Mutex // Protects WebSocket writes
 }
 
 // Role information

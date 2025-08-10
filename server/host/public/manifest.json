@@ -1,0 +1,133 @@
+{
+  "short_name": "Canvas Host",
+  "name": "Canvas Conundrum - Host Dashboard",
+  "description": "Host control center for managing Canvas Conundrum collaborative puzzle games",
+  "icons": [
+    {
+      "src": "favicon.ico",
+      "sizes": "64x64 32x32 24x24 16x16",
+      "type": "image/x-icon"
+    },
+    {
+      "src": "logo192.png",
+      "type": "image/png",
+      "sizes": "192x192",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "logo512.png",
+      "type": "image/png",
+      "sizes": "512x512",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "host-icon-192.png",
+      "type": "image/png", 
+      "sizes": "192x192",
+      "purpose": "any"
+    },
+    {
+      "src": "host-icon-512.png",
+      "type": "image/png",
+      "sizes": "512x512", 
+      "purpose": "any"
+    }
+  ],
+  "start_url": "/host",
+  "display": "standalone",
+  "theme_color": "#87CEEB",
+  "background_color": "#FFFFFF",
+  "orientation": "any",
+  "scope": "/host/",
+  "categories": ["games", "entertainment", "utilities", "productivity"],
+  "lang": "en",
+  "dir": "ltr",
+  "prefer_related_applications": false,
+  "screenshots": [
+    {
+      "src": "host-screenshot-desktop.png",
+      "type": "image/png",
+      "sizes": "1920x1080",
+      "form_factor": "wide",
+      "label": "Host Dashboard - Desktop View"
+    },
+    {
+      "src": "host-screenshot-tablet.png", 
+      "type": "image/png",
+      "sizes": "1024x768",
+      "form_factor": "narrow",
+      "label": "Host Dashboard - Tablet View"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Connect as Host",
+      "short_name": "Connect",
+      "description": "Quickly connect to a game as host",
+      "url": "/host",
+      "icons": [
+        {
+          "src": "shortcut-connect.png",
+          "sizes": "96x96"
+        }
+      ]
+    },
+    {
+      "name": "Game Management",
+      "short_name": "Manage",
+      "description": "Access game management tools",
+      "url": "/host/dashboard",
+      "icons": [
+        {
+          "src": "shortcut-manage.png", 
+          "sizes": "96x96"
+        }
+      ]
+    }
+  ],
+  "related_applications": [
+    {
+      "platform": "web",
+      "url": "https://canvas-conundrum.com/player",
+      "id": "canvas-conundrum-player"
+    }
+  ],
+  "launch_handler": {
+    "client_mode": "focus-existing"
+  },
+  "handle_links": "preferred",
+  "edge_side_panel": {
+    "preferred_width": 400
+  },
+  "protocol_handlers": [
+    {
+      "protocol": "web+canvashost",
+      "url": "/host?code=%s"
+    }
+  ],
+  "file_handlers": [
+    {
+      "action": "/host/import",
+      "accept": {
+        "application/json": [".json"],
+        "text/csv": [".csv"]
+      }
+    }
+  ],
+  "share_target": {
+    "action": "/host/share",
+    "method": "POST",
+    "enctype": "multipart/form-data",
+    "params": {
+      "title": "title",
+      "text": "text",
+      "url": "url",
+      "files": [
+        {
+          "name": "analytics",
+          "accept": ["application/json", "text/csv"]
+        }
+      ]
+    }
+  }
+}

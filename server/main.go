@@ -193,6 +193,14 @@ func main() {
 		}))
 	}
 
+	// Static file serving for client frontend (players)
+	clientFS := http.FileServer(http.Dir("./client/public/"))
+	mux.Handle("/", clientFS)
+
+	// Static file serving for host frontend
+	hostFS := http.FileServer(http.Dir("./host/public/"))
+	mux.Handle("/host/", http.StripPrefix("/host/", hostFS))
+
 	// Apply middleware chain
 	// The order is: loggingMiddleware(securityHeadersMiddleware(corsMiddleware(mux)))
 	// This means loggingMiddleware is the outermost, then security, then cors, then the mux.
@@ -299,9 +307,11 @@ func initializeCORS() {
 			corsAllowedOrigins["http://localhost:3000"] = true
 			corsAllowedOrigins["http://localhost:5173"] = true
 			corsAllowedOrigins["http://localhost:8080"] = true
+			corsAllowedOrigins["http://localhost:3001"] = true
 			corsAllowedOrigins["http://127.0.0.1:3000"] = true
 			corsAllowedOrigins["http://127.0.0.1:5173"] = true
 			corsAllowedOrigins["http://127.0.0.1:8080"] = true
+			corsAllowedOrigins["http://127.0.0.1:3001"] = true
 			log.Println("CORS: Using development origins")
 		} else {
 			log.Fatal("CORS: No allowed origins specified for production environment. Use -origins flag or ALLOWED_ORIGINS env var")

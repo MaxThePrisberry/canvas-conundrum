@@ -31,7 +31,7 @@ Canvas Conundrum uses a dedicated host model for reliable game management:
 - **WebSocket Endpoint**: `/ws`
 - **Capabilities**:
   - Select character roles with resource bonuses
-  - Choose trivia specialty categories
+  - Choose trivia specialty category
   - Answer trivia questions during resource gathering
   - Solve individual puzzle segments privately
   - Collaborate on master puzzle assembly through recommendations
@@ -89,7 +89,7 @@ All communication after initial connection requires authentication using the sta
 - General Knowledge, Geography, History, Music, Science, Video Games
 
 **Specialty Mechanics:**
-- Players select up to 2 categories as their specialty
+- Players select 1 category as their specialty
 - Specialty questions are harder difficulty (+1 level)
 - Same time limits as regular questions (no extension)
 - Specialty bonus: `constants.SpecialtyPointMultiplier`
@@ -544,7 +544,7 @@ Individual Score =
 - Individual Puzzle Pieces: `constants.IndividualPuzzlePieces` per player
 - Answer Selection Time: `constants.TriviaAnswerTime`
 - Grace Period Time: `constants.TriviaGraceTime`
-- Max Specialties Per Player: `constants.MaxSpecialtiesPerPlayer`
+- Max Specialties Per Player: `constants.MaxSpecialtiesPerPlayer` (set to 1)
 - Grid Update Interval: `constants.GridUpdateInterval` seconds (default 3s)
 
 ---

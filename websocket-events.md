@@ -111,7 +111,7 @@ All server-to-client messages use this format:
       "science",
       "video_games"
     ],
-    "maxSpecialties": 2
+    "maxSpecialties": 1
   },
   "timestamp": "2025-01-XX:XX:XX.XXXZ"
 }
@@ -131,7 +131,7 @@ All server-to-client messages use this format:
   },
   "payload": {
     "selectedRole": "art_enthusiast",
-    "selectedSpecialties": ["science", "history"],
+    "selectedSpecialties": ["science"],
     "playerName": "Player Display Name"
   },
   "timestamp": "2025-01-XX:XX:XX.XXXZ"
@@ -182,7 +182,7 @@ All server-to-client messages use this format:
       "player1-uuid": {
         "playerName": "Alice",
         "role": "detective",
-        "specialties": ["science", "history"],
+        "specialties": ["science"],
         "connected": true,
         "ready": true,
         "lastActivity": "2025-01-XX:XX:XX.XXXZ"

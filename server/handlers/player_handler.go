@@ -1,0 +1,580 @@
+package handlers
+
+import (
+	"canvas-conundrum/config"
+	"canvas-conundrum/constants"
+	"canvas-conundrum/models"
+	"canvas-conundrum/services"
+	"canvas-conundrum/utils"
+	"encoding/json"
+	"log"
+	"time"
+)
+
+// HandlePlayerMessage handles incoming messages from players
+func HandlePlayerMessage(player *models.Player, msg *utils.Message) {
+	gameManager := services.GetGameInstance()
+	broadcastService := gameManager.GetBroadcastService()
+
+	log.Printf("Player %s sent event: %s", player.ID, msg.Event)
+
+	switch msg.Event {
+	case constants.EventSetupToServerPlayerConfiguration:
+		handlePlayerConfiguration(player, msg.Payload)
+
+	case constants.EventResourceToServerLocationVerified:
+		handleLocationVerified(player, msg.Payload)
+
+	case constants.EventResourceToServerTriviaAnswer:
+		handleTriviaAnswer(player, msg.Payload)
+
+	case constants.EventPuzzleToServerSegmentCompleted:
+		handleSegmentCompleted(player, msg.Payload)
+
+	case constants.EventPuzzleToServerFragmentMove:
+		handleFragmentMove(player, msg.Payload)
+
+	case constants.EventPuzzleToServerRecommendMove:
+		handleRecommendMove(player, msg.Payload)
+
+	case constants.EventPuzzleToServerRecommendationResponse:
+		handleRecommendationResponse(player, msg.Payload)
+
+	case constants.EventSystemPing:
+		handlePing(player, msg.Payload)
+
+	default:
+		log.Printf("Unknown event from player %s: %s", player.ID, msg.Event)
+		if broadcastService != nil {
+			broadcastService.SendError(
+				player,
+				"UNKNOWN_EVENT",
+				"Unknown event type",
+				"Event "+msg.Event+" is not recognized",
+			)
+		}
+	}
+}
+
+// handlePlayerConfiguration handles player role and specialty selection
+func handlePlayerConfiguration(player *models.Player, payload json.RawMessage) {
+	var data struct {
+		SelectedRole        string   `json:"selectedRole"`
+		SelectedSpecialties []string `json:"selectedSpecialties"`
+		PlayerName          string   `json:"playerName"`
+	}
+
+	if err := json.Unmarshal(payload, &data); err != nil {
+		log.Printf("Failed to parse player configuration: %v", err)
+		return
+	}
+
+	gameManager := services.GetGameInstance()
+	broadcastService := gameManager.GetBroadcastService()
+
+	// Convert string to role
+	role := models.Role(data.SelectedRole)
+
+	// Update player configuration
+	err := gameManager.UpdatePlayerConfiguration(player.ID, data.PlayerName, role, data.SelectedSpecialties)
+	if err != nil {
+		log.Printf("Failed to update player configuration: %v", err)
+		if broadcastService != nil {
+			broadcastService.SendError(
+				player,
+				constants.ErrorCodeInvalidRole,
+				constants.ErrorMessageInvalidRole,
+				err.Error(),
+			)
+		}
+		return
+	}
+
+	// Broadcast updated lobby status
+	if broadcastService != nil {
+		broadcastService.BroadcastLobbyStatus()
+	}
+}
+
+// handleLocationVerified handles QR code scan verification
+func handleLocationVerified(player *models.Player, payload json.RawMessage) {
+	var data struct {
+		StationHash      string `json:"stationHash"`
+		PreviousLocation string `json:"previousLocation"`
+		ScanTimestamp    string `json:"scanTimestamp"`
+	}
+
+	if err := json.Unmarshal(payload, &data); err != nil {
+		log.Printf("Failed to parse location verification: %v", err)
+		return
+	}
+
+	gameManager := services.GetGameInstance()
+	broadcastService := gameManager.GetBroadcastService()
+	analyticsService := gameManager.GetAnalyticsService()
+
+	// Verify station hash
+	station := config.GetStationFromHash(data.StationHash)
+	if station == config.UnknownStation {
+		log.Printf("Invalid station hash from player %s: %s", player.ID, data.StationHash)
+		if broadcastService != nil {
+			broadcastService.SendError(
+				player,
+				"INVALID_STATION",
+				"Invalid QR code",
+				"The scanned QR code is not recognized",
+			)
+		}
+		return
+	}
+
+	// Update player location
+	player.CurrentStation = string(station)
+	player.LastSeen = time.Now()
+
+	// Record station visit in analytics
+	if analyticsService != nil {
+		analyticsService.RecordStationVisit(player.ID, string(station))
+	}
+
+	log.Printf("Player %s moved to station %s", player.ID, station)
+}
+
+// handleTriviaAnswer handles trivia answer submission
+func handleTriviaAnswer(player *models.Player, payload json.RawMessage) {
+	var data struct {
+		QuestionID      string  `json:"questionId"`
+		SelectedAnswer  string  `json:"selectedAnswer"`
+		AnswerIndex     int     `json:"answerIndex"`
+		TimeElapsed     float64 `json:"timeElapsed"`
+		CurrentLocation string  `json:"currentLocation"`
+	}
+
+	if err := json.Unmarshal(payload, &data); err != nil {
+		log.Printf("Failed to parse trivia answer: %v", err)
+		return
+	}
+
+	gameManager := services.GetGameInstance()
+	broadcastService := gameManager.GetBroadcastService()
+	triviaService := gameManager.GetTriviaService()
+	analyticsService := gameManager.GetAnalyticsService()
+	game := gameManager.GetGame()
+
+	// Get the original question to validate answer
+	question := triviaService.GetQuestionByID(data.QuestionID)
+	if question == nil {
+		log.Printf("Question not found: %s", data.QuestionID)
+		return
+	}
+
+	// Check if answer is correct
+	correct := question.CorrectAnswer == data.SelectedAnswer
+
+	// Calculate tokens earned
+	tokensEarned := 0
+	if correct {
+		tokensEarned = constants.BaseTokensPerCorrectAnswer
+
+		// Apply role bonus if at matching station
+		tokenType := getTokenTypeForStation(player.CurrentStation)
+		if tokenType == player.Role.GetBonusTokenType() {
+			tokensEarned = int(float64(tokensEarned) * constants.RoleResourceMultiplier)
+		}
+
+		// Apply specialty bonus
+		if question.IsSpecialty {
+			tokensEarned = int(float64(tokensEarned) * constants.SpecialtyPointMultiplier)
+		}
+
+		// Apply difficulty modifier
+		switch game.Difficulty {
+		case models.DifficultyEasy:
+			tokensEarned = int(float64(tokensEarned) * constants.EasyTimeMultiplier)
+		case models.DifficultyHard:
+			tokensEarned = int(float64(tokensEarned) * constants.HardTimeMultiplier)
+		}
+
+		// Update player stats
+		player.CorrectAnswers++
+
+		// Update team tokens
+		if tokenType != "" {
+			player.TokensEarned += tokensEarned
+			game.TeamTokens.AddTokens(tokenType, tokensEarned)
+		}
+	}
+
+	player.QuestionsAnswered++
+
+	// Record in analytics
+	if analyticsService != nil {
+		analyticsService.RecordTriviaAnswer(
+			player.ID,
+			question.Category,
+			correct,
+			data.TimeElapsed,
+			tokensEarned,
+			question.IsSpecialty,
+		)
+
+		if tokenType := getTokenTypeForStation(player.CurrentStation); tokenType != "" {
+			analyticsService.RecordTokenCollection(player.ID, tokenType, tokensEarned)
+		}
+	}
+
+	// Send answer result to player
+	if broadcastService != nil {
+		resultPayload := map[string]interface{}{
+			"questionId":     data.QuestionID,
+			"correct":        correct,
+			"selectedAnswer": data.SelectedAnswer,
+			"correctAnswer":  question.CorrectAnswer,
+			"tokensEarned":   tokensEarned,
+			"baseTokens":     constants.BaseTokensPerCorrectAnswer,
+			"bonuses": map[string]interface{}{
+				"roleBonus":            player.Role.GetBonusTokenType() == getTokenTypeForStation(player.CurrentStation),
+				"roleBonusTokens":      0, // Calculate if needed
+				"specialtyBonus":       question.IsSpecialty,
+				"specialtyBonusTokens": 0, // Calculate if needed
+				"difficultyMultiplier": 1.0,
+			},
+			"currentLocation": player.CurrentStation,
+		}
+
+		broadcastService.SendToPlayer(player, constants.EventResourceToPlayerAnswerResult, resultPayload)
+
+		// Broadcast team progress update
+		broadcastService.BroadcastToAll(constants.EventResourceToClientTeamProgress, getTeamProgressPayload())
+	}
+}
+
+// handleSegmentCompleted handles individual puzzle segment completion
+func handleSegmentCompleted(player *models.Player, payload json.RawMessage) {
+	var data struct {
+		SegmentID           string  `json:"segmentId"`
+		CompletionTimestamp int64   `json:"completionTimestamp"`
+		SolveTime           float64 `json:"solveTime"`
+		ManualPiecesSolved  int     `json:"manualPiecesSolved"`
+		PreSolvedPieces     int     `json:"preSolvedPieces"`
+	}
+
+	if err := json.Unmarshal(payload, &data); err != nil {
+		log.Printf("Failed to parse segment completion: %v", err)
+		return
+	}
+
+	gameManager := services.GetGameInstance()
+	broadcastService := gameManager.GetBroadcastService()
+	analyticsService := gameManager.GetAnalyticsService()
+
+	// Complete the segment
+	err := gameManager.CompleteSegment(player.ID, data.SegmentID)
+	if err != nil {
+		log.Printf("Failed to complete segment: %v", err)
+		if broadcastService != nil {
+			broadcastService.SendError(
+				player,
+				"SEGMENT_COMPLETION_ERROR",
+				"Failed to complete segment",
+				err.Error(),
+			)
+		}
+		return
+	}
+
+	// Record in analytics
+	if analyticsService != nil {
+		analyticsService.RecordSegmentCompletion(player.ID, data.SolveTime)
+	}
+}
+
+// handleFragmentMove handles fragment movement requests
+func handleFragmentMove(player *models.Player, payload json.RawMessage) {
+	var data struct {
+		FragmentID         string          `json:"fragmentId"`
+		CurrentPosition    models.Position `json:"currentPosition"`
+		TargetPosition     models.Position `json:"targetPosition"`
+		SwapWithFragmentID string          `json:"swapWithFragmentId"`
+	}
+
+	if err := json.Unmarshal(payload, &data); err != nil {
+		log.Printf("Failed to parse fragment move: %v", err)
+		return
+	}
+
+	gameManager := services.GetGameInstance()
+	broadcastService := gameManager.GetBroadcastService()
+	analyticsService := gameManager.GetAnalyticsService()
+
+	// Execute the move
+	err := gameManager.MoveFragment(player.ID, data.FragmentID, data.TargetPosition)
+	if err != nil {
+		log.Printf("Failed to move fragment: %v", err)
+		if broadcastService != nil {
+			moveResult := map[string]interface{}{
+				"moveId": utils.GenerateMoveID(),
+				"status": "failed",
+				"error":  err.Error(),
+			}
+			broadcastService.SendToPlayer(player, constants.EventPuzzleToPlayerMoveResult, moveResult)
+		}
+		return
+	}
+
+	// Record move in analytics
+	if analyticsService != nil {
+		analyticsService.RecordFragmentMove(player.ID, true)
+	}
+
+	// Send success result
+	if broadcastService != nil {
+		moveResult := map[string]interface{}{
+			"moveId":      utils.GenerateMoveID(),
+			"status":      "success",
+			"fragmentId":  data.FragmentID,
+			"newPosition": data.TargetPosition,
+			"cooldownInfo": map[string]interface{}{
+				"nextMoveAvailable": time.Now().Add(time.Duration(constants.FragmentMoveCooldown) * time.Millisecond).Unix(),
+				"cooldownRemaining": constants.FragmentMoveCooldown / 1000.0,
+			},
+		}
+
+		if data.SwapWithFragmentID != "" {
+			moveResult["swappedFragmentId"] = data.SwapWithFragmentID
+			moveResult["swappedFragmentNewPosition"] = data.CurrentPosition
+		}
+
+		broadcastService.SendToPlayer(player, constants.EventPuzzleToPlayerMoveResult, moveResult)
+	}
+}
+
+// handleRecommendMove handles movement recommendations
+func handleRecommendMove(player *models.Player, payload json.RawMessage) {
+	var data struct {
+		TargetPlayerID string `json:"targetPlayerId"`
+		FromFragmentID string `json:"fromFragmentId"`
+		ToFragmentID   string `json:"toFragmentId"`
+		Reasoning      string `json:"reasoning"`
+	}
+
+	if err := json.Unmarshal(payload, &data); err != nil {
+		log.Printf("Failed to parse recommendation: %v", err)
+		return
+	}
+
+	gameManager := services.GetGameInstance()
+	broadcastService := gameManager.GetBroadcastService()
+	puzzleService := gameManager.GetPuzzleService()
+	analyticsService := gameManager.GetAnalyticsService()
+
+	// Get target player
+	targetPlayer, exists := gameManager.GetPlayer(data.TargetPlayerID)
+	if !exists || !targetPlayer.IsActive {
+		log.Printf("Target player not found or disconnected: %s", data.TargetPlayerID)
+		return
+	}
+
+	// Create recommendation
+	rec, err := puzzleService.CreateRecommendation(
+		player.ID,
+		player.Name,
+		data.TargetPlayerID,
+		data.FromFragmentID,
+		data.ToFragmentID,
+		data.Reasoning,
+	)
+	if err != nil {
+		log.Printf("Failed to create recommendation: %v", err)
+		return
+	}
+
+	// Record in analytics
+	if analyticsService != nil {
+		analyticsService.RecordRecommendation(player.ID, data.TargetPlayerID, false)
+	}
+
+	// Send recommendation to target player
+	if broadcastService != nil {
+		recPayload := map[string]interface{}{
+			"moveId":         rec.ID,
+			"fromPlayerId":   player.ID,
+			"fromPlayerName": player.Name,
+			"toPlayerId":     data.TargetPlayerID,
+			"fromFragmentId": data.FromFragmentID,
+			"toFragmentId":   data.ToFragmentID,
+			"reasoning":      data.Reasoning,
+			"expiresAt":      rec.ExpiresAt.Format(time.RFC3339),
+		}
+
+		broadcastService.SendToPlayer(targetPlayer, constants.EventPuzzleToPlayerMoveRecommendation, recPayload)
+	}
+}
+
+// handleRecommendationResponse handles responses to recommendations
+func handleRecommendationResponse(player *models.Player, payload json.RawMessage) {
+	var data struct {
+		MoveID         string `json:"moveId"`
+		Response       string `json:"response"` // "accept" or "reject"
+		ResponseReason string `json:"responseReason"`
+	}
+
+	if err := json.Unmarshal(payload, &data); err != nil {
+		log.Printf("Failed to parse recommendation response: %v", err)
+		return
+	}
+
+	gameManager := services.GetGameInstance()
+	broadcastService := gameManager.GetBroadcastService()
+	puzzleService := gameManager.GetPuzzleService()
+	analyticsService := gameManager.GetAnalyticsService()
+
+	// Get recommendation
+	rec, exists := puzzleService.GetRecommendation(data.MoveID)
+	if !exists {
+		log.Printf("Recommendation not found: %s", data.MoveID)
+		return
+	}
+
+	// Update recommendation status
+	puzzleService.UpdateRecommendationStatus(data.MoveID, data.Response+"ed")
+
+	// If accepted, execute the swap
+	if data.Response == "accept" {
+		game := gameManager.GetGame()
+		if game.PuzzleGrid != nil {
+			err := puzzleService.ExecuteRecommendedSwap(game.PuzzleGrid, data.MoveID)
+			if err != nil {
+				log.Printf("Failed to execute recommended swap: %v", err)
+			}
+		}
+
+		// Record acceptance in analytics
+		if analyticsService != nil {
+			analyticsService.RecordRecommendation(rec.FromPlayerID, player.ID, true)
+		}
+	}
+
+	// Send result to original recommender
+	if broadcastService != nil {
+		fromPlayer, exists := gameManager.GetPlayer(rec.FromPlayerID)
+		if exists && fromPlayer.IsActive {
+			resultPayload := map[string]interface{}{
+				"moveId":           data.MoveID,
+				"targetPlayerId":   player.ID,
+				"targetPlayerName": player.Name,
+				"response":         data.Response,
+				"responseReason":   data.ResponseReason,
+				"executionStatus":  data.Response + "ed",
+			}
+
+			broadcastService.SendToPlayer(fromPlayer, constants.EventPuzzleToPlayerRecommendationResult, resultPayload)
+		}
+	}
+}
+
+// handlePing handles ping messages from players
+func handlePing(player *models.Player, payload json.RawMessage) {
+	var data struct {
+		ClientTimestamp   string `json:"clientTimestamp"`
+		SequenceNumber    int    `json:"sequenceNumber"`
+		ConnectionQuality struct {
+			Latency          int `json:"latency"`
+			MessagesReceived int `json:"messagesReceived"`
+			MessagesSent     int `json:"messagesSent"`
+		} `json:"connectionQuality"`
+	}
+
+	if err := json.Unmarshal(payload, &data); err != nil {
+		log.Printf("Failed to parse ping: %v", err)
+		return
+	}
+
+	gameManager := services.GetGameInstance()
+	broadcastService := gameManager.GetBroadcastService()
+
+	// Send pong response
+	if broadcastService != nil {
+		pongPayload := map[string]interface{}{
+			"serverTimestamp": time.Now().Format(time.RFC3339),
+			"clientTimestamp": data.ClientTimestamp,
+			"sequenceNumber":  data.SequenceNumber,
+			"serverHealth": map[string]interface{}{
+				"activeConnections": gameManager.GetPlayerCount() + 1, // Include host
+				"serverLoad":        0.15,                             // Placeholder
+				"gamePhase":         gameManager.GetCurrentPhase(),
+			},
+		}
+
+		broadcastService.SendToPlayer(player, constants.EventSystemPong, pongPayload)
+	}
+}
+
+// Helper functions
+
+func getTokenTypeForStation(location interface{}) models.TokenType {
+	var station config.Station
+	switch v := location.(type) {
+	case config.Station:
+		station = v
+	case string:
+		station = config.Station(v)
+	default:
+		return ""
+	}
+
+	switch station {
+	case config.AnchorStation:
+		return models.TokenAnchor
+	case config.ChronosStation:
+		return models.TokenChronos
+	case config.GuideStation:
+		return models.TokenGuide
+	case config.ClarityStation:
+		return models.TokenClarity
+	default:
+		return ""
+	}
+}
+
+func getTeamProgressPayload() map[string]interface{} {
+	gameManager := services.GetGameInstance()
+	game := gameManager.GetGame()
+
+	return map[string]interface{}{
+		"currentRound": game.CurrentRound,
+		"totalRounds":  constants.ResourceGatheringRounds,
+		"teamTokens": map[string]int{
+			"anchorTokens":  game.TeamTokens.AnchorTokens,
+			"chronosTokens": game.TeamTokens.ChronosTokens,
+			"guideTokens":   game.TeamTokens.GuideTokens,
+			"clarityTokens": game.TeamTokens.ClarityTokens,
+		},
+		"tokenThresholds": map[string]interface{}{
+			"anchor": map[string]interface{}{
+				"currentThreshold":   game.TeamTokens.GetThreshold(models.TokenAnchor),
+				"maxThresholds":      constants.MaxThresholds,
+				"tokensPerThreshold": constants.AnchorTokenThreshold,
+				"effectDescription":  "2 pieces pre-solved per threshold",
+			},
+			"chronos": map[string]interface{}{
+				"currentThreshold":   game.TeamTokens.GetThreshold(models.TokenChronos),
+				"maxThresholds":      constants.MaxThresholds,
+				"tokensPerThreshold": constants.ChronosTokenThreshold,
+				"effectDescription":  "+20 seconds per threshold",
+			},
+			"guide": map[string]interface{}{
+				"currentThreshold":   game.TeamTokens.GetThreshold(models.TokenGuide),
+				"maxThresholds":      constants.MaxThresholds,
+				"tokensPerThreshold": constants.GuideTokenThreshold,
+				"effectDescription":  "Remove (gridSize²)/7 squares per threshold",
+			},
+			"clarity": map[string]interface{}{
+				"currentThreshold":   game.TeamTokens.GetThreshold(models.TokenClarity),
+				"maxThresholds":      constants.MaxThresholds,
+				"tokensPerThreshold": constants.ClarityTokenThreshold,
+				"effectDescription":  "+1 second preview per threshold",
+			},
+		},
+	}
+}

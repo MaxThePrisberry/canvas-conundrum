@@ -13,15 +13,22 @@ import (
 
 // TriviaService manages trivia questions and delivery
 type TriviaService struct {
-	mu    sync.RWMutex
-	pools map[string]*models.QuestionPool // Key: "category_difficulty"
+	mu       sync.RWMutex
+	pools    map[string]*models.QuestionPool // Key: "category_difficulty"
+	basePath string                          // Base path for trivia files
 }
 
 // NewTriviaService creates a new trivia service
 func NewTriviaService() *TriviaService {
 	return &TriviaService{
-		pools: make(map[string]*models.QuestionPool),
+		pools:    make(map[string]*models.QuestionPool),
+		basePath: "./trivia",
 	}
+}
+
+// SetBasePath sets the base path for trivia files (useful for tests)
+func (ts *TriviaService) SetBasePath(path string) {
+	ts.basePath = path
 }
 
 // LoadQuestions loads all trivia questions from JSON files
@@ -52,7 +59,7 @@ func (ts *TriviaService) LoadQuestions() error {
 			pool := models.NewQuestionPool()
 
 			// Load questions from file
-			filename := fmt.Sprintf("./trivia/%s/%s.json", category, difficulty)
+			filename := fmt.Sprintf("%s/%s/%s.json", ts.basePath, category, difficulty)
 			questions, err := ts.loadQuestionsFromFile(filename)
 			if err != nil {
 				log.Printf("Warning: Failed to load questions from %s: %v", filename, err)

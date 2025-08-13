@@ -402,7 +402,7 @@ func (gm *GameManager) StartResourceRound() {
 		gm.broadcastSvc.BroadcastTriviaQuestions(questions)
 	}
 
-	// Set timer for next round
+	// Set timer for next round or complete phase
 	if gm.game.CurrentRound < constants.ResourceGatheringRounds {
 		gm.roundTimer = utils.NewTimer(
 			time.Duration(constants.ResourceGatheringRoundDuration)*time.Second,
@@ -412,34 +412,49 @@ func (gm *GameManager) StartResourceRound() {
 		)
 		gm.roundTimer.Start()
 	} else {
-		// End resource gathering phase
+		// Resource gathering complete
 		go func() {
 			time.Sleep(time.Duration(constants.ResourceGatheringRoundDuration) * time.Second)
-			gm.EndResourceGathering()
+			gm.CompleteResourceGathering()
 		}()
 	}
 }
 
-// EndResourceGathering ends the resource gathering phase
-func (gm *GameManager) EndResourceGathering() {
+// CompleteResourceGathering completes the resource gathering phase
+func (gm *GameManager) CompleteResourceGathering() {
 	gm.mu.Lock()
 	defer gm.mu.Unlock()
 
-	log.Println("Resource gathering phase complete")
-
-	// Start puzzle phase
-	playerCount := gm.GetPlayerCount()
-	gm.game.StartPuzzlePhase(playerCount)
-
-	// Assign puzzle segments
-	if gm.puzzleSvc != nil {
-		gm.puzzleSvc.AssignSegments(gm.players, gm.game.PuzzleGrid.Size)
-	}
-
-	// Broadcast phase transition
+	// Broadcast resource phase completion
 	if gm.broadcastSvc != nil {
-		gm.broadcastSvc.BroadcastPhaseTransition(models.PhaseResourceGathering, models.PhasePuzzleAssembly)
+		gm.broadcastSvc.BroadcastResourcePhaseComplete()
 	}
+
+	// Wait a bit for transition
+	go func() {
+		time.Sleep(5 * time.Second)
+		
+		gm.mu.Lock()
+		defer gm.mu.Unlock()
+		
+		// Transition to puzzle phase
+		playerCount := len(gm.players)
+		gm.game.StartPuzzlePhase(playerCount)
+
+		// Assign puzzle segments
+		if gm.puzzleSvc != nil {
+			gm.puzzleSvc.AssignSegments(gm.players, gm.game.PuzzleGrid.Size)
+		}
+
+		// Broadcast puzzle phase start
+		if gm.broadcastSvc != nil {
+			gm.broadcastSvc.BroadcastPuzzlePhaseStart()
+		}
+
+		log.Println("Transitioned to puzzle assembly phase")
+	}()
+
+	log.Println("Resource gathering phase complete")
 }
 
 // StartPuzzleTimer starts the puzzle phase timer
@@ -627,7 +642,13 @@ func (gm *GameManager) ResetGame() {
 	// Clear players
 	for _, player := range gm.players {
 		if player.Done != nil {
-			close(player.Done)
+			// Safely close channel by checking if it's not already closed
+			select {
+			case <-player.Done:
+				// Already closed
+			default:
+				close(player.Done)
+			}
 		}
 	}
 	gm.players = make(map[string]*models.Player)
@@ -668,8 +689,26 @@ func (gm *GameManager) NextRound() {
 func (gm *GameManager) TransitionToPhase(phase models.GamePhase) {
 	gm.mu.Lock()
 	defer gm.mu.Unlock()
-	gm.game.CurrentPhase = phase
-	gm.game.PhaseStartTime = time.Now()
+	
+	switch phase {
+	case models.PhaseResourceGathering:
+		gm.game.StartResourceGathering()
+	case models.PhasePuzzleAssembly:
+		// Initialize puzzle phase properly
+		playerCount := len(gm.players)
+		gm.game.StartPuzzlePhase(playerCount)
+		
+		// Assign puzzle segments
+		if gm.puzzleSvc != nil {
+			gm.puzzleSvc.AssignSegments(gm.players, gm.game.PuzzleGrid.Size)
+		}
+	case models.PhaseAnalytics:
+		gm.game.CurrentPhase = phase
+		gm.game.PhaseStartTime = time.Now()
+	default:
+		gm.game.CurrentPhase = phase
+		gm.game.PhaseStartTime = time.Now()
+	}
 }
 
 // IsGameStarted checks if the game has started

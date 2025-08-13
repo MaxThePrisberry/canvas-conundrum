@@ -26,10 +26,12 @@ func setupE2EServer(t *testing.T) (*httptest.Server, *services.GameManager) {
 	// Setup trivia service with test questions
 	triviaService := services.NewTriviaService()
 	// Load test questions
-	_, cleanup, err := test_helpers.CreateMockTriviaFiles()
+	triviaPath, cleanup, err := test_helpers.CreateMockTriviaFiles()
 	require.NoError(t, err)
 	t.Cleanup(cleanup)
 
+	// Set the base path to the temp directory
+	triviaService.SetBasePath(triviaPath)
 	err = triviaService.LoadQuestions()
 	require.NoError(t, err)
 	gm.SetTriviaService(triviaService)
@@ -51,37 +53,40 @@ func TestCompleteGameFlow(t *testing.T) {
 	server, gm := setupE2EServer(t)
 	defer server.Close()
 
+	// Create persistent connections for entire test
+	host := test_helpers.NewTestHostClient(t, server, config.HostUUID)
+	err := host.Connect()
+	require.NoError(t, err)
+	defer host.Close()
+
+	// Connect 4 players (minimum)
+	players := make([]*test_helpers.TestPlayerClient, 4)
+	playerNames := []string{"Alice", "Bob", "Charlie", "Diana"}
+	roles := []string{"art_enthusiast", "detective", "tourist", "janitor"}
+	specialties := [][]string{
+		{"general"},
+		{"history"},
+		{"science"},
+		{"music"},
+	}
+
+	for i := 0; i < 4; i++ {
+		players[i] = test_helpers.NewTestPlayerClient(t, server)
+		err := players[i].Connect()
+		require.NoError(t, err)
+		defer players[i].Close()
+	}
+
 	// Phase 1: Setup
 	t.Run("Phase1_Setup", func(t *testing.T) {
-		// Connect host
-		host := test_helpers.NewTestHostClient(t, server, config.HostUUID)
-		err := host.Connect()
-		require.NoError(t, err)
-		defer host.Close()
-
-		// Connect 4 players (minimum)
-		players := make([]*test_helpers.TestPlayerClient, 4)
-		playerNames := []string{"Alice", "Bob", "Charlie", "Diana"}
-		roles := []string{"art_enthusiast", "detective", "tourist", "janitor"}
-		specialties := [][]string{
-			{"general"},
-			{"history"},
-			{"science"},
-			{"music"},
-		}
-
 		for i := 0; i < 4; i++ {
-			players[i] = test_helpers.NewTestPlayerClient(t, server)
-			err := players[i].Connect()
-			require.NoError(t, err)
-			defer players[i].Close()
 
-			// Store initial message with player ID
+				// Store initial message with player ID
 			initialMsg := players[i].GetLastMessage()
 			require.NotNil(t, initialMsg)
 
 			// Configure player
-			err = players[i].ConfigurePlayer(playerNames[i], roles[i], specialties[i])
+			err := players[i].ConfigurePlayer(playerNames[i], roles[i], specialties[i])
 			require.NoError(t, err)
 		}
 

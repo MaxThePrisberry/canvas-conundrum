@@ -1,6 +1,7 @@
 package services
 
 import (
+	"canvas-conundrum/config"
 	"canvas-conundrum/constants"
 	"canvas-conundrum/models"
 	"canvas-conundrum/utils"
@@ -355,6 +356,119 @@ func (bs *BroadcastService) getHostPhaseControls(phase models.GamePhase) []strin
 	}
 }
 
+// BroadcastResourcePhaseStart broadcasts resource gathering phase start
+func (bs *BroadcastService) BroadcastResourcePhaseStart() {
+	gameManager := GetGameInstance()
+	game := gameManager.GetGame()
+
+	// To players
+	playerPayload := map[string]interface{}{
+		"phase":        "resource_gathering",
+		"totalRounds":  constants.ResourceGatheringRounds,
+		"roundDuration": constants.ResourceGatheringRoundDuration,
+		"answerTime":    constants.TriviaAnswerTime,
+		"graceTime":     constants.TriviaGraceTime,
+		"resourceStationHashes": map[string]string{
+			"anchor":  config.HashAnchorStation,
+			"chronos": config.HashChronosStation,
+			"guide":   config.HashGuideStation,
+			"clarity": config.HashClarityStation,
+		},
+		"tokenThresholds": map[string]int{
+			"anchor":  constants.AnchorTokenThreshold,
+			"chronos": constants.ChronosTokenThreshold,
+			"guide":   constants.GuideTokenThreshold,
+			"clarity": constants.ClarityTokenThreshold,
+		},
+		"difficultySettings": map[string]interface{}{
+			"mode":                 game.Difficulty,
+			"specialtyProbability":  bs.getSpecialtyProbability(game.Difficulty),
+			"timeMultiplier":       bs.getTimeMultiplier(game.Difficulty),
+			"thresholdMultiplier":  bs.getThresholdMultiplier(game.Difficulty),
+		},
+	}
+	bs.BroadcastToAllPlayers(constants.EventResourceToClientPhaseStart, playerPayload)
+
+	// To host
+	hostPayload := map[string]interface{}{
+		"phase": "resource_gathering",
+		"monitoringDashboard": map[string]interface{}{
+			"totalRounds":      constants.ResourceGatheringRounds,
+			"currentRound":     0,
+			"roundDuration":    constants.ResourceGatheringRoundDuration,
+			"playerDistribution": bs.getPlayerDistribution(),
+		},
+		"analyticsTracking": map[string]interface{}{
+			"questionDelivery":   true,
+			"answerTracking":     true,
+			"locationTracking":   true,
+			"performanceMetrics": true,
+		},
+	}
+
+	if host := gameManager.GetHost(); host != nil {
+		bs.SendToHost(host, constants.EventResourceToHostPhaseStart, hostPayload)
+	}
+}
+
+// getSpecialtyProbability returns specialty probability for difficulty
+func (bs *BroadcastService) getSpecialtyProbability(difficulty models.DifficultyMode) float64 {
+	switch difficulty {
+	case models.DifficultyEasy:
+		return constants.EasySpecialtyProbability
+	case models.DifficultyHard:
+		return constants.HardSpecialtyProbability
+	default:
+		return constants.MediumSpecialtyProbability
+	}
+}
+
+// getTimeMultiplier returns time multiplier for difficulty
+func (bs *BroadcastService) getTimeMultiplier(difficulty models.DifficultyMode) float64 {
+	switch difficulty {
+	case models.DifficultyEasy:
+		return constants.EasyTimeMultiplier
+	case models.DifficultyHard:
+		return constants.HardTimeMultiplier
+	default:
+		return constants.MediumTimeMultiplier
+	}
+}
+
+// getThresholdMultiplier returns threshold multiplier for difficulty
+func (bs *BroadcastService) getThresholdMultiplier(difficulty models.DifficultyMode) float64 {
+	switch difficulty {
+	case models.DifficultyEasy:
+		return constants.EasyThresholdMultiplier
+	case models.DifficultyHard:
+		return constants.HardThresholdMultiplier
+	default:
+		return constants.MediumThresholdMultiplier
+	}
+}
+
+// getPlayerDistribution returns current player distribution by station
+func (bs *BroadcastService) getPlayerDistribution() map[string]int {
+	dist := map[string]int{
+		"anchor":  0,
+		"chronos": 0,
+		"guide":   0,
+		"clarity": 0,
+		"unknown": 0,
+	}
+
+	for _, player := range GetGameInstance().GetAllPlayers() {
+		if player.IsActive {
+			if player.CurrentStation == "" {
+				dist["unknown"]++
+			} else {
+				dist[player.CurrentStation]++
+			}
+		}
+	}
+	return dist
+}
+
 // BroadcastTriviaQuestions sends trivia questions to players
 func (bs *BroadcastService) BroadcastTriviaQuestions(questions map[string]*models.TriviaQuestion) {
 	gameManager := GetGameInstance()
@@ -420,6 +534,110 @@ func (bs *BroadcastService) sendHostRoundAnalytics() {
 	}
 
 	bs.SendToHost(host, constants.EventResourceToHostRoundAnalytics, payload)
+}
+
+// BroadcastPuzzlePhaseStart broadcasts puzzle assembly phase start
+func (bs *BroadcastService) BroadcastPuzzlePhaseStart() {
+	gameManager := GetGameInstance()
+	game := gameManager.GetGame()
+
+	// Get grid size and segment assignments
+	gridSize := game.PuzzleGrid.Size
+	playerSegments := make(map[string]string)
+	allSegmentIds := []string{}
+	
+	for _, player := range gameManager.GetAllPlayers() {
+		if player.IsActive && player.AssignedSegment != "" {
+			playerSegments[player.ID] = player.AssignedSegment
+			allSegmentIds = append(allSegmentIds, player.AssignedSegment)
+		}
+	}
+
+	// Generate all possible segment IDs for the grid
+	for i := 0; i < gridSize*gridSize; i++ {
+		row := i / gridSize
+		col := i % gridSize
+		segmentID := string(rune('A'+row)) + string(rune('1'+col))
+		found := false
+		for _, id := range allSegmentIds {
+			if id == segmentID {
+				found = true
+				break
+			}
+		}
+		if !found {
+			allSegmentIds = append(allSegmentIds, segmentID)
+		}
+	}
+
+	// To players
+	for _, player := range gameManager.GetAllPlayers() {
+		if player.IsActive {
+			playerPayload := map[string]interface{}{
+				"phase":                   "puzzle_assembly",
+				"imageId":                 "masterpiece_001",
+				"assignedSegmentId":       player.AssignedSegment,
+				"individualPuzzleSize":    constants.IndividualPuzzlePieces,
+				"anchorPreSolvedPieces":   game.TeamTokens.GetThreshold(models.TokenAnchor) * 2,
+				"centralGridSize":         gridSize,
+				"totalCentralFragments":   gridSize * gridSize,
+				"clarityPreviewDuration":  constants.ClarityBasePreviewTime + game.TeamTokens.GetThreshold(models.TokenClarity),
+				"guideHighlightCount":     bs.calculateGuideHighlights(gridSize, game.TeamTokens.GetThreshold(models.TokenGuide)),
+				"allSegmentIds":           allSegmentIds,
+				"loadInstructions":        "Load your assigned segment and prepare individual puzzle",
+				"waitingForHost":          true,
+			}
+			bs.SendToPlayer(player, constants.EventPuzzleToClientPhaseLoad, playerPayload)
+		}
+	}
+
+	// To host
+	unassignedSegments := []string{}
+	for _, segmentID := range allSegmentIds {
+		assigned := false
+		for _, playerSegment := range playerSegments {
+			if playerSegment == segmentID {
+				assigned = true
+				break
+			}
+		}
+		if !assigned {
+			unassignedSegments = append(unassignedSegments, segmentID)
+		}
+	}
+
+	hostPayload := map[string]interface{}{
+		"phase":                      "puzzle_assembly",
+		"imageId":                    "masterpiece_001",
+		"centralGridSize":            gridSize,
+		"totalFragments":             gridSize * gridSize,
+		"isHost":                     true,
+		"playerCount":                gameManager.GetPlayerCount(),
+		"playerSegmentAssignments":   playerSegments,
+		"unassignedSegments":         unassignedSegments,
+		"bonusEffects": map[string]interface{}{
+			"anchorPreSolved":  game.TeamTokens.GetThreshold(models.TokenAnchor) * 2,
+			"chronosTimeBonus": game.TeamTokens.GetThreshold(models.TokenChronos) * 20,
+			"guideHighlights":  bs.calculateGuideHighlights(gridSize, game.TeamTokens.GetThreshold(models.TokenGuide)),
+			"clarityPreview":   constants.ClarityBasePreviewTime + game.TeamTokens.GetThreshold(models.TokenClarity),
+		},
+		"monitoringActive": true,
+		"canStartTimer":    true,
+	}
+
+	if host := gameManager.GetHost(); host != nil {
+		bs.SendToHost(host, constants.EventPuzzleToHostPhaseLoad, hostPayload)
+	}
+}
+
+// calculateGuideHighlights calculates number of guide highlights based on threshold
+func (bs *BroadcastService) calculateGuideHighlights(gridSize, threshold int) int {
+	total := gridSize * gridSize
+	removed := 0
+	for i := 0; i < threshold; i++ {
+		removed += total / 7
+	}
+	return total - removed
 }
 
 // BroadcastPuzzleTimerStart broadcasts puzzle timer start
@@ -573,6 +791,98 @@ func (bs *BroadcastService) sendHostGridState() {
 	}
 
 	bs.SendToHost(host, constants.EventPuzzleToHostGridState, payload)
+}
+
+// BroadcastResourcePhaseComplete broadcasts resource gathering phase completion
+func (bs *BroadcastService) BroadcastResourcePhaseComplete() {
+	gameManager := GetGameInstance()
+	game := gameManager.GetGame()
+
+	// Calculate bonus effects from tokens
+	anchorThreshold := game.TeamTokens.GetThreshold(models.TokenAnchor)
+	chronosThreshold := game.TeamTokens.GetThreshold(models.TokenChronos)
+	guideThreshold := game.TeamTokens.GetThreshold(models.TokenGuide)
+	clarityThreshold := game.TeamTokens.GetThreshold(models.TokenClarity)
+
+	// To players
+	playerPayload := map[string]interface{}{
+		"phase":     "resource_gathering",
+		"nextPhase": "puzzle_assembly",
+		"finalTokenTotals": map[string]int{
+			"anchorTokens":  game.TeamTokens.AnchorTokens,
+			"chronosTokens": game.TeamTokens.ChronosTokens,
+			"guideTokens":   game.TeamTokens.GuideTokens,
+			"clarityTokens": game.TeamTokens.ClarityTokens,
+		},
+		"thresholdAchievements": map[string]int{
+			"anchor":  anchorThreshold,
+			"chronos": chronosThreshold,
+			"guide":   guideThreshold,
+			"clarity": clarityThreshold,
+		},
+		"bonusEffects": map[string]interface{}{
+			"preSolvedPieces": anchorThreshold * 2,
+			"extraTime":       chronosThreshold * 20,
+			"guideHighlights": guideThreshold,
+			"previewTime":     constants.ClarityBasePreviewTime + clarityThreshold,
+		},
+		"transitionInstructions": "Return to the main room for puzzle assembly",
+		"transitionCountdown":    30,
+	}
+	bs.BroadcastToAllPlayers(constants.EventResourceToClientPhaseComplete, playerPayload)
+
+	// To host with analytics
+	if host := gameManager.GetHost(); host != nil {
+		playerAnalytics := make(map[string]interface{})
+		// TODO: Get analytics from analytics service when properly implemented
+
+		hostPayload := map[string]interface{}{
+			"phase":     "resource_gathering",
+			"completed": true,
+			"totalQuestionsAnswered": bs.getTotalQuestionsAnswered(),
+			"teamPerformance": map[string]interface{}{
+				"overallAccuracy":      bs.getTeamAccuracy(),
+				"totalTokensEarned":    game.TeamTokens.AnchorTokens + game.TeamTokens.ChronosTokens + game.TeamTokens.GuideTokens + game.TeamTokens.ClarityTokens,
+				"averageResponseTime":  bs.getAverageResponseTime(),
+			},
+			"finalTokenDistribution": map[string]int{
+				"anchorTokens":  game.TeamTokens.AnchorTokens,
+				"chronosTokens": game.TeamTokens.ChronosTokens,
+				"guideTokens":   game.TeamTokens.GuideTokens,
+				"clarityTokens": game.TeamTokens.ClarityTokens,
+			},
+			"playerAnalytics":     playerAnalytics,
+			"readyForPuzzlePhase": true,
+		}
+		bs.SendToHost(host, constants.EventResourceToHostPhaseComplete, hostPayload)
+	}
+}
+
+// Helper methods for analytics
+func (bs *BroadcastService) getTotalQuestionsAnswered() int {
+	total := 0
+	for _, player := range GetGameInstance().GetAllPlayers() {
+		total += player.QuestionsAnswered
+	}
+	return total
+}
+
+func (bs *BroadcastService) getTeamAccuracy() float64 {
+	totalQuestions := 0
+	totalCorrect := 0
+	for _, player := range GetGameInstance().GetAllPlayers() {
+		totalQuestions += player.QuestionsAnswered
+		totalCorrect += player.CorrectAnswers
+	}
+	if totalQuestions == 0 {
+		return 0
+	}
+	return float64(totalCorrect) / float64(totalQuestions)
+}
+
+func (bs *BroadcastService) getAverageResponseTime() float64 {
+	// This would need to be tracked in analytics service
+	return 15.0 // Placeholder
 }
 
 // BroadcastSegmentCompleted broadcasts segment completion

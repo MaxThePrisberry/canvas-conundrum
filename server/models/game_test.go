@@ -148,32 +148,32 @@ func TestGetPreSolvedPieces(t *testing.T) {
 		{
 			name: "All threshold 1",
 			tokens: map[TokenType]int{
-				TokenAnchor:  10,
-				TokenChronos: 10,
-				TokenGuide:   10,
-				TokenClarity: 10,
+				TokenAnchor:  25, // 25/25 = 1 threshold
+				TokenChronos: 20, // 20/20 = 1 threshold
+				TokenGuide:   15, // 15/15 = 1 threshold
+				TokenClarity: 30, // 30/30 = 1 threshold
 			},
-			expectedPieces: 2,
+			expectedPieces: 2, // 1 * 2 pieces per threshold
 		},
 		{
 			name: "All threshold 2",
 			tokens: map[TokenType]int{
-				TokenAnchor:  25, // Threshold 2
-				TokenChronos: 25,
-				TokenGuide:   25,
-				TokenClarity: 25,
+				TokenAnchor:  50, // 50/25 = 2 thresholds
+				TokenChronos: 40, // 40/20 = 2 thresholds
+				TokenGuide:   30, // 30/15 = 2 thresholds
+				TokenClarity: 60, // 60/30 = 2 thresholds
 			},
-			expectedPieces: 4,
+			expectedPieces: 4, // 2 * 2 pieces per threshold
 		},
 		{
 			name: "Mixed thresholds",
 			tokens: map[TokenType]int{
-				TokenAnchor:  30, // Threshold 2
-				TokenChronos: 20, // Threshold 1
-				TokenGuide:   10, // Threshold 1
-				TokenClarity: 5,  // Threshold 0
+				TokenAnchor:  30, // 30/25 = 1 threshold (rounds down)
+				TokenChronos: 20, // 20/20 = 1 threshold
+				TokenGuide:   10, // 10/15 = 0 thresholds
+				TokenClarity: 5,  // 5/30 = 0 thresholds
 			},
-			expectedPieces: 4, // 2 * 2 for anchor threshold 2
+			expectedPieces: 2, // 1 * 2 for anchor threshold 1
 		},
 	}
 
@@ -213,7 +213,7 @@ func TestGetTotalPuzzleTime(t *testing.T) {
 			name: "With chronos bonus",
 			tokens: map[TokenType]int{
 				TokenAnchor:  0,
-				TokenChronos: 15, // Threshold 1
+				TokenChronos: 20, // 20/20 = 1 threshold
 				TokenGuide:   0,
 				TokenClarity: 0,
 			},
@@ -224,7 +224,7 @@ func TestGetTotalPuzzleTime(t *testing.T) {
 			name: "Max chronos bonus",
 			tokens: map[TokenType]int{
 				TokenAnchor:  0,
-				TokenChronos: 45, // Threshold 3
+				TokenChronos: 60, // 60/20 = 3 thresholds
 				TokenGuide:   0,
 				TokenClarity: 0,
 			},
@@ -279,17 +279,20 @@ func TestTeamTokens(t *testing.T) {
 			tokenCount int
 			expected   int
 		}{
-			{0, 0},
-			{5, 0},
-			{10, 1},
-			{15, 1},
-			{20, 1},
-			{25, 2},
-			{30, 2},
-			{35, 2},
-			{40, 2},
-			{45, 3},
-			{50, 3}, // Max threshold
+			{0, 0},   // 0/25 = 0
+			{5, 0},   // 5/25 = 0
+			{10, 0},  // 10/25 = 0
+			{15, 0},  // 15/25 = 0
+			{20, 0},  // 20/25 = 0
+			{25, 1},  // 25/25 = 1
+			{30, 1},  // 30/25 = 1
+			{35, 1},  // 35/25 = 1
+			{40, 1},  // 40/25 = 1
+			{45, 1},  // 45/25 = 1
+			{50, 2},  // 50/25 = 2
+			{75, 3},  // 75/25 = 3
+			{150, 6}, // 150/25 = 6 (max)
+			{200, 6}, // 200/25 = 8, but capped at 6
 		}
 
 		for _, tt := range tests {
@@ -355,12 +358,26 @@ func TestPuzzleGrid(t *testing.T) {
 		frag1 := grid.AddFragment("A1", "player1")
 		require.NotNil(t, frag1)
 
-		// Move to an empty position
-		newPos := Position{X: 2, Y: 2}
+		// Find an empty position that's different from the current position
+		var newPos Position
+		for y := 0; y < 3; y++ {
+			for x := 0; x < 3; x++ {
+				pos := Position{X: x, Y: y}
+				if grid.GetFragmentAt(pos) == nil {
+					newPos = pos
+					break
+				}
+			}
+			if grid.GetFragmentAt(newPos) == nil {
+				break
+			}
+		}
+
+		// Move to the empty position
 		err := grid.MoveFragment(frag1.ID, newPos)
 		assert.NoError(t, err)
-		assert.Equal(t, 2, frag1.Position.X)
-		assert.Equal(t, 2, frag1.Position.Y)
+		assert.Equal(t, newPos.X, frag1.Position.X)
+		assert.Equal(t, newPos.Y, frag1.Position.Y)
 
 		// Invalid - position out of bounds
 		err = grid.MoveFragment(frag1.ID, Position{X: -1, Y: 0})

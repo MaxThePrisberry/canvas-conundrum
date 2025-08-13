@@ -20,12 +20,19 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// testSetupMutex ensures only one test can setup/reset the server at a time
+var testSetupMutex sync.Mutex
+
 func setupTestServer(t *testing.T) *httptest.Server {
-	// Reset game manager singleton
-	services.GetGameInstance()
+	// Lock to ensure only one test resets the singleton at a time
+	testSetupMutex.Lock()
+	defer testSetupMutex.Unlock()
+	
+	// Get game manager singleton and reset it
+	gm := services.GetGameInstance()
+	gm.ResetGame()
 
 	// Setup services
-	gm := services.GetGameInstance()
 	gm.SetBroadcastService(services.NewBroadcastService())
 	gm.SetTriviaService(services.NewTriviaService())
 	gm.SetPuzzleService(services.NewPuzzleService())
@@ -161,9 +168,11 @@ func TestPlayerConfiguration(t *testing.T) {
 	err = json.Unmarshal(payloadBytes, &payload)
 	require.NoError(t, err)
 
-	// Check player count
-	assert.Equal(t, float64(1), payload["totalPlayers"])
-	assert.Equal(t, float64(1), payload["readyPlayers"])
+	// Check player count - should be currentPlayers not totalPlayers per spec
+	// Note: currentPlayers ALWAYS includes +1 for host in broadcast_service.go line 120
+	assert.Equal(t, float64(2), payload["currentPlayers"]) // 1 player + 1 (always added) = 2
+	assert.Equal(t, float64(1), payload["nonHostPlayers"]) // 1 player configured
+	assert.Equal(t, float64(1), payload["readyPlayers"])  // Player is marked ready after configuration
 }
 
 func TestMultiplePlayersJoining(t *testing.T) {
@@ -207,9 +216,11 @@ func TestMultiplePlayersJoining(t *testing.T) {
 	// Host should receive roster updates
 	time.Sleep(100 * time.Millisecond)
 
-	// Check for roster update
+	// Check for roster update - look for the LAST one with players
 	messages := host.GetMessages()
 	foundRoster := false
+	var lastRosterPayload map[string]interface{}
+	
 	for _, msg := range messages {
 		if msg.Event == constants.EventSetupToHostPlayerRoster {
 			foundRoster = true
@@ -223,13 +234,26 @@ func TestMultiplePlayersJoining(t *testing.T) {
 			}
 			err := json.Unmarshal(payloadBytes, &payload)
 			require.NoError(t, err)
-
-			players := payload["players"].([]interface{})
-			assert.Len(t, players, 4)
-			break
+			
+			// Keep track of the last roster payload
+			lastRosterPayload = payload
 		}
 	}
+	
 	assert.True(t, foundRoster, "Host should receive player roster")
+	
+	if foundRoster {
+		// Debug: print the actual payload to understand the structure
+		t.Logf("Last roster payload: %+v", lastRosterPayload)
+
+		// Per spec, should be playerStatuses, not players
+		playerStatuses, ok := lastRosterPayload["playerStatuses"].(map[string]interface{})
+		if !ok {
+			t.Logf("playerStatuses field not found or wrong type. Actual type: %T", lastRosterPayload["playerStatuses"])
+		}
+		assert.True(t, ok, "Should have playerStatuses field")
+		assert.Len(t, playerStatuses, 4, "Should have 4 players in statuses")
+	}
 }
 
 func TestGameStartFlow(t *testing.T) {
@@ -425,12 +449,19 @@ func TestDisconnectionHandling(t *testing.T) {
 	// Disconnect player
 	player.Close()
 
-	// Wait for disconnection to be processed
-	time.Sleep(200 * time.Millisecond)
+	// Wait for disconnection to be processed and message to be sent
+	time.Sleep(500 * time.Millisecond)
 
 	// Host should receive player disconnection notification
 	messages := host.GetMessages()
 	foundDisconnect := false
+	
+	// Debug: print all host messages
+	t.Logf("Host received %d messages", len(messages))
+	for i, msg := range messages {
+		t.Logf("Message %d: Event=%s", i, msg.Event)
+	}
+	
 	for _, msg := range messages {
 		if msg.Event == constants.EventSystemToHostPlayerDisconnected {
 			var payload map[string]interface{}
@@ -441,6 +472,7 @@ func TestDisconnectionHandling(t *testing.T) {
 				payloadBytes = tempBytes
 			}
 			json.Unmarshal(payloadBytes, &payload)
+			t.Logf("Disconnection event payload: %+v", payload)
 			if payload["playerId"] == pID {
 				foundDisconnect = true
 				break

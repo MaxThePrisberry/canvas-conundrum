@@ -8,6 +8,7 @@ import (
 	"canvas-conundrum/services"
 	"canvas-conundrum/test_helpers"
 	"net/http/httptest"
+	"sync"
 	"testing"
 	"time"
 
@@ -17,7 +18,14 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// testSetupMutex ensures only one test can setup/reset the server at a time
+var testSetupMutex sync.Mutex
+
 func setupE2EServer(t *testing.T) (*httptest.Server, *services.GameManager) {
+	// Lock to ensure only one test resets the singleton at a time
+	testSetupMutex.Lock()
+	defer testSetupMutex.Unlock()
+	
 	// Reset and setup game manager
 	gm := services.GetGameInstance()
 	gm.ResetGame() // Reset any state from previous tests
@@ -121,6 +129,10 @@ func TestCompleteGameFlow(t *testing.T) {
 		allPlayers := gm.GetAllPlayers()
 		assert.Len(t, allPlayers, 4)
 
+		// Get analytics service
+		analyticsService := gm.GetAnalyticsService()
+		require.NotNil(t, analyticsService)
+
 		// Simulate one round of resource gathering
 		for _, player := range allPlayers {
 			// Simulate QR scan at a station
@@ -131,6 +143,9 @@ func TestCompleteGameFlow(t *testing.T) {
 			// For now, directly update the player state
 			player.CurrentStation = station
 
+			// Record station visit in analytics
+			analyticsService.RecordStationVisit(player.ID, station)
+
 			// Get a trivia question for the player
 			questions := gm.GetTriviaService().GetQuestionsForRound(gm.GetAllPlayers())
 			question, ok := questions[player.ID]
@@ -138,12 +153,27 @@ func TestCompleteGameFlow(t *testing.T) {
 			require.NotNil(t, question)
 
 			// Simulate correct answer
+			isCorrect := true
+			tokensEarned := 3
 			player.QuestionsAnswered++
 			player.CorrectAnswers++
-			player.TokensEarned += 3
+			player.TokensEarned += tokensEarned
 
-			// Add tokens to team
-			gm.AddTeamTokens(models.TokenAnchor, 3)
+			// Record trivia answer in analytics
+			responseTime := 5.0 // Simulate 5 second response time
+			isSpecialty := false // Assume not a specialty for simplicity
+			analyticsService.RecordTriviaAnswer(
+				player.ID,
+				question.Category,
+				isCorrect,
+				responseTime,
+				tokensEarned,
+				isSpecialty,
+			)
+
+			// Add tokens to team and record in analytics
+			gm.AddTeamTokens(models.TokenAnchor, tokensEarned)
+			analyticsService.RecordTokenCollection(player.ID, models.TokenAnchor, tokensEarned)
 		}
 
 		// Verify tokens were added
@@ -164,6 +194,9 @@ func TestCompleteGameFlow(t *testing.T) {
 		// Assign puzzle segments using the service method
 		gridSize := gm.GetGame().GetGridSize()
 		puzzleService.AssignSegments(gm.GetAllPlayers(), gridSize)
+
+		// Start puzzle timer (needed for solve time calculation)
+		gm.GetGame().StartPuzzleTimer()
 
 		// Simulate individual puzzle solving
 		for playerID, player := range gm.GetAllPlayers() {
@@ -211,8 +244,11 @@ func TestCompleteGameFlow(t *testing.T) {
 		analyticsService := gm.GetAnalyticsService()
 		require.NotNil(t, analyticsService)
 
+		// Mark puzzle as successful for testing (simulate puzzle was solved)
+		gm.GetGame().PuzzleSuccess = true
+
 		// Finalize game analytics
-		analyticsService.FinalizeGame(gm.GetGame(), gm.GetAllPlayers(), false)
+		analyticsService.FinalizeGame(gm.GetGame(), gm.GetAllPlayers(), true)
 
 		// Get analytics
 		fullAnalytics := analyticsService.GetFullAnalytics()
@@ -261,10 +297,11 @@ func TestGameWithHighTokens(t *testing.T) {
 	require.NoError(t, err)
 
 	// Add high tokens to trigger thresholds
-	gm.AddTeamTokens(models.TokenAnchor, 30)  // Threshold 3
-	gm.AddTeamTokens(models.TokenChronos, 25) // Threshold 2
-	gm.AddTeamTokens(models.TokenGuide, 20)   // Threshold 2
-	gm.AddTeamTokens(models.TokenClarity, 15) // Threshold 1
+	// Based on constants: Anchor=25/threshold, Chronos=20, Guide=15, Clarity=30
+	gm.AddTeamTokens(models.TokenAnchor, 75)  // 75/25 = 3 thresholds
+	gm.AddTeamTokens(models.TokenChronos, 40) // 40/20 = 2 thresholds
+	gm.AddTeamTokens(models.TokenGuide, 30)   // 30/15 = 2 thresholds
+	gm.AddTeamTokens(models.TokenClarity, 30) // 30/30 = 1 threshold
 
 	// Verify thresholds
 	tokens := gm.GetTeamTokens()
@@ -273,9 +310,9 @@ func TestGameWithHighTokens(t *testing.T) {
 	assert.Equal(t, 2, tokens.GetThreshold(models.TokenGuide))
 	assert.Equal(t, 1, tokens.GetThreshold(models.TokenClarity))
 
-	// Check pre-solved pieces
+	// Check pre-solved pieces (only anchor affects this)
 	preSolved := gm.GetGame().GetPreSolvedPieces()
-	expectedPreSolved := 3 + 2 + 2 + 1 // Sum of thresholds
+	expectedPreSolved := 3 * constants.PiecesPreSolvedPerThreshold // Only anchor thresholds count
 	assert.Equal(t, expectedPreSolved, preSolved)
 
 	// Check puzzle time bonus

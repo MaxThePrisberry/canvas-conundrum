@@ -45,6 +45,7 @@ func (bs *BroadcastService) SendToPlayer(player *models.Player, event string, pa
 // SendToHost sends a message to the host
 func (bs *BroadcastService) SendToHost(host *models.Host, event string, payload interface{}) {
 	if host == nil || host.Connection == nil {
+		log.Printf("SendToHost: Cannot send - host=%v, connection=%v", host != nil, host != nil && host.Connection != nil)
 		return
 	}
 
@@ -57,8 +58,9 @@ func (bs *BroadcastService) SendToHost(host *models.Host, event string, payload 
 
 	select {
 	case host.Send <- data:
+		log.Printf("SendToHost: Successfully sent event %s to host", event)
 	default:
-		log.Printf("Host send channel full, dropping message")
+		log.Printf("Host send channel full, dropping message for event %s", event)
 	}
 }
 

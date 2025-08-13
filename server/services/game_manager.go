@@ -156,12 +156,54 @@ func (gm *GameManager) RemovePlayer(playerID string) {
 
 	player, exists := gm.players[playerID]
 	if !exists {
+		log.Printf("RemovePlayer: Player %s not found", playerID)
 		return
 	}
 
+	log.Printf("RemovePlayer: Removing player %s (name: %s)", playerID, player.Name)
 	player.IsActive = false
 
-	// Handle disconnection based on phase
+	// Notify host of disconnection (in all phases)
+	if gm.broadcastSvc != nil && gm.host != nil {
+		log.Printf("RemovePlayer: Sending disconnection notification to host for player %s", playerID)
+		
+		// Wrap in defer/recover to catch any panics
+		func() {
+			defer func() {
+				if r := recover(); r != nil {
+					log.Printf("RemovePlayer: Panic while sending notification: %v", r)
+				}
+			}()
+			
+			// Send disconnection notification to host
+			hostPayload := map[string]interface{}{
+				"playerId":          playerID,
+				"playerName":        player.Name,
+				"disconnectionTime": time.Now().Format(time.RFC3339),
+				"currentPhase":      string(gm.game.CurrentPhase),
+				"updatedPlayerCount": len(gm.players) - 1, // -1 because this player is disconnecting
+			}
+			
+			// Add phase-specific impact info for puzzle phase
+			if gm.game.CurrentPhase == models.PhasePuzzleAssembly && player.FragmentID != "" {
+				hostPayload["gameImpact"] = map[string]interface{}{
+					"fragmentHandling": map[string]interface{}{
+						"fragmentId":        player.FragmentID,
+						"action":            "auto_solved_and_unassigned",
+						"ownershipTransfer": "unassigned",
+					},
+				}
+			}
+			
+			gm.broadcastSvc.SendToHost(gm.host, constants.EventSystemToHostPlayerDisconnected, hostPayload)
+			log.Printf("RemovePlayer: Disconnection notification sent")
+		}()
+	} else {
+		log.Printf("RemovePlayer: Cannot send disconnection notification - broadcastSvc=%v, host=%v", 
+			gm.broadcastSvc != nil, gm.host != nil)
+	}
+
+	// Handle phase-specific disconnection logic
 	switch gm.game.CurrentPhase {
 	case models.PhasePuzzleAssembly:
 		// Auto-solve puzzle and make fragment unassigned
@@ -367,6 +409,12 @@ func (gm *GameManager) StartGame() error {
 	// Initialize analytics
 	if gm.analyticsSvc != nil {
 		gm.analyticsSvc.StartGame(gm.game.ID)
+		// Initialize analytics for all existing players
+		for _, player := range gm.players {
+			if player.IsActive {
+				gm.analyticsSvc.InitializePlayer(player.ID, player.Name)
+			}
+		}
 	}
 
 	// Transition to resource gathering
@@ -493,44 +541,85 @@ func (gm *GameManager) StartPuzzleTimer() error {
 
 // CompleteSegment marks a player's segment as completed
 func (gm *GameManager) CompleteSegment(playerID string, segmentID string) error {
-	gm.mu.Lock()
-	defer gm.mu.Unlock()
+	// Hold data to broadcast after releasing lock
+	var playerCopy *models.Player
+	var fragmentCopy *models.Fragment
+	var shouldBroadcast bool
+	var checkCompletion bool
+	
+	// Update state under lock
+	err := func() error {
+		gm.mu.Lock()
+		defer gm.mu.Unlock()
 
-	player, exists := gm.players[playerID]
-	if !exists {
-		return fmt.Errorf("player not found")
-	}
-
-	if player.SegmentCompleted {
-		return fmt.Errorf("segment already completed")
-	}
-
-	// Mark as completed
-	player.SegmentCompleted = true
-	player.SegmentSolveTime = time.Since(gm.game.PuzzleStartTime).Seconds()
-
-	// Add fragment to grid
-	fragment := gm.game.PuzzleGrid.AddFragment(segmentID, playerID)
-	player.FragmentID = fragment.ID
-
-	log.Printf("Player %s completed segment %s", playerID, segmentID)
-
-	// Check if all players completed
-	allCompleted := true
-	for _, p := range gm.players {
-		if p.IsActive && !p.SegmentCompleted {
-			allCompleted = false
-			break
+		player, exists := gm.players[playerID]
+		if !exists {
+			return fmt.Errorf("player not found")
 		}
+
+		if player.SegmentCompleted {
+			return fmt.Errorf("segment already completed")
+		}
+
+		// Mark as completed
+		player.SegmentCompleted = true
+		player.SegmentSolveTime = time.Since(gm.game.PuzzleStartTime).Seconds()
+
+		// Add fragment to grid
+		fragment := gm.game.PuzzleGrid.AddFragment(segmentID, playerID)
+		player.FragmentID = fragment.ID
+
+		// Record in analytics
+		if gm.analyticsSvc != nil {
+			gm.analyticsSvc.RecordSegmentCompletion(playerID, player.SegmentSolveTime)
+		}
+
+		log.Printf("Player %s completed segment %s", playerID, segmentID)
+
+		// Check if all players completed
+		allCompleted := true
+		for _, p := range gm.players {
+			if p.IsActive && !p.SegmentCompleted {
+				allCompleted = false
+				break
+			}
+		}
+		
+		// Make copies for broadcasting
+		playerCopy = &models.Player{
+			ID:              player.ID,
+			Name:            player.Name,
+			AssignedSegment: player.AssignedSegment,
+			SegmentSolveTime: player.SegmentSolveTime,
+			FragmentID:      player.FragmentID,
+			Connection:      player.Connection,
+			Send:            player.Send,
+		}
+		fragmentCopy = &models.Fragment{
+			ID:       fragment.ID,
+			Position: fragment.Position,
+		}
+		shouldBroadcast = gm.broadcastSvc != nil
+		checkCompletion = allCompleted && gm.game.PuzzleGrid != nil
+		
+		return nil
+	}()
+	
+	if err != nil {
+		return err
 	}
 
-	// Broadcast updates
-	if gm.broadcastSvc != nil {
-		gm.broadcastSvc.BroadcastSegmentCompleted(player, fragment)
+	// Broadcast updates outside of lock
+	if shouldBroadcast {
+		gm.broadcastSvc.BroadcastSegmentCompleted(playerCopy, fragmentCopy)
 
-		if allCompleted {
-			// Check for immediate victory
-			if gm.game.PuzzleGrid.CheckCompletion() {
+		if checkCompletion {
+			// Check for immediate victory with a fresh lock
+			gm.mu.RLock()
+			isComplete := gm.game.PuzzleGrid != nil && gm.game.PuzzleGrid.CheckCompletion()
+			gm.mu.RUnlock()
+			
+			if isComplete {
 				gm.PuzzleComplete(true)
 			}
 		}
@@ -642,13 +731,15 @@ func (gm *GameManager) ResetGame() {
 	// Clear players
 	for _, player := range gm.players {
 		if player.Done != nil {
-			// Safely close channel by checking if it's not already closed
-			select {
-			case <-player.Done:
-				// Already closed
-			default:
+			// Safely close channel using recover to handle already closed channels
+			func() {
+				defer func() {
+					if r := recover(); r != nil {
+						// Channel was already closed, ignore
+					}
+				}()
 				close(player.Done)
-			}
+			}()
 		}
 	}
 	gm.players = make(map[string]*models.Player)

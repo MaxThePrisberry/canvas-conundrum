@@ -72,20 +72,30 @@ func (tt *TeamTokens) AddTokens(tokenType TokenType, amount int) {
 	}
 }
 
-// GetThreshold returns the threshold level (0-3) for a token type
+// GetThreshold returns the threshold level (0-6) for a token type
 func (tt *TeamTokens) GetThreshold(tokenType TokenType) int {
 	count := tt.GetTokenCount(tokenType)
-	level := 0
-
-	if count >= constants.TokenThreshold1 {
-		level = 1
+	
+	var thresholdValue int
+	switch tokenType {
+	case TokenAnchor:
+		thresholdValue = constants.AnchorTokenThreshold
+	case TokenChronos:
+		thresholdValue = constants.ChronosTokenThreshold
+	case TokenGuide:
+		thresholdValue = constants.GuideTokenThreshold
+	case TokenClarity:
+		thresholdValue = constants.ClarityTokenThreshold
+	default:
+		return 0
 	}
-	if count >= constants.TokenThreshold2 {
-		level = 2
+	
+	// Each token type can have up to 6 thresholds based on the spec
+	level := count / thresholdValue
+	if level > 6 {
+		level = 6
 	}
-	if count >= constants.TokenThreshold3 {
-		level = 3
-	}
+	
 	return level
 }
 

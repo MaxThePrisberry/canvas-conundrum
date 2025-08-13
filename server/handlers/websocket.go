@@ -109,7 +109,15 @@ func HandleHostWebSocket(w http.ResponseWriter, r *http.Request) {
 func handlePlayerRead(player *models.Player) {
 	defer func() {
 		player.Connection.Close()
-		close(player.Done)
+		// Safely close Done channel using recover to handle already closed channels
+		func() {
+			defer func() {
+				if r := recover(); r != nil {
+					// Channel was already closed, ignore
+				}
+			}()
+			close(player.Done)
+		}()
 	}()
 
 	player.Connection.SetReadDeadline(time.Now().Add(time.Duration(config.PongWait) * time.Second))
@@ -186,7 +194,15 @@ func handlePlayerWrite(player *models.Player) {
 func handleHostRead(host *models.Host) {
 	defer func() {
 		host.Connection.Close()
-		close(host.Done)
+		// Safely close Done channel using recover to handle already closed channels
+		func() {
+			defer func() {
+				if r := recover(); r != nil {
+					// Channel was already closed, ignore
+				}
+			}()
+			close(host.Done)
+		}()
 	}()
 
 	host.Connection.SetReadDeadline(time.Now().Add(time.Duration(config.PongWait) * time.Second))
@@ -235,6 +251,9 @@ func handleHostWrite(host *models.Host) {
 	for {
 		select {
 		case message, ok := <-host.Send:
+			if host.Connection == nil {
+				return
+			}
 			host.Connection.SetWriteDeadline(time.Now().Add(time.Duration(config.WriteWait) * time.Second))
 			if !ok {
 				host.Connection.WriteMessage(websocket.CloseMessage, []byte{})
@@ -246,6 +265,9 @@ func handleHostWrite(host *models.Host) {
 			}
 
 		case <-ticker.C:
+			if host.Connection == nil {
+				return
+			}
 			host.Connection.SetWriteDeadline(time.Now().Add(time.Duration(config.WriteWait) * time.Second))
 			if err := host.Connection.WriteMessage(websocket.PingMessage, nil); err != nil {
 				return

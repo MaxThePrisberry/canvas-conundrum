@@ -49,19 +49,3 @@ func GetStationFromHash(hash string) Station {
 		return UnknownStation
 	}
 }
-
-// GetHashFromStation returns the QR code hash for a station
-func GetHashFromStation(station Station) string {
-	switch station {
-	case AnchorStation:
-		return HashAnchorStation
-	case ChronosStation:
-		return HashChronosStation
-	case GuideStation:
-		return HashGuideStation
-	case ClarityStation:
-		return HashClarityStation
-	default:
-		return ""
-	}
-}

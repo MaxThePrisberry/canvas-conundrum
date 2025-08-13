@@ -105,8 +105,3 @@ func GetGridSizeForPlayerCount(playerCount int) int {
 		return 8
 	}
 }
-
-// Get total fragments for a grid size
-func GetTotalFragments(gridSize int) int {
-	return gridSize * gridSize
-}

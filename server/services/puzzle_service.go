@@ -1,8 +1,6 @@
 package services
 
 import (
-	"canvas-conundrum/config"
-	"canvas-conundrum/constants"
 	"canvas-conundrum/models"
 	"canvas-conundrum/utils"
 	"fmt"
@@ -81,52 +79,6 @@ func (ps *PuzzleService) generateSegmentIDs(gridSize int) []string {
 	return segments
 }
 
-// GetSegmentAssignment returns the segment assigned to a player
-func (ps *PuzzleService) GetSegmentAssignment(playerID string) (string, bool) {
-	ps.mu.RLock()
-	defer ps.mu.RUnlock()
-	segment, exists := ps.segmentAssignments[playerID]
-	return segment, exists
-}
-
-// GetAllAssignments returns all segment assignments
-func (ps *PuzzleService) GetAllAssignments() map[string]string {
-	ps.mu.RLock()
-	defer ps.mu.RUnlock()
-
-	// Return a copy to avoid race conditions
-	assignments := make(map[string]string)
-	for k, v := range ps.segmentAssignments {
-		assignments[k] = v
-	}
-	return assignments
-}
-
-// GetUnassignedSegments returns list of unassigned segments
-func (ps *PuzzleService) GetUnassignedSegments() []string {
-	ps.mu.RLock()
-	defer ps.mu.RUnlock()
-
-	// Return a copy
-	segments := make([]string, len(ps.unassignedSegments))
-	copy(segments, ps.unassignedSegments)
-	return segments
-}
-
-// GetNextUnassignedSegment gets the next unassigned segment for auto-completion
-func (ps *PuzzleService) GetNextUnassignedSegment() (string, bool) {
-	ps.mu.Lock()
-	defer ps.mu.Unlock()
-
-	if len(ps.unassignedSegments) == 0 {
-		return "", false
-	}
-
-	segment := ps.unassignedSegments[0]
-	ps.unassignedSegments = ps.unassignedSegments[1:]
-	return segment, true
-}
-
 // CreateRecommendation creates a new move recommendation
 func (ps *PuzzleService) CreateRecommendation(fromPlayerID, fromPlayerName, toPlayerID,
 	fromFragmentID, toFragmentID, reasoning string) (*models.MoveRecommendation, error) {
@@ -175,31 +127,6 @@ func (ps *PuzzleService) UpdateRecommendationStatus(recommendationID string, sta
 	rec.Status = status
 	log.Printf("Recommendation %s status updated to: %s", recommendationID, status)
 	return nil
-}
-
-// ExpireRecommendation marks a recommendation as expired
-func (ps *PuzzleService) ExpireRecommendation(recommendationID string, reason string) {
-	ps.mu.Lock()
-	defer ps.mu.Unlock()
-
-	if rec, exists := ps.recommendations[recommendationID]; exists {
-		rec.Status = "expired"
-		log.Printf("Recommendation %s expired: %s", recommendationID, reason)
-	}
-}
-
-// CleanupExpiredRecommendations removes expired recommendations
-func (ps *PuzzleService) CleanupExpiredRecommendations() {
-	ps.mu.Lock()
-	defer ps.mu.Unlock()
-
-	now := time.Now()
-	for id, rec := range ps.recommendations {
-		if now.After(rec.ExpiresAt) && rec.Status == "pending" {
-			rec.Status = "expired"
-			log.Printf("Auto-expiring recommendation %s", id)
-		}
-	}
 }
 
 // CalculateGuideHighlights calculates guide token highlights for a player's fragment
@@ -271,62 +198,4 @@ func (ps *PuzzleService) ExecuteRecommendedSwap(grid *models.PuzzleGrid,
 	ps.UpdateRecommendationStatus(recommendationID, "executed")
 
 	return nil
-}
-
-// GetPuzzleImagePath returns the path to puzzle segment images
-func (ps *PuzzleService) GetPuzzleImagePath(imageID string, gridSize int, segmentID string) string {
-	return fmt.Sprintf("%s/%s/%dx%d/%s.png",
-		config.PuzzleImagesPath, imageID, gridSize, gridSize, segmentID)
-}
-
-// GetAllSegmentPaths returns paths to all segments for a puzzle
-func (ps *PuzzleService) GetAllSegmentPaths(imageID string, gridSize int) []string {
-	segments := ps.generateSegmentIDs(gridSize)
-	paths := make([]string, len(segments))
-
-	for i, segment := range segments {
-		paths[i] = ps.GetPuzzleImagePath(imageID, gridSize, segment)
-	}
-
-	return paths
-}
-
-// CalculatePreSolvedPieces determines which pieces should be pre-solved
-func (ps *PuzzleService) CalculatePreSolvedPieces(anchorThreshold int) []int {
-	totalPieces := constants.IndividualPuzzlePieces
-	preSolvedCount := anchorThreshold * constants.PiecesPreSolvedPerThreshold
-
-	if preSolvedCount > constants.MaxPreSolvedPieces {
-		preSolvedCount = constants.MaxPreSolvedPieces
-	}
-
-	if preSolvedCount >= totalPieces {
-		preSolvedCount = totalPieces - 4 // Always leave at least 4 pieces to solve
-	}
-
-	// Generate random indices for pre-solved pieces
-	allIndices := make([]int, totalPieces)
-	for i := range allIndices {
-		allIndices[i] = i
-	}
-
-	// Shuffle and take first N indices
-	rand.Shuffle(len(allIndices), func(i, j int) {
-		allIndices[i], allIndices[j] = allIndices[j], allIndices[i]
-	})
-
-	preSolvedIndices := allIndices[:preSolvedCount]
-	return preSolvedIndices
-}
-
-// StartPeriodicCleanup starts a goroutine to periodically clean up expired recommendations
-func (ps *PuzzleService) StartPeriodicCleanup() {
-	go func() {
-		ticker := time.NewTicker(5 * time.Second)
-		defer ticker.Stop()
-
-		for range ticker.C {
-			ps.CleanupExpiredRecommendations()
-		}
-	}()
 }

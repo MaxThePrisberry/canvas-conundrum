@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"math/rand"
 	"time"
+	
+	"canvas-conundrum/utils"
 )
 
 // Position represents a grid position
@@ -59,11 +61,8 @@ func NewPuzzleGrid(size int) *PuzzleGrid {
 
 // AddFragment adds a fragment to the grid at a random position
 func (pg *PuzzleGrid) AddFragment(segmentID string, playerID string) *Fragment {
-	// Generate fragment ID
-	fragmentID := fmt.Sprintf("fragment_%s", playerID)
-	if playerID == "" {
-		fragmentID = fmt.Sprintf("fragment_%s_%d", segmentID, time.Now().UnixNano())
-	}
+	// Generate unique fragment ID using utility function
+	fragmentID := utils.GenerateFragmentID()
 
 	// Calculate correct position based on segment ID (e.g., "A1", "B2", etc.)
 	correctPos := pg.getCorrectPositionFromSegmentID(segmentID)

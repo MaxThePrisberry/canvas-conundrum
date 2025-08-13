@@ -1,7 +1,6 @@
 package services
 
 import (
-	"canvas-conundrum/config"
 	"canvas-conundrum/constants"
 	"canvas-conundrum/models"
 	"canvas-conundrum/utils"
@@ -356,119 +355,6 @@ func (bs *BroadcastService) getHostPhaseControls(phase models.GamePhase) []strin
 	default:
 		return []string{}
 	}
-}
-
-// BroadcastResourcePhaseStart broadcasts resource gathering phase start
-func (bs *BroadcastService) BroadcastResourcePhaseStart() {
-	gameManager := GetGameInstance()
-	game := gameManager.GetGame()
-
-	// To players
-	playerPayload := map[string]interface{}{
-		"phase":        "resource_gathering",
-		"totalRounds":  constants.ResourceGatheringRounds,
-		"roundDuration": constants.ResourceGatheringRoundDuration,
-		"answerTime":    constants.TriviaAnswerTime,
-		"graceTime":     constants.TriviaGraceTime,
-		"resourceStationHashes": map[string]string{
-			"anchor":  config.HashAnchorStation,
-			"chronos": config.HashChronosStation,
-			"guide":   config.HashGuideStation,
-			"clarity": config.HashClarityStation,
-		},
-		"tokenThresholds": map[string]int{
-			"anchor":  constants.AnchorTokenThreshold,
-			"chronos": constants.ChronosTokenThreshold,
-			"guide":   constants.GuideTokenThreshold,
-			"clarity": constants.ClarityTokenThreshold,
-		},
-		"difficultySettings": map[string]interface{}{
-			"mode":                 game.Difficulty,
-			"specialtyProbability":  bs.getSpecialtyProbability(game.Difficulty),
-			"timeMultiplier":       bs.getTimeMultiplier(game.Difficulty),
-			"thresholdMultiplier":  bs.getThresholdMultiplier(game.Difficulty),
-		},
-	}
-	bs.BroadcastToAllPlayers(constants.EventResourceToClientPhaseStart, playerPayload)
-
-	// To host
-	hostPayload := map[string]interface{}{
-		"phase": "resource_gathering",
-		"monitoringDashboard": map[string]interface{}{
-			"totalRounds":      constants.ResourceGatheringRounds,
-			"currentRound":     0,
-			"roundDuration":    constants.ResourceGatheringRoundDuration,
-			"playerDistribution": bs.getPlayerDistribution(),
-		},
-		"analyticsTracking": map[string]interface{}{
-			"questionDelivery":   true,
-			"answerTracking":     true,
-			"locationTracking":   true,
-			"performanceMetrics": true,
-		},
-	}
-
-	if host := gameManager.GetHost(); host != nil {
-		bs.SendToHost(host, constants.EventResourceToHostPhaseStart, hostPayload)
-	}
-}
-
-// getSpecialtyProbability returns specialty probability for difficulty
-func (bs *BroadcastService) getSpecialtyProbability(difficulty models.DifficultyMode) float64 {
-	switch difficulty {
-	case models.DifficultyEasy:
-		return constants.EasySpecialtyProbability
-	case models.DifficultyHard:
-		return constants.HardSpecialtyProbability
-	default:
-		return constants.MediumSpecialtyProbability
-	}
-}
-
-// getTimeMultiplier returns time multiplier for difficulty
-func (bs *BroadcastService) getTimeMultiplier(difficulty models.DifficultyMode) float64 {
-	switch difficulty {
-	case models.DifficultyEasy:
-		return constants.EasyTimeMultiplier
-	case models.DifficultyHard:
-		return constants.HardTimeMultiplier
-	default:
-		return constants.MediumTimeMultiplier
-	}
-}
-
-// getThresholdMultiplier returns threshold multiplier for difficulty
-func (bs *BroadcastService) getThresholdMultiplier(difficulty models.DifficultyMode) float64 {
-	switch difficulty {
-	case models.DifficultyEasy:
-		return constants.EasyThresholdMultiplier
-	case models.DifficultyHard:
-		return constants.HardThresholdMultiplier
-	default:
-		return constants.MediumThresholdMultiplier
-	}
-}
-
-// getPlayerDistribution returns current player distribution by station
-func (bs *BroadcastService) getPlayerDistribution() map[string]int {
-	dist := map[string]int{
-		"anchor":  0,
-		"chronos": 0,
-		"guide":   0,
-		"clarity": 0,
-		"unknown": 0,
-	}
-
-	for _, player := range GetGameInstance().GetAllPlayers() {
-		if player.IsActive {
-			if player.CurrentStation == "" {
-				dist["unknown"]++
-			} else {
-				dist[player.CurrentStation]++
-			}
-		}
-	}
-	return dist
 }
 
 // BroadcastTriviaQuestions sends trivia questions to players
@@ -898,8 +784,29 @@ func (bs *BroadcastService) BroadcastSegmentCompleted(player *models.Player, fra
 	}
 	bs.SendToPlayer(player, constants.EventPuzzleToPlayerSegmentAcknowledged, playerPayload)
 
-	// To host
+	// Send personal puzzle state with guide highlights
 	gameManager := GetGameInstance()
+	game := gameManager.GetGame()
+	puzzleService := gameManager.GetPuzzleService()
+	
+	if puzzleService != nil && game.PuzzleGrid != nil {
+		guideThreshold := game.TeamTokens.GetThreshold(models.TokenGuide)
+		highlights := puzzleService.CalculateGuideHighlights(game.PuzzleGrid, fragment.ID, guideThreshold)
+		
+		personalState := map[string]interface{}{
+			"personalView": map[string]interface{}{
+				"fragmentId": fragment.ID,
+				"guideHighlight": map[string]interface{}{
+					"enabled":   len(highlights) > 0,
+					"positions": highlights,
+					"reduction": guideThreshold,
+				},
+			},
+		}
+		bs.SendToPlayer(player, constants.EventPuzzleToPlayerPersonalState, personalState)
+	}
+
+	// To host
 	if host := gameManager.GetHost(); host != nil {
 		hostPayload := map[string]interface{}{
 			"playerId":            player.ID,
@@ -914,6 +821,122 @@ func (bs *BroadcastService) BroadcastSegmentCompleted(player *models.Player, fra
 
 	// Update grid state immediately
 	bs.sendHostGridState()
+}
+
+// BroadcastAnalytics broadcasts analytics data to host and players
+func (bs *BroadcastService) BroadcastAnalytics(analytics *models.GameAnalytics) {
+	if analytics == nil {
+		return
+	}
+	
+	gameManager := GetGameInstance()
+	
+	// Send complete analytics to host
+	if host := gameManager.GetHost(); host != nil {
+		bs.SendToHost(host, constants.EventAnalyticsToHostCompleteReport, analytics)
+	}
+	
+	// Send personal analytics to each player
+	for playerID, playerAnalytics := range analytics.PlayerAnalytics {
+		if player, exists := gameManager.GetPlayer(playerID); exists {
+			personalReport := map[string]interface{}{
+				"personalStats": playerAnalytics,
+				"teamRank":      bs.calculatePlayerRank(playerID, analytics),
+			}
+			bs.SendToPlayer(player, constants.EventAnalyticsToPlayerPersonalReport, personalReport)
+		}
+	}
+	
+	// Send team summary to all players
+	var completionTime float64
+	if analytics.PuzzleAssemblyMetrics != nil {
+		completionTime = analytics.PuzzleAssemblyMetrics.CompletionTime
+	}
+	
+	teamSummary := map[string]interface{}{
+		"teamStats":      analytics.TeamAnalytics,
+		"gameSuccess":    analytics.TeamAnalytics != nil && analytics.TeamAnalytics.GameSuccess,
+		"completionTime": completionTime,
+		"topPerformers":  bs.getTopPerformers(analytics),
+	}
+	bs.BroadcastToAll(constants.EventAnalyticsToClientTeamSummary, teamSummary)
+}
+
+// calculatePlayerRank calculates a player's rank within the team
+func (bs *BroadcastService) calculatePlayerRank(playerID string, analytics *models.GameAnalytics) int {
+	// Simple ranking based on total score
+	scores := make([]struct {
+		ID    string
+		Score int
+	}, 0)
+	
+	for id, pa := range analytics.PlayerAnalytics {
+		scores = append(scores, struct {
+			ID    string
+			Score int
+		}{id, pa.TotalScore})
+	}
+	
+	// Sort by score descending
+	for i := 0; i < len(scores); i++ {
+		for j := i + 1; j < len(scores); j++ {
+			if scores[j].Score > scores[i].Score {
+				scores[i], scores[j] = scores[j], scores[i]
+			}
+		}
+	}
+	
+	// Find rank
+	for i, s := range scores {
+		if s.ID == playerID {
+			return i + 1
+		}
+	}
+	return len(scores)
+}
+
+// getTopPerformers gets the top 3 performers
+func (bs *BroadcastService) getTopPerformers(analytics *models.GameAnalytics) []map[string]interface{} {
+	gameManager := GetGameInstance()
+	topPerformers := []map[string]interface{}{}
+	
+	// Get top 3 by score
+	type playerScore struct {
+		ID    string
+		Name  string
+		Score int
+	}
+	
+	scores := []playerScore{}
+	for id, pa := range analytics.PlayerAnalytics {
+		if player, exists := gameManager.GetPlayer(id); exists {
+			scores = append(scores, playerScore{
+				ID:    id,
+				Name:  player.Name,
+				Score: pa.TotalScore,
+			})
+		}
+	}
+	
+	// Sort by score
+	for i := 0; i < len(scores); i++ {
+		for j := i + 1; j < len(scores); j++ {
+			if scores[j].Score > scores[i].Score {
+				scores[i], scores[j] = scores[j], scores[i]
+			}
+		}
+	}
+	
+	// Take top 3
+	for i := 0; i < 3 && i < len(scores); i++ {
+		topPerformers = append(topPerformers, map[string]interface{}{
+			"rank":       i + 1,
+			"playerName": scores[i].Name,
+			"score":      scores[i].Score,
+		})
+	}
+	
+	return topPerformers
 }
 
 // BroadcastPuzzleComplete broadcasts puzzle completion

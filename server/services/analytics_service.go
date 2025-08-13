@@ -510,31 +510,6 @@ func (as *AnalyticsService) determineNotableStats() {
 	as.analytics.TeamAnalytics.PuzzleMVP = puzzleMVP
 }
 
-// GetPlayerAnalytics returns analytics for a specific player
-func (as *AnalyticsService) GetPlayerAnalytics(playerID string) (*models.PlayerAnalytics, bool) {
-	as.mu.RLock()
-	defer as.mu.RUnlock()
-
-	if as.analytics == nil {
-		return nil, false
-	}
-
-	analytics, exists := as.analytics.PlayerAnalytics[playerID]
-	return analytics, exists
-}
-
-// GetTeamAnalytics returns team analytics
-func (as *AnalyticsService) GetTeamAnalytics() *models.TeamAnalytics {
-	as.mu.RLock()
-	defer as.mu.RUnlock()
-
-	if as.analytics == nil {
-		return nil
-	}
-
-	return as.analytics.TeamAnalytics
-}
-
 // GetFullAnalytics returns complete game analytics
 func (as *AnalyticsService) GetFullAnalytics() *models.GameAnalytics {
 	as.mu.RLock()

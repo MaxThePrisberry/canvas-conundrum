@@ -7,7 +7,6 @@ import (
 	"io/ioutil"
 	"log"
 	"math/rand"
-	"path/filepath"
 	"sync"
 )
 
@@ -24,11 +23,6 @@ func NewTriviaService() *TriviaService {
 		pools:    make(map[string]*models.QuestionPool),
 		basePath: "./trivia",
 	}
-}
-
-// SetBasePath sets the base path for trivia files (useful for tests)
-func (ts *TriviaService) SetBasePath(path string) {
-	ts.basePath = path
 }
 
 // LoadQuestions loads all trivia questions from JSON files
@@ -265,14 +259,23 @@ func (ts *TriviaService) getHarderDifficulty(current models.TriviaDifficulty) mo
 }
 
 // ProcessAnswer processes a player's answer to a trivia question
-func (ts *TriviaService) ProcessAnswer(playerID string, questionID string, selectedAnswer string, answerIndex int, timeElapsed float64) (*models.TriviaAnswer, int) {
+func (ts *TriviaService) ProcessAnswer(playerID string, questionID string, selectedAnswer string, answerIndex int, timeElapsed float64) (*models.TriviaAnswer, int, models.TokenType) {
 	gameManager := GetGameInstance()
 	player, exists := gameManager.GetPlayer(playerID)
 	if !exists {
-		return nil, 0
+		return nil, 0, ""
 	}
 
 	game := gameManager.GetGame()
+	
+	// Get the original question to validate answer
+	question := ts.GetQuestionByID(questionID)
+	if question == nil {
+		return nil, 0, ""
+	}
+
+	// Check if answer is correct
+	correct := question.CorrectAnswer == selectedAnswer
 
 	// Create answer record
 	answer := &models.TriviaAnswer{
@@ -281,37 +284,43 @@ func (ts *TriviaService) ProcessAnswer(playerID string, questionID string, selec
 		SelectedAnswer: selectedAnswer,
 		AnswerIndex:    answerIndex,
 		TimeElapsed:    timeElapsed,
+		Correct:        correct,
 	}
 
-	// Check if answer is correct (this would need the original question)
-	// For now, we'll calculate tokens based on the assumption the handler validates
+	// Calculate tokens earned
 	tokensEarned := 0
-	if answer.Correct {
+	var tokenType models.TokenType
+	
+	if correct {
 		// Base tokens
 		tokensEarned = constants.BaseTokensPerCorrectAnswer
 
-		// Apply role bonus if at matching station
+		// Get token type for current station
 		if player.CurrentStation != "" {
-			tokenType := ts.getTokenTypeForStation(player.CurrentStation)
+			tokenType = ts.getTokenTypeForStation(player.CurrentStation)
+			
+			// Apply role bonus if at matching station
 			if tokenType == player.Role.GetBonusTokenType() {
 				tokensEarned = int(float64(tokensEarned) * constants.RoleResourceMultiplier)
 			}
 		}
 
-		// Apply specialty bonus (would need to check if question was specialty)
-		// This would be handled by the caller with question context
+		// Apply specialty bonus
+		if question.IsSpecialty {
+			tokensEarned = int(float64(tokensEarned) * constants.SpecialtyPointMultiplier)
+		}
 
 		// Apply difficulty modifier
 		switch game.Difficulty {
 		case models.DifficultyEasy:
-			tokensEarned = int(float64(tokensEarned) * 0.8)
+			tokensEarned = int(float64(tokensEarned) * constants.EasyTimeMultiplier)
 		case models.DifficultyHard:
-			tokensEarned = int(float64(tokensEarned) * 1.2)
+			tokensEarned = int(float64(tokensEarned) * constants.HardTimeMultiplier)
 		}
 	}
 
 	answer.TokensEarned = tokensEarned
-	return answer, tokensEarned
+	return answer, tokensEarned, tokenType
 }
 
 // getTokenTypeForStation returns the token type for a station
@@ -354,30 +363,4 @@ func (ts *TriviaService) GetQuestionByID(questionID string) *models.TriviaQuesti
 	}
 
 	return nil
-}
-
-// GetCategoryStats returns statistics for each category
-func (ts *TriviaService) GetCategoryStats() map[models.TriviaCategory]int {
-	ts.mu.RLock()
-	defer ts.mu.RUnlock()
-
-	stats := make(map[models.TriviaCategory]int)
-
-	for key, pool := range ts.pools {
-		// Extract category from pool key
-		for _, category := range []models.TriviaCategory{
-			models.CategoryGeneral,
-			models.CategoryGeography,
-			models.CategoryHistory,
-			models.CategoryMusic,
-			models.CategoryScience,
-			models.CategoryVideoGames,
-		} {
-			if filepath.HasPrefix(key, string(category)) {
-				stats[category] += len(pool.Questions)
-			}
-		}
-	}
-
-	return stats
 }

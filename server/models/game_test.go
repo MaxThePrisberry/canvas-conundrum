@@ -341,7 +341,8 @@ func TestPuzzleGrid(t *testing.T) {
 		assert.NotNil(t, frag)
 		assert.Equal(t, "B2", frag.SegmentID)
 		assert.Equal(t, "player1", frag.PlayerID)
-		assert.Equal(t, "fragment_player1", frag.ID)
+		// Fragment ID is now generated as a UUID
+		assert.Contains(t, frag.ID, "fragment-")
 
 		// Check correct position was calculated
 		assert.Equal(t, 1, frag.CorrectPosition.X) // Column 2 -> index 1

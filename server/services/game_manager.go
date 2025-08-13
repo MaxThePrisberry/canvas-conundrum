@@ -383,44 +383,65 @@ func (gm *GameManager) CanStartGame() bool {
 
 // StartGame starts the game
 func (gm *GameManager) StartGame() error {
-	gm.mu.Lock()
-	defer gm.mu.Unlock()
+	// Keep track of what to broadcast after unlocking
+	var shouldBroadcast bool
+	var oldPhase models.GamePhase
+	
+	// Do all state changes under lock
+	err := func() error {
+		gm.mu.Lock()
+		defer gm.mu.Unlock()
 
-	if gm.game.CurrentPhase != models.PhaseSetup {
-		return fmt.Errorf("game already started")
-	}
-
-	// Check if we can start the game
-	readyCount := 0
-	for _, player := range gm.players {
-		if player.IsReady && player.IsActive {
-			readyCount++
+		if gm.game.CurrentPhase != models.PhaseSetup {
+			return fmt.Errorf("game already started")
 		}
-	}
 
-	if readyCount < gm.game.MinPlayers {
-		return fmt.Errorf("cannot start game: need minimum %d ready players, have %d", gm.game.MinPlayers, readyCount)
-	}
-
-	if gm.host == nil || gm.host.Connection == nil {
-		return fmt.Errorf("cannot start game: no host connected")
-	}
-
-	// Initialize analytics
-	if gm.analyticsSvc != nil {
-		gm.analyticsSvc.StartGame(gm.game.ID)
-		// Initialize analytics for all existing players
+		// Check if we can start the game
+		readyCount := 0
 		for _, player := range gm.players {
-			if player.IsActive {
-				gm.analyticsSvc.InitializePlayer(player.ID, player.Name)
+			if player.IsReady && player.IsActive {
+				readyCount++
 			}
 		}
+
+		if readyCount < gm.game.MinPlayers {
+			return fmt.Errorf("cannot start game: need minimum %d ready players, have %d", gm.game.MinPlayers, readyCount)
+		}
+
+		if gm.host == nil || gm.host.Connection == nil {
+			return fmt.Errorf("cannot start game: no host connected")
+		}
+
+		// Initialize analytics
+		if gm.analyticsSvc != nil {
+			gm.analyticsSvc.StartGame(gm.game.ID)
+			// Initialize analytics for all existing players
+			for _, player := range gm.players {
+				if player.IsActive {
+					gm.analyticsSvc.InitializePlayer(player.ID, player.Name)
+				}
+			}
+		}
+
+		// Store old phase for transition broadcast
+		oldPhase = gm.game.CurrentPhase
+		shouldBroadcast = gm.broadcastSvc != nil
+		
+		// Transition to resource gathering
+		gm.game.StartResourceGathering()
+
+		log.Println("Game started - transitioning to resource gathering phase")
+		return nil
+	}()
+	
+	if err != nil {
+		return err
 	}
-
-	// Transition to resource gathering
-	gm.game.StartResourceGathering()
-
-	log.Println("Game started - transitioning to resource gathering phase")
+	
+	// Broadcast phase transition after releasing lock
+	if shouldBroadcast {
+		gm.broadcastSvc.BroadcastPhaseTransition(oldPhase, models.PhaseResourceGathering)
+	}
 
 	// Start first round after transition
 	go func() {
@@ -470,8 +491,15 @@ func (gm *GameManager) StartResourceRound() {
 
 // CompleteResourceGathering completes the resource gathering phase
 func (gm *GameManager) CompleteResourceGathering() {
-	gm.mu.Lock()
-	defer gm.mu.Unlock()
+	// Broadcast completion outside of lock
+	func() {
+		gm.mu.Lock()
+		defer gm.mu.Unlock()
+		// Just verify we're in the right phase
+		if gm.game.CurrentPhase != models.PhaseResourceGathering {
+			return
+		}
+	}()
 
 	// Broadcast resource phase completion
 	if gm.broadcastSvc != nil {
@@ -482,16 +510,41 @@ func (gm *GameManager) CompleteResourceGathering() {
 	go func() {
 		time.Sleep(5 * time.Second)
 		
-		gm.mu.Lock()
-		defer gm.mu.Unlock()
+		// Keep track of what to broadcast after unlocking
+		var shouldBroadcast bool
+		var oldPhase models.GamePhase
+		var playersCopy map[string]*models.Player
+		var gridSize int
 		
-		// Transition to puzzle phase
-		playerCount := len(gm.players)
-		gm.game.StartPuzzlePhase(playerCount)
+		// Do state changes under lock
+		func() {
+			gm.mu.Lock()
+			defer gm.mu.Unlock()
+			
+			// Store old phase for transition broadcast
+			oldPhase = gm.game.CurrentPhase
+			shouldBroadcast = gm.broadcastSvc != nil
+			
+			// Transition to puzzle phase
+			playerCount := len(gm.players)
+			gm.game.StartPuzzlePhase(playerCount)
+			gridSize = gm.game.PuzzleGrid.Size
+			
+			// Make a copy of players for puzzle assignment
+			playersCopy = make(map[string]*models.Player)
+			for id, p := range gm.players {
+				playersCopy[id] = p
+			}
+		}()
+		
+		// Broadcast phase transition outside of lock
+		if shouldBroadcast {
+			gm.broadcastSvc.BroadcastPhaseTransition(oldPhase, models.PhasePuzzleAssembly)
+		}
 
 		// Assign puzzle segments
 		if gm.puzzleSvc != nil {
-			gm.puzzleSvc.AssignSegments(gm.players, gm.game.PuzzleGrid.Size)
+			gm.puzzleSvc.AssignSegments(playersCopy, gridSize)
 		}
 
 		// Broadcast puzzle phase start
@@ -643,14 +696,11 @@ func (gm *GameManager) MoveFragment(playerID string, fragmentID string, targetPo
 		return fmt.Errorf("move on cooldown")
 	}
 
-	// Check ownership
-	fragment, exists := gm.game.PuzzleGrid.Fragments[fragmentID]
-	if !exists {
-		return fmt.Errorf("fragment not found")
-	}
-
-	if fragment.IsOwned() && fragment.PlayerID != playerID {
-		return fmt.Errorf("cannot move another player's fragment")
+	// Validate move using puzzle service
+	if gm.puzzleSvc != nil {
+		if err := gm.puzzleSvc.ValidateFragmentMove(gm.game.PuzzleGrid, playerID, fragmentID, targetPos); err != nil {
+			return err
+		}
 	}
 
 	// Check if position is occupied
@@ -681,6 +731,9 @@ func (gm *GameManager) MoveFragment(playerID string, fragmentID string, targetPo
 
 // PuzzleComplete handles puzzle completion
 func (gm *GameManager) PuzzleComplete(success bool) {
+	// Store old phase for transition broadcast
+	oldPhase := gm.game.CurrentPhase
+	
 	gm.game.CompleteGame(success)
 
 	if gm.puzzleTimer != nil {
@@ -694,9 +747,17 @@ func (gm *GameManager) PuzzleComplete(success bool) {
 		gm.analyticsSvc.FinalizeGame(gm.game, gm.players, success)
 	}
 
-	// Broadcast completion
+	// Broadcast phase transition and completion
 	if gm.broadcastSvc != nil {
+		gm.broadcastSvc.BroadcastPhaseTransition(oldPhase, models.PhaseAnalytics)
 		gm.broadcastSvc.BroadcastPuzzleComplete(success, gm.game.CompletionTime)
+		
+		// Send analytics data to host
+		if gm.analyticsSvc != nil {
+			if analytics := gm.analyticsSvc.GetFullAnalytics(); analytics != nil {
+				gm.broadcastSvc.BroadcastAnalytics(analytics)
+			}
+		}
 	}
 }
 
@@ -760,67 +821,6 @@ func (gm *GameManager) GetGame() *models.Game {
 	gm.mu.RLock()
 	defer gm.mu.RUnlock()
 	return gm.game
-}
-
-// GetCurrentRound returns the current round number
-func (gm *GameManager) GetCurrentRound() int {
-	gm.mu.RLock()
-	defer gm.mu.RUnlock()
-	return gm.game.CurrentRound
-}
-
-// NextRound advances to the next round
-func (gm *GameManager) NextRound() {
-	gm.mu.Lock()
-	defer gm.mu.Unlock()
-	gm.game.StartNextRound()
-}
-
-// TransitionToPhase transitions to a specific phase
-func (gm *GameManager) TransitionToPhase(phase models.GamePhase) {
-	gm.mu.Lock()
-	defer gm.mu.Unlock()
-	
-	switch phase {
-	case models.PhaseResourceGathering:
-		gm.game.StartResourceGathering()
-	case models.PhasePuzzleAssembly:
-		// Initialize puzzle phase properly
-		playerCount := len(gm.players)
-		gm.game.StartPuzzlePhase(playerCount)
-		
-		// Assign puzzle segments
-		if gm.puzzleSvc != nil {
-			gm.puzzleSvc.AssignSegments(gm.players, gm.game.PuzzleGrid.Size)
-		}
-	case models.PhaseAnalytics:
-		gm.game.CurrentPhase = phase
-		gm.game.PhaseStartTime = time.Now()
-	default:
-		gm.game.CurrentPhase = phase
-		gm.game.PhaseStartTime = time.Now()
-	}
-}
-
-// IsGameStarted checks if the game has started
-func (gm *GameManager) IsGameStarted() bool {
-	gm.mu.RLock()
-	defer gm.mu.RUnlock()
-	return gm.game.GameStarted
-}
-
-// AddTeamTokens adds tokens to the team's total
-func (gm *GameManager) AddTeamTokens(tokenType models.TokenType, amount int) {
-	gm.mu.Lock()
-	defer gm.mu.Unlock()
-	gm.game.TeamTokens.AddTokens(tokenType, amount)
-}
-
-// GetTeamTokens returns the team's current token counts
-func (gm *GameManager) GetTeamTokens() *models.TeamTokens {
-	gm.mu.RLock()
-	defer gm.mu.RUnlock()
-	return gm.game.TeamTokens
 }
 
 // GetBroadcastService returns the broadcast service

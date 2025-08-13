@@ -66,13 +66,3 @@ func CreateErrorPayload(errorType, errorCode, message, details string) map[strin
 		"severity":  "error",
 	}
 }
-
-// MarshalJSON is a helper to marshal any object to JSON bytes
-func MarshalJSON(v interface{}) ([]byte, error) {
-	return json.Marshal(v)
-}
-
-// UnmarshalJSON is a helper to unmarshal JSON bytes to an object
-func UnmarshalJSON(data []byte, v interface{}) error {
-	return json.Unmarshal(data, v)
-}

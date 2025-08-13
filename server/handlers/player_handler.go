@@ -161,50 +161,37 @@ func handleTriviaAnswer(player *models.Player, payload json.RawMessage) {
 	analyticsService := gameManager.GetAnalyticsService()
 	game := gameManager.GetGame()
 
-	// Get the original question to validate answer
+	// Process the answer using trivia service
+	answer, tokensEarned, tokenType := triviaService.ProcessAnswer(
+		player.ID,
+		data.QuestionID,
+		data.SelectedAnswer,
+		data.AnswerIndex,
+		data.TimeElapsed,
+	)
+
+	if answer == nil {
+		log.Printf("Failed to process answer for question: %s", data.QuestionID)
+		return
+	}
+
+	// Get the original question for additional context
 	question := triviaService.GetQuestionByID(data.QuestionID)
 	if question == nil {
 		log.Printf("Question not found: %s", data.QuestionID)
 		return
 	}
 
-	// Check if answer is correct
-	correct := question.CorrectAnswer == data.SelectedAnswer
-
-	// Calculate tokens earned
-	tokensEarned := 0
-	if correct {
-		tokensEarned = constants.BaseTokensPerCorrectAnswer
-
-		// Apply role bonus if at matching station
-		tokenType := getTokenTypeForStation(player.CurrentStation)
-		if tokenType == player.Role.GetBonusTokenType() {
-			tokensEarned = int(float64(tokensEarned) * constants.RoleResourceMultiplier)
-		}
-
-		// Apply specialty bonus
-		if question.IsSpecialty {
-			tokensEarned = int(float64(tokensEarned) * constants.SpecialtyPointMultiplier)
-		}
-
-		// Apply difficulty modifier
-		switch game.Difficulty {
-		case models.DifficultyEasy:
-			tokensEarned = int(float64(tokensEarned) * constants.EasyTimeMultiplier)
-		case models.DifficultyHard:
-			tokensEarned = int(float64(tokensEarned) * constants.HardTimeMultiplier)
-		}
-
-		// Update player stats
+	// Update player stats
+	if answer.Correct {
 		player.CorrectAnswers++
-
+		
 		// Update team tokens
 		if tokenType != "" {
 			player.TokensEarned += tokensEarned
 			game.TeamTokens.AddTokens(tokenType, tokensEarned)
 		}
 	}
-
 	player.QuestionsAnswered++
 
 	// Record in analytics
@@ -212,13 +199,13 @@ func handleTriviaAnswer(player *models.Player, payload json.RawMessage) {
 		analyticsService.RecordTriviaAnswer(
 			player.ID,
 			question.Category,
-			correct,
+			answer.Correct,
 			data.TimeElapsed,
 			tokensEarned,
 			question.IsSpecialty,
 		)
 
-		if tokenType := getTokenTypeForStation(player.CurrentStation); tokenType != "" {
+		if tokenType != "" && tokensEarned > 0 {
 			analyticsService.RecordTokenCollection(player.ID, tokenType, tokensEarned)
 		}
 	}
@@ -227,13 +214,13 @@ func handleTriviaAnswer(player *models.Player, payload json.RawMessage) {
 	if broadcastService != nil {
 		resultPayload := map[string]interface{}{
 			"questionId":     data.QuestionID,
-			"correct":        correct,
+			"correct":        answer.Correct,
 			"selectedAnswer": data.SelectedAnswer,
 			"correctAnswer":  question.CorrectAnswer,
 			"tokensEarned":   tokensEarned,
 			"baseTokens":     constants.BaseTokensPerCorrectAnswer,
 			"bonuses": map[string]interface{}{
-				"roleBonus":            player.Role.GetBonusTokenType() == getTokenTypeForStation(player.CurrentStation),
+				"roleBonus":            player.Role.GetBonusTokenType() == tokenType,
 				"roleBonusTokens":      0, // Calculate if needed
 				"specialtyBonus":       question.IsSpecialty,
 				"specialtyBonusTokens": 0, // Calculate if needed
@@ -511,31 +498,6 @@ func handlePing(player *models.Player, payload json.RawMessage) {
 }
 
 // Helper functions
-
-func getTokenTypeForStation(location interface{}) models.TokenType {
-	var station config.Station
-	switch v := location.(type) {
-	case config.Station:
-		station = v
-	case string:
-		station = config.Station(v)
-	default:
-		return ""
-	}
-
-	switch station {
-	case config.AnchorStation:
-		return models.TokenAnchor
-	case config.ChronosStation:
-		return models.TokenChronos
-	case config.GuideStation:
-		return models.TokenGuide
-	case config.ClarityStation:
-		return models.TokenClarity
-	default:
-		return ""
-	}
-}
 
 func getTeamProgressPayload() map[string]interface{} {
 	gameManager := services.GetGameInstance()

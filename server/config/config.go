@@ -38,11 +38,6 @@ func Load() *Config {
 	return cfg
 }
 
-// IsDevelopment returns true if running in development mode
-func (c *Config) IsDevelopment() bool {
-	return c.Environment == "development"
-}
-
 // IsProduction returns true if running in production mode
 func (c *Config) IsProduction() bool {
 	return c.Environment == "production"

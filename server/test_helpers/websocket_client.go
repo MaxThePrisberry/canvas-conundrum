@@ -164,6 +164,16 @@ func (c *TestWebSocketClient) GetLastMessage() *utils.ServerMessage {
 	return &c.messages[len(c.messages)-1]
 }
 
+// GetPlayerID returns the player ID
+func (c *TestWebSocketClient) GetPlayerID() string {
+	return c.playerID
+}
+
+// GetToken returns the authentication token
+func (c *TestWebSocketClient) GetToken() string {
+	return c.token
+}
+
 // ClearMessages clears the message buffer
 func (c *TestWebSocketClient) ClearMessages() {
 	c.mu.Lock()

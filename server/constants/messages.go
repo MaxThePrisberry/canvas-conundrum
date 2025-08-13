@@ -51,6 +51,7 @@ const (
 	EventPuzzleToHostTimerStart              = "PUZZLE_TO_HOST_TIMER_START"
 	EventPuzzleToPlayerSegmentAcknowledged   = "PUZZLE_TO_PLAYER_SEGMENT_ACKNOWLEDGED"
 	EventPuzzleToHostSegmentCompleted        = "PUZZLE_TO_HOST_SEGMENT_COMPLETED"
+	EventPuzzleToPlayerPersonalState         = "PUZZLE_TO_PLAYER_PERSONAL_STATE"
 	EventPuzzleToPlayerMoveResult            = "PUZZLE_TO_PLAYER_MOVE_RESULT"
 	EventPuzzleToClientGridState             = "PUZZLE_TO_CLIENT_GRID_STATE"
 	EventPuzzleToHostGridState               = "PUZZLE_TO_HOST_GRID_STATE"

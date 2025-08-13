@@ -72,6 +72,32 @@ func handlePlayerConfiguration(player *models.Player, payload json.RawMessage) {
 	gameManager := services.GetGameInstance()
 	broadcastService := gameManager.GetBroadcastService()
 
+	// Validate and sanitize input
+	data.PlayerName = utils.SanitizeString(data.PlayerName)
+	if err := utils.ValidatePlayerName(data.PlayerName); err != nil {
+		log.Printf("Invalid player name: %v", err)
+		if broadcastService != nil {
+			broadcastService.SendError(player, "INVALID_NAME", "Invalid player name", err.Error())
+		}
+		return
+	}
+
+	if err := utils.ValidateRole(data.SelectedRole); err != nil {
+		log.Printf("Invalid role: %v", err)
+		if broadcastService != nil {
+			broadcastService.SendError(player, "INVALID_ROLE", "Invalid role", err.Error())
+		}
+		return
+	}
+
+	if err := utils.ValidateSpecialties(data.SelectedSpecialties); err != nil {
+		log.Printf("Invalid specialties: %v", err)
+		if broadcastService != nil {
+			broadcastService.SendError(player, "INVALID_SPECIALTIES", "Invalid specialties", err.Error())
+		}
+		return
+	}
+
 	// Convert string to role
 	role := models.Role(data.SelectedRole)
 
@@ -185,7 +211,7 @@ func handleTriviaAnswer(player *models.Player, payload json.RawMessage) {
 	// Update player stats
 	if answer.Correct {
 		player.CorrectAnswers++
-		
+
 		// Update team tokens
 		if tokenType != "" {
 			player.TokensEarned += tokensEarned

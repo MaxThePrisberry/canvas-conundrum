@@ -293,6 +293,36 @@ func sendConnectionError(conn *websocket.Conn, errorMsg string) {
 	conn.WriteMessage(websocket.TextMessage, data)
 }
 
+// sendHostConnectionConfirmed sends connection confirmation to the host
+func sendHostConnectionConfirmed(host *models.Host) {
+	gameManager := services.GetGameInstance()
+	game := gameManager.GetGame()
+
+	payload := map[string]interface{}{
+		"playerId": host.ID,
+		"isHost":   true,
+		"message":  "Connected as game host",
+		"gameConfig": map[string]interface{}{
+			"minPlayers":                     constants.MinPlayers,
+			"maxPlayers":                     constants.MaxPlayers,
+			"resourceGatheringRounds":        constants.ResourceGatheringRounds,
+			"resourceGatheringRoundDuration": constants.ResourceGatheringRoundDuration,
+			"puzzleBaseTime":                 constants.PuzzleBaseTime,
+			"difficultyMode":                 string(game.Difficulty),
+		},
+	}
+
+	broadcastService := gameManager.GetBroadcastService()
+	if broadcastService != nil {
+		broadcastService.SendToHost(host, constants.EventSetupToHostConnectionConfirmed, payload)
+	}
+
+	// Also send the initial player roster
+	if broadcastService != nil {
+		broadcastService.BroadcastLobbyStatus()
+	}
+}
+
 // sendRolesAvailable sends available roles to a new player
 func sendRolesAvailable(player *models.Player) {
 	gameManager := services.GetGameInstance()
@@ -349,34 +379,6 @@ func sendRolesAvailable(player *models.Player) {
 	broadcastService := services.GetGameInstance().GetBroadcastService()
 	if broadcastService != nil {
 		broadcastService.SendToPlayer(player, constants.EventSetupToPlayerRolesAvailable, payload)
-	}
-}
-
-// sendHostConnectionConfirmed sends connection confirmation to host
-func sendHostConnectionConfirmed(host *models.Host) {
-	gameManager := services.GetGameInstance()
-	game := gameManager.GetGame()
-
-	payload := map[string]interface{}{
-		"playerId": host.ID,
-		"isHost":   true,
-		"message":  "Connected as game host",
-		"gameConfig": map[string]interface{}{
-			"minPlayers":                     constants.MinPlayers,
-			"maxPlayers":                     constants.MaxPlayers,
-			"resourceGatheringRounds":        constants.ResourceGatheringRounds,
-			"resourceGatheringRoundDuration": constants.ResourceGatheringRoundDuration,
-			"puzzleBaseTime":                 constants.PuzzleBaseTime,
-			"difficultyMode":                 game.Difficulty,
-		},
-	}
-
-	broadcastService := gameManager.GetBroadcastService()
-	if broadcastService != nil {
-		broadcastService.SendToHost(host, constants.EventSetupToHostConnectionConfirmed, payload)
-
-		// Send initial player roster
-		broadcastService.BroadcastLobbyStatus()
 	}
 }
 

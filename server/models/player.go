@@ -50,12 +50,14 @@ type Player struct {
 	LastSeen          time.Time        `json:"lastSeen"`
 
 	// Puzzle phase specific
-	AssignedSegment  string    `json:"assignedSegment"`
-	SegmentCompleted bool      `json:"segmentCompleted"`
-	SegmentSolveTime float64   `json:"segmentSolveTime"`
-	FragmentID       string    `json:"fragmentId"`
-	FragmentMoves    int       `json:"fragmentMoves"`
-	LastMoveTime     time.Time `json:"-"`
+	AssignedSegment  string            `json:"assignedSegment"`
+	IndividualPuzzle *IndividualPuzzle `json:"individualPuzzle,omitempty"`
+	PuzzlePhase      string            `json:"puzzlePhase"` // "2A" (individual) or "2B" (collaborative)
+	SegmentCompleted bool              `json:"segmentCompleted"`
+	SegmentSolveTime float64           `json:"segmentSolveTime"`
+	FragmentID       string            `json:"fragmentId"`
+	FragmentMoves    int               `json:"fragmentMoves"`
+	LastMoveTime     time.Time         `json:"-"`
 
 	// Analytics
 	RecommendationsSent     int `json:"recommendationsSent"`

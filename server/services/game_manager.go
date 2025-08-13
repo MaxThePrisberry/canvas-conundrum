@@ -113,15 +113,17 @@ func (gm *GameManager) AddPlayer(player *models.Player) error {
 	// Check if this is a reconnection
 	if existingPlayer, exists := gm.players[player.ID]; exists {
 		// Player reconnection
-		if gm.game.CurrentPhase == models.PhasePuzzleAssembly && !existingPlayer.SegmentCompleted {
-			// Cannot reconnect during puzzle phase if segment not completed
-			return fmt.Errorf("cannot reconnect during puzzle phase")
+		if gm.game.CurrentPhase == models.PhasePuzzleAssembly {
+			// Cannot reconnect during puzzle phase at all (per specification)
+			return fmt.Errorf("cannot reconnect during puzzle assembly phase")
 		}
 
 		// Update connection and mark as active
 		existingPlayer.Connection = player.Connection
 		existingPlayer.IsActive = true
 		existingPlayer.LastSeen = time.Now()
+		existingPlayer.Send = player.Send
+		existingPlayer.Done = player.Done
 		log.Printf("Player %s reconnected", player.ID)
 		return nil
 	}
@@ -166,7 +168,7 @@ func (gm *GameManager) RemovePlayer(playerID string) {
 	// Notify host of disconnection (in all phases)
 	if gm.broadcastSvc != nil && gm.host != nil {
 		log.Printf("RemovePlayer: Sending disconnection notification to host for player %s", playerID)
-		
+
 		// Wrap in defer/recover to catch any panics
 		func() {
 			defer func() {
@@ -174,16 +176,16 @@ func (gm *GameManager) RemovePlayer(playerID string) {
 					log.Printf("RemovePlayer: Panic while sending notification: %v", r)
 				}
 			}()
-			
+
 			// Send disconnection notification to host
 			hostPayload := map[string]interface{}{
-				"playerId":          playerID,
-				"playerName":        player.Name,
-				"disconnectionTime": time.Now().Format(time.RFC3339),
-				"currentPhase":      string(gm.game.CurrentPhase),
+				"playerId":           playerID,
+				"playerName":         player.Name,
+				"disconnectionTime":  time.Now().Format(time.RFC3339),
+				"currentPhase":       string(gm.game.CurrentPhase),
 				"updatedPlayerCount": len(gm.players) - 1, // -1 because this player is disconnecting
 			}
-			
+
 			// Add phase-specific impact info for puzzle phase
 			if gm.game.CurrentPhase == models.PhasePuzzleAssembly && player.FragmentID != "" {
 				hostPayload["gameImpact"] = map[string]interface{}{
@@ -194,12 +196,12 @@ func (gm *GameManager) RemovePlayer(playerID string) {
 					},
 				}
 			}
-			
+
 			gm.broadcastSvc.SendToHost(gm.host, constants.EventSystemToHostPlayerDisconnected, hostPayload)
 			log.Printf("RemovePlayer: Disconnection notification sent")
 		}()
 	} else {
-		log.Printf("RemovePlayer: Cannot send disconnection notification - broadcastSvc=%v, host=%v", 
+		log.Printf("RemovePlayer: Cannot send disconnection notification - broadcastSvc=%v, host=%v",
 			gm.broadcastSvc != nil, gm.host != nil)
 	}
 
@@ -264,9 +266,11 @@ func (gm *GameManager) SetHost(host *models.Host) error {
 	}
 
 	// If this is a reconnection (same host ID), update the connection
+	wasReconnection := false
 	if gm.host != nil && gm.host.ID == host.ID {
 		gm.host.Connection = host.Connection
 		gm.host.ConnectedAt = time.Now()
+		wasReconnection = true
 		log.Printf("Host %s reconnected", host.ID)
 	} else {
 		// New host or replacing disconnected host
@@ -274,17 +278,35 @@ func (gm *GameManager) SetHost(host *models.Host) error {
 		log.Printf("Host %s connected", host.ID)
 	}
 
+	// Broadcast host reconnection if this was a reconnection
+	if wasReconnection && gm.broadcastSvc != nil {
+		gm.broadcastSvc.BroadcastHostReconnected()
+	}
+
 	return nil
 }
 
 // RemoveHost disconnects the host (but keeps the host object for reconnection)
 func (gm *GameManager) RemoveHost() {
-	gm.mu.Lock()
-	defer gm.mu.Unlock()
+	// Store what we need before unlocking
+	var broadcastSvc *BroadcastService
+	var hostID string
 
+	gm.mu.Lock()
 	if gm.host != nil {
 		gm.host.Connection = nil
-		log.Printf("Host %s disconnected", gm.host.ID)
+		hostID = gm.host.ID
+		broadcastSvc = gm.broadcastSvc
+	}
+	gm.mu.Unlock()
+
+	if hostID != "" {
+		log.Printf("Host %s disconnected", hostID)
+
+		// Broadcast host disconnection to all players (outside lock)
+		if broadcastSvc != nil {
+			broadcastSvc.BroadcastHostDisconnected()
+		}
 	}
 }
 
@@ -386,7 +408,7 @@ func (gm *GameManager) StartGame() error {
 	// Keep track of what to broadcast after unlocking
 	var shouldBroadcast bool
 	var oldPhase models.GamePhase
-	
+
 	// Do all state changes under lock
 	err := func() error {
 		gm.mu.Lock()
@@ -426,18 +448,18 @@ func (gm *GameManager) StartGame() error {
 		// Store old phase for transition broadcast
 		oldPhase = gm.game.CurrentPhase
 		shouldBroadcast = gm.broadcastSvc != nil
-		
+
 		// Transition to resource gathering
 		gm.game.StartResourceGathering()
 
 		log.Println("Game started - transitioning to resource gathering phase")
 		return nil
 	}()
-	
+
 	if err != nil {
 		return err
 	}
-	
+
 	// Broadcast phase transition after releasing lock
 	if shouldBroadcast {
 		gm.broadcastSvc.BroadcastPhaseTransition(oldPhase, models.PhaseResourceGathering)
@@ -509,34 +531,34 @@ func (gm *GameManager) CompleteResourceGathering() {
 	// Wait a bit for transition
 	go func() {
 		time.Sleep(5 * time.Second)
-		
+
 		// Keep track of what to broadcast after unlocking
 		var shouldBroadcast bool
 		var oldPhase models.GamePhase
 		var playersCopy map[string]*models.Player
 		var gridSize int
-		
+
 		// Do state changes under lock
 		func() {
 			gm.mu.Lock()
 			defer gm.mu.Unlock()
-			
+
 			// Store old phase for transition broadcast
 			oldPhase = gm.game.CurrentPhase
 			shouldBroadcast = gm.broadcastSvc != nil
-			
+
 			// Transition to puzzle phase
 			playerCount := len(gm.players)
 			gm.game.StartPuzzlePhase(playerCount)
 			gridSize = gm.game.PuzzleGrid.Size
-			
+
 			// Make a copy of players for puzzle assignment
 			playersCopy = make(map[string]*models.Player)
 			for id, p := range gm.players {
 				playersCopy[id] = p
 			}
 		}()
-		
+
 		// Broadcast phase transition outside of lock
 		if shouldBroadcast {
 			gm.broadcastSvc.BroadcastPhaseTransition(oldPhase, models.PhasePuzzleAssembly)
@@ -599,7 +621,7 @@ func (gm *GameManager) CompleteSegment(playerID string, segmentID string) error 
 	var fragmentCopy *models.Fragment
 	var shouldBroadcast bool
 	var checkCompletion bool
-	
+
 	// Update state under lock
 	err := func() error {
 		gm.mu.Lock()
@@ -610,15 +632,30 @@ func (gm *GameManager) CompleteSegment(playerID string, segmentID string) error 
 			return fmt.Errorf("player not found")
 		}
 
+		// Check if player is still in individual puzzle phase (2A)
+		if player.PuzzlePhase != "2A" {
+			return fmt.Errorf("player not in individual puzzle phase")
+		}
+
 		if player.SegmentCompleted {
 			return fmt.Errorf("segment already completed")
 		}
 
+		// Complete the individual puzzle
+		if player.IndividualPuzzle != nil {
+			player.IndividualPuzzle.Complete()
+			player.SegmentSolveTime = player.IndividualPuzzle.SolveTimeSeconds
+		} else {
+			player.SegmentSolveTime = time.Since(gm.game.PuzzleStartTime).Seconds()
+		}
+
 		// Mark as completed
 		player.SegmentCompleted = true
-		player.SegmentSolveTime = time.Since(gm.game.PuzzleStartTime).Seconds()
 
-		// Add fragment to grid
+		// Transition player to collaborative phase (2B)
+		player.PuzzlePhase = "2B"
+
+		// Add fragment to central grid (instant transformation from individual to collaborative)
 		fragment := gm.game.PuzzleGrid.AddFragment(segmentID, playerID)
 		player.FragmentID = fragment.ID
 
@@ -627,7 +664,7 @@ func (gm *GameManager) CompleteSegment(playerID string, segmentID string) error 
 			gm.analyticsSvc.RecordSegmentCompletion(playerID, player.SegmentSolveTime)
 		}
 
-		log.Printf("Player %s completed segment %s", playerID, segmentID)
+		log.Printf("Player %s completed individual puzzle for segment %s, transitioning to Phase 2B", playerID, segmentID)
 
 		// Check if all players completed
 		allCompleted := true
@@ -637,16 +674,16 @@ func (gm *GameManager) CompleteSegment(playerID string, segmentID string) error 
 				break
 			}
 		}
-		
+
 		// Make copies for broadcasting
 		playerCopy = &models.Player{
-			ID:              player.ID,
-			Name:            player.Name,
-			AssignedSegment: player.AssignedSegment,
+			ID:               player.ID,
+			Name:             player.Name,
+			AssignedSegment:  player.AssignedSegment,
 			SegmentSolveTime: player.SegmentSolveTime,
-			FragmentID:      player.FragmentID,
-			Connection:      player.Connection,
-			Send:            player.Send,
+			FragmentID:       player.FragmentID,
+			Connection:       player.Connection,
+			Send:             player.Send,
 		}
 		fragmentCopy = &models.Fragment{
 			ID:       fragment.ID,
@@ -654,10 +691,10 @@ func (gm *GameManager) CompleteSegment(playerID string, segmentID string) error 
 		}
 		shouldBroadcast = gm.broadcastSvc != nil
 		checkCompletion = allCompleted && gm.game.PuzzleGrid != nil
-		
+
 		return nil
 	}()
-	
+
 	if err != nil {
 		return err
 	}
@@ -671,7 +708,7 @@ func (gm *GameManager) CompleteSegment(playerID string, segmentID string) error 
 			gm.mu.RLock()
 			isComplete := gm.game.PuzzleGrid != nil && gm.game.PuzzleGrid.CheckCompletion()
 			gm.mu.RUnlock()
-			
+
 			if isComplete {
 				gm.PuzzleComplete(true)
 			}
@@ -731,9 +768,17 @@ func (gm *GameManager) MoveFragment(playerID string, fragmentID string, targetPo
 
 // PuzzleComplete handles puzzle completion
 func (gm *GameManager) PuzzleComplete(success bool) {
+	gm.mu.Lock()
+
 	// Store old phase for transition broadcast
 	oldPhase := gm.game.CurrentPhase
-	
+
+	// Check if already completed
+	if gm.game.PuzzleCompleted {
+		gm.mu.Unlock()
+		return
+	}
+
 	gm.game.CompleteGame(success)
 
 	if gm.puzzleTimer != nil {
@@ -747,15 +792,22 @@ func (gm *GameManager) PuzzleComplete(success bool) {
 		gm.analyticsSvc.FinalizeGame(gm.game, gm.players, success)
 	}
 
-	// Broadcast phase transition and completion
-	if gm.broadcastSvc != nil {
-		gm.broadcastSvc.BroadcastPhaseTransition(oldPhase, models.PhaseAnalytics)
-		gm.broadcastSvc.BroadcastPuzzleComplete(success, gm.game.CompletionTime)
-		
+	// Store references for use after unlock
+	broadcastSvc := gm.broadcastSvc
+	analyticsSvc := gm.analyticsSvc
+	completionTime := gm.game.CompletionTime
+
+	gm.mu.Unlock()
+
+	// Broadcast phase transition and completion (outside of lock)
+	if broadcastSvc != nil {
+		broadcastSvc.BroadcastPhaseTransition(oldPhase, models.PhaseAnalytics)
+		broadcastSvc.BroadcastPuzzleComplete(success, completionTime)
+
 		// Send analytics data to host
-		if gm.analyticsSvc != nil {
-			if analytics := gm.analyticsSvc.GetFullAnalytics(); analytics != nil {
-				gm.broadcastSvc.BroadcastAnalytics(analytics)
+		if analyticsSvc != nil {
+			if analytics := analyticsSvc.GetFullAnalytics(); analytics != nil {
+				broadcastSvc.BroadcastAnalytics(analytics)
 			}
 		}
 	}
@@ -813,7 +865,74 @@ func (gm *GameManager) ResetGame() {
 		gm.analyticsSvc.Reset()
 	}
 
+	// Clear service references to allow new ones to be set
+	gm.broadcastSvc = nil
+	gm.triviaSvc = nil
+	gm.puzzleSvc = nil
+	gm.analyticsSvc = nil
+
 	log.Println("Game reset to initial state")
+}
+
+// Cleanup properly shuts down the game manager
+func (gm *GameManager) Cleanup() {
+	gm.mu.Lock()
+	defer gm.mu.Unlock()
+
+	// Stop all timers
+	if gm.roundTimer != nil {
+		gm.roundTimer.Stop()
+		gm.roundTimer = nil
+	}
+	if gm.puzzleTimer != nil {
+		gm.puzzleTimer.Stop()
+		gm.puzzleTimer = nil
+	}
+
+	// Stop puzzle service expiration monitor
+	if gm.puzzleSvc != nil {
+		// Try to send stop signal
+		select {
+		case gm.puzzleSvc.stopExpiration <- true:
+		default:
+			// Channel might be closed or full, ignore
+		}
+		// Stop the ticker
+		if gm.puzzleSvc.expirationTicker != nil {
+			gm.puzzleSvc.expirationTicker.Stop()
+			gm.puzzleSvc.expirationTicker = nil
+		}
+		// Clear the service reference
+		gm.puzzleSvc = nil
+	}
+
+	// Close all player channels
+	for _, player := range gm.players {
+		if player.Done != nil {
+			func() {
+				defer func() {
+					if r := recover(); r != nil {
+						// Channel was already closed, ignore
+					}
+				}()
+				close(player.Done)
+			}()
+		}
+	}
+
+	// Close host channel if exists
+	if gm.host != nil && gm.host.Done != nil {
+		func() {
+			defer func() {
+				if r := recover(); r != nil {
+					// Channel was already closed, ignore
+				}
+			}()
+			close(gm.host.Done)
+		}()
+	}
+
+	log.Println("Game manager cleaned up")
 }
 
 // GetGame returns the current game state

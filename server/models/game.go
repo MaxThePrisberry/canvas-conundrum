@@ -74,32 +74,53 @@ func (tt *TeamTokens) AddTokens(tokenType TokenType, amount int) {
 
 // GetThreshold returns the threshold level (0-6) for a token type
 func (tt *TeamTokens) GetThreshold(tokenType TokenType) int {
+	return tt.GetThresholdWithDifficulty(tokenType, DifficultyMedium)
+}
+
+// GetThresholdWithDifficulty returns the threshold level considering difficulty mode
+func (tt *TeamTokens) GetThresholdWithDifficulty(tokenType TokenType, difficulty DifficultyMode) int {
 	count := tt.GetTokenCount(tokenType)
-	
-	var thresholdValue int
+
+	var baseThreshold int
 	switch tokenType {
 	case TokenAnchor:
-		thresholdValue = constants.AnchorTokenThreshold
+		baseThreshold = constants.AnchorTokenThreshold
 	case TokenChronos:
-		thresholdValue = constants.ChronosTokenThreshold
+		baseThreshold = constants.ChronosTokenThreshold
 	case TokenGuide:
-		thresholdValue = constants.GuideTokenThreshold
+		baseThreshold = constants.GuideTokenThreshold
 	case TokenClarity:
-		thresholdValue = constants.ClarityTokenThreshold
+		baseThreshold = constants.ClarityTokenThreshold
 	default:
 		return 0
 	}
-	
-	// Each token type can have up to 6 thresholds based on the spec
-	level := count / thresholdValue
-	if level > 6 {
-		level = 6
+
+	// Apply difficulty modifier to threshold requirements
+	var multiplier float64
+	switch difficulty {
+	case DifficultyEasy:
+		multiplier = constants.EasyThresholdMultiplier // 0.8 - easier to achieve
+	case DifficultyHard:
+		multiplier = constants.HardThresholdMultiplier // 1.2 - harder to achieve
+	default:
+		multiplier = constants.MediumThresholdMultiplier // 1.0
 	}
-	
+
+	adjustedThreshold := int(float64(baseThreshold) * multiplier)
+	if adjustedThreshold < 1 {
+		adjustedThreshold = 1
+	}
+
+	// Calculate threshold level (0-6)
+	level := count / adjustedThreshold
+	if level > constants.MaxThresholds {
+		level = constants.MaxThresholds
+	}
+
 	return level
 }
 
-// GetTotal returns the total number of all tokens
+// GetTotal returns the total number of tokens
 func (tt *TeamTokens) GetTotal() int {
 	return tt.AnchorTokens + tt.ChronosTokens + tt.GuideTokens + tt.ClarityTokens
 }
@@ -168,18 +189,18 @@ func generateGameID() string {
 	return "game-" + time.Now().Format("20060102-150405")
 }
 
-// NextPhase transitions to the next game phase
+// NextPhase returns the next phase in the game flow
 func (g *Game) NextPhase() GamePhase {
 	switch g.CurrentPhase {
 	case PhaseSetup:
-		g.CurrentPhase = PhaseResourceGathering
+		return PhaseResourceGathering
 	case PhaseResourceGathering:
-		g.CurrentPhase = PhasePuzzleAssembly
+		return PhasePuzzleAssembly
 	case PhasePuzzleAssembly:
-		g.CurrentPhase = PhaseAnalytics
+		return PhaseAnalytics
+	default:
+		return PhaseAnalytics
 	}
-	g.PhaseStartTime = time.Now()
-	return g.CurrentPhase
 }
 
 // SetDifficulty sets the game difficulty
@@ -187,20 +208,9 @@ func (g *Game) SetDifficulty(difficulty DifficultyMode) {
 	g.Difficulty = difficulty
 }
 
-// GetGridSize returns the puzzle grid size based on player count
+// GetGridSize returns the grid size based on player count
 func (g *Game) GetGridSize() int {
-	if g.PlayerCount <= 8 {
-		return 3
-	} else if g.PlayerCount <= 16 {
-		return 4
-	} else if g.PlayerCount <= 24 {
-		return 5
-	} else if g.PlayerCount <= 36 {
-		return 6
-	} else if g.PlayerCount <= 48 {
-		return 7
-	}
-	return 8
+	return constants.GetGridSizeForPlayerCount(g.PlayerCount)
 }
 
 // StartResourceGathering transitions to resource gathering phase
@@ -253,9 +263,9 @@ func (g *Game) GetPuzzleTimeRemaining() int {
 // GetTotalPuzzleTime returns total puzzle time including bonuses
 func (g *Game) GetTotalPuzzleTime() int {
 	baseTime := constants.PuzzleBaseTime
-	chronosBonus := g.TeamTokens.GetThreshold(TokenChronos) * constants.TimeExtensionPerThreshold
+	chronosBonus := g.TeamTokens.GetThresholdWithDifficulty(TokenChronos, g.Difficulty) * constants.TimeExtensionPerThreshold
 
-	// Apply difficulty modifier
+	// Apply difficulty modifier to base time
 	var modifier float64
 	switch g.Difficulty {
 	case DifficultyEasy:
@@ -271,7 +281,7 @@ func (g *Game) GetTotalPuzzleTime() int {
 
 // GetPreSolvedPieces returns number of pieces to pre-solve based on anchor tokens
 func (g *Game) GetPreSolvedPieces() int {
-	threshold := g.TeamTokens.GetThreshold(TokenAnchor)
+	threshold := g.TeamTokens.GetThresholdWithDifficulty(TokenAnchor, g.Difficulty)
 	pieces := threshold * constants.PiecesPreSolvedPerThreshold
 	if pieces > constants.MaxPreSolvedPieces {
 		pieces = constants.MaxPreSolvedPieces
@@ -282,17 +292,8 @@ func (g *Game) GetPreSolvedPieces() int {
 // GetClarityPreviewTime returns clarity preview duration in seconds
 func (g *Game) GetClarityPreviewTime() int {
 	baseTime := constants.ClarityBasePreviewTime
-	threshold := g.TeamTokens.GetThreshold(TokenClarity)
+	threshold := g.TeamTokens.GetThresholdWithDifficulty(TokenClarity, g.Difficulty)
 	return baseTime + (threshold * constants.PreviewTimePerThreshold)
-}
-
-// GetGuideHighlightReduction returns number of squares to remove per threshold
-func (g *Game) GetGuideHighlightReduction() int {
-	if g.PuzzleGrid == nil {
-		return 0
-	}
-	gridSquares := g.PuzzleGrid.Size * g.PuzzleGrid.Size
-	return gridSquares / 7
 }
 
 // CompleteGame marks the game as complete

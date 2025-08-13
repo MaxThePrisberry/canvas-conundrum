@@ -267,7 +267,7 @@ func (ts *TriviaService) ProcessAnswer(playerID string, questionID string, selec
 	}
 
 	game := gameManager.GetGame()
-	
+
 	// Get the original question to validate answer
 	question := ts.GetQuestionByID(questionID)
 	if question == nil {
@@ -290,7 +290,7 @@ func (ts *TriviaService) ProcessAnswer(playerID string, questionID string, selec
 	// Calculate tokens earned
 	tokensEarned := 0
 	var tokenType models.TokenType
-	
+
 	if correct {
 		// Base tokens
 		tokensEarned = constants.BaseTokensPerCorrectAnswer
@@ -298,7 +298,7 @@ func (ts *TriviaService) ProcessAnswer(playerID string, questionID string, selec
 		// Get token type for current station
 		if player.CurrentStation != "" {
 			tokenType = ts.getTokenTypeForStation(player.CurrentStation)
-			
+
 			// Apply role bonus if at matching station
 			if tokenType == player.Role.GetBonusTokenType() {
 				tokensEarned = int(float64(tokensEarned) * constants.RoleResourceMultiplier)

@@ -20,15 +20,12 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// testSetupMutex ensures tests run sequentially to avoid singleton conflicts
-var testSetupMutex sync.Mutex
-
 func setupTestServer(t *testing.T) (*httptest.Server, func()) {
-	// Lock to ensure tests run sequentially
-	testSetupMutex.Lock()
-	
 	// Get game manager singleton and reset it
 	gm := services.GetGameInstance()
+
+	// Cleanup and reset for this test
+	gm.Cleanup()
 	gm.ResetGame()
 
 	// Setup services
@@ -44,15 +41,14 @@ func setupTestServer(t *testing.T) (*httptest.Server, func()) {
 
 	// Create test server
 	server := httptest.NewServer(r)
-	
-	// Return cleanup function that resets game and releases lock
+
+	// Return cleanup function that resets game
 	cleanup := func() {
 		server.Close()
-		gm.ResetGame() // Reset again to stop any running goroutines
-		time.Sleep(100 * time.Millisecond) // Give goroutines time to stop
-		testSetupMutex.Unlock()
+		gm.Cleanup()   // Properly cleanup game manager
+		gm.ResetGame() // Reset state after cleanup
 	}
-	
+
 	return server, cleanup
 }
 
@@ -103,7 +99,9 @@ func TestHostWebSocketConnection(t *testing.T) {
 	// Test with correct UUID
 	t.Run("ValidUUID", func(t *testing.T) {
 		wsURL := strings.Replace(server.URL, "http://", "ws://", 1) + "/ws/host/" + config.HostUUID
-		dialer := websocket.Dialer{}
+		dialer := websocket.Dialer{
+			HandshakeTimeout: 2 * time.Second,
+		}
 		conn, resp, err := dialer.Dial(wsURL, nil)
 
 		if err != nil && resp != nil && resp.StatusCode == http.StatusUnauthorized {
@@ -137,7 +135,9 @@ func TestHostWebSocketConnection(t *testing.T) {
 
 	t.Run("InvalidUUID", func(t *testing.T) {
 		wsURL := strings.Replace(server.URL, "http://", "ws://", 1) + "/ws/host/invalid-uuid"
-		dialer := websocket.Dialer{}
+		dialer := websocket.Dialer{
+			HandshakeTimeout: 2 * time.Second,
+		}
 		_, resp, err := dialer.Dial(wsURL, nil)
 
 		// Should fail with unauthorized
@@ -180,7 +180,7 @@ func TestPlayerConfiguration(t *testing.T) {
 	// Note: currentPlayers ALWAYS includes +1 for host in broadcast_service.go line 120
 	assert.Equal(t, float64(2), payload["currentPlayers"]) // 1 player + 1 (always added) = 2
 	assert.Equal(t, float64(1), payload["nonHostPlayers"]) // 1 player configured
-	assert.Equal(t, float64(1), payload["readyPlayers"])  // Player is marked ready after configuration
+	assert.Equal(t, float64(1), payload["readyPlayers"])   // Player is marked ready after configuration
 }
 
 func TestMultiplePlayersJoining(t *testing.T) {
@@ -228,7 +228,7 @@ func TestMultiplePlayersJoining(t *testing.T) {
 	messages := host.GetMessages()
 	foundRoster := false
 	var lastRosterPayload map[string]interface{}
-	
+
 	for _, msg := range messages {
 		if msg.Event == constants.EventSetupToHostPlayerRoster {
 			foundRoster = true
@@ -242,14 +242,14 @@ func TestMultiplePlayersJoining(t *testing.T) {
 			}
 			err := json.Unmarshal(payloadBytes, &payload)
 			require.NoError(t, err)
-			
+
 			// Keep track of the last roster payload
 			lastRosterPayload = payload
 		}
 	}
-	
+
 	assert.True(t, foundRoster, "Host should receive player roster")
-	
+
 	if foundRoster {
 		// Debug: print the actual payload to understand the structure
 		t.Logf("Last roster payload: %+v", lastRosterPayload)
@@ -279,10 +279,10 @@ func TestPingPong(t *testing.T) {
 	err := client.Connect()
 	require.NoError(t, err)
 	defer client.Close()
-	
+
 	// Wait for initial connection message to be processed
 	time.Sleep(200 * time.Millisecond)
-	
+
 	// Log the player ID and token being used
 	t.Logf("Client player ID: %s", client.GetPlayerID())
 	t.Logf("Client token: %s", client.GetToken())
@@ -297,16 +297,16 @@ func TestPingPong(t *testing.T) {
 			"messagesSent":     1,
 		},
 	}
-	
+
 	// Log what we're sending
 	t.Logf("Sending ping with payload: %+v", pingPayload)
-	
+
 	err = client.SendMessage(constants.EventSystemPing, pingPayload)
 	require.NoError(t, err)
 
 	// Wait a bit more
 	time.Sleep(100 * time.Millisecond)
-	
+
 	// Check if we got any messages at all
 	lastMsg := client.GetLastMessage()
 	if lastMsg != nil {
@@ -320,7 +320,7 @@ func TestPingPong(t *testing.T) {
 	} else {
 		t.Log("No messages received yet")
 	}
-	
+
 	// Should receive pong
 	msg, err := client.WaitForEvent(constants.EventSystemPong, 3*time.Second)
 	if err != nil {
@@ -465,13 +465,13 @@ func TestDisconnectionHandling(t *testing.T) {
 	// Host should receive player disconnection notification
 	messages := host.GetMessages()
 	foundDisconnect := false
-	
+
 	// Debug: print all host messages
 	t.Logf("Host received %d messages", len(messages))
 	for i, msg := range messages {
 		t.Logf("Message %d: Event=%s", i, msg.Event)
 	}
-	
+
 	for _, msg := range messages {
 		if msg.Event == constants.EventSystemToHostPlayerDisconnected {
 			var payload map[string]interface{}

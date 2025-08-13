@@ -184,7 +184,7 @@ func TestGameManagerGameFlow(t *testing.T) {
 
 	gm := GetGameInstance()
 	gm.SetBroadcastService(NewBroadcastService())
-	
+
 	// Ensure cleanup after test
 	defer func() {
 		gm.ResetGame()
@@ -216,10 +216,10 @@ func TestGameManagerGameFlow(t *testing.T) {
 		// Can't start again
 		err = gm.StartGame()
 		assert.Error(t, err)
-		
+
 		// Stop the goroutines started by StartGame to prevent test hanging
 		gm.ResetGame()
-		
+
 		// Manually set game as started for remaining tests
 		game := gm.GetGame()
 		game.GameStarted = true
@@ -241,7 +241,7 @@ func TestGameManagerGameFlow(t *testing.T) {
 	t.Run("TransitionToPhase", func(t *testing.T) {
 		// Test phase transitions through the game model directly
 		game := gm.GetGame()
-		
+
 		// Transition to puzzle assembly
 		playerCount := gm.GetPlayerCount()
 		game.StartPuzzlePhase(playerCount)

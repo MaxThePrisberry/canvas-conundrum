@@ -4,9 +4,29 @@ import (
 	"fmt"
 	"math/rand"
 	"time"
-	
+
 	"canvas-conundrum/utils"
 )
+
+// IndividualPuzzle represents a player's private 16-piece puzzle (Phase 2A)
+type IndividualPuzzle struct {
+	PlayerID         string     `json:"playerId"`
+	SegmentID        string     `json:"segmentId"`
+	PiecesTotal      int        `json:"piecesTotal"`
+	PreSolvedPieces  int        `json:"preSolvedPieces"`
+	StartTime        time.Time  `json:"startTime"`
+	CompletionTime   *time.Time `json:"completionTime,omitempty"`
+	IsCompleted      bool       `json:"isCompleted"`
+	SolveTimeSeconds float64    `json:"solveTimeSeconds,omitempty"`
+}
+
+// Complete marks the individual puzzle as completed
+func (ip *IndividualPuzzle) Complete() {
+	now := time.Now()
+	ip.CompletionTime = &now
+	ip.IsCompleted = true
+	ip.SolveTimeSeconds = now.Sub(ip.StartTime).Seconds()
+}
 
 // Position represents a grid position
 type Position struct {

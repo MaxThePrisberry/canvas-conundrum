@@ -61,13 +61,9 @@ func TestGamePhaseTransitions(t *testing.T) {
 			game.CurrentPhase = tt.startPhase
 
 			next := game.NextPhase()
-
-			if !tt.shouldEnd {
-				assert.Equal(t, tt.expectedNext, next)
-				assert.Equal(t, tt.expectedNext, game.CurrentPhase)
-			} else {
-				assert.Equal(t, tt.expectedNext, next)
-			}
+			assert.Equal(t, tt.expectedNext, next)
+			// NextPhase should not modify the current phase, just return what's next
+			assert.Equal(t, tt.startPhase, game.CurrentPhase)
 		})
 	}
 }

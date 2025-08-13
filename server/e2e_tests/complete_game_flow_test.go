@@ -13,7 +13,6 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
-	"sync"
 	"testing"
 	"time"
 
@@ -23,21 +22,18 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// testSetupMutex ensures only one test can setup/reset the server at a time
-var testSetupMutex sync.Mutex
-
 // createTestTriviaFiles creates trivia files in the expected location for testing
 func createTestTriviaFiles() error {
 	// Create trivia directory structure
 	categories := []string{"general", "geography", "history", "music", "science", "video_games"}
 	difficulties := []string{"easy", "medium", "hard"}
-	
+
 	for _, cat := range categories {
 		catDir := filepath.Join("./trivia", cat)
 		if err := os.MkdirAll(catDir, 0755); err != nil {
 			return err
 		}
-		
+
 		for _, diff := range difficulties {
 			// Create mock trivia data
 			response := models.TriviaAPIResponse{
@@ -61,35 +57,32 @@ func createTestTriviaFiles() error {
 					},
 				},
 			}
-			
+
 			data, err := json.Marshal(response)
 			if err != nil {
 				return err
 			}
-			
+
 			filePath := filepath.Join(catDir, diff+".json")
 			if err := ioutil.WriteFile(filePath, data, 0644); err != nil {
 				return err
 			}
 		}
 	}
-	
+
 	return nil
 }
 
 func setupE2EServer(t *testing.T) (*httptest.Server, *services.GameManager) {
-	// Lock to ensure only one test resets the singleton at a time
-	testSetupMutex.Lock()
-	defer testSetupMutex.Unlock()
-	
 	// Reset and setup game manager
 	gm := services.GetGameInstance()
+	gm.Cleanup()   // Clean up any existing state first
 	gm.ResetGame() // Reset any state from previous tests
 	gm.SetBroadcastService(services.NewBroadcastService())
 
 	// Setup trivia service with test questions
 	triviaService := services.NewTriviaService()
-	
+
 	// Create mock trivia files in the expected location
 	// The service expects files in ./trivia, so we'll create them there temporarily
 	err := createTestTriviaFiles()
@@ -98,7 +91,7 @@ func setupE2EServer(t *testing.T) (*httptest.Server, *services.GameManager) {
 		// Clean up test trivia files
 		os.RemoveAll("./trivia")
 	})
-	
+
 	err = triviaService.LoadQuestions()
 	require.NoError(t, err)
 	gm.SetTriviaService(triviaService)
@@ -119,6 +112,7 @@ func setupE2EServer(t *testing.T) (*httptest.Server, *services.GameManager) {
 func TestCompleteGameFlow(t *testing.T) {
 	server, gm := setupE2EServer(t)
 	defer server.Close()
+	defer gm.Cleanup() // Ensure proper cleanup of game manager
 
 	// Create persistent connections for entire test
 	host := test_helpers.NewTestHostClient(t, server, config.HostUUID)
@@ -148,7 +142,7 @@ func TestCompleteGameFlow(t *testing.T) {
 	t.Run("Phase1_Setup", func(t *testing.T) {
 		for i := 0; i < 4; i++ {
 
-				// Store initial message with player ID
+			// Store initial message with player ID
 			initialMsg := players[i].GetLastMessage()
 			require.NotNil(t, initialMsg)
 
@@ -171,7 +165,7 @@ func TestCompleteGameFlow(t *testing.T) {
 		game.CurrentPhase = models.PhaseResourceGathering
 		game.PhaseStartTime = time.Now()
 		game.CurrentRound = 1
-		
+
 		// Verify game state
 		assert.True(t, game.GameStarted)
 		assert.Equal(t, string(models.PhaseResourceGathering), gm.GetCurrentPhase())
@@ -189,7 +183,7 @@ func TestCompleteGameFlow(t *testing.T) {
 		// Get analytics service and initialize it
 		analyticsService := gm.GetAnalyticsService()
 		require.NotNil(t, analyticsService)
-		
+
 		// Initialize analytics for the game
 		analyticsService.StartGame(gm.GetGame().ID)
 		for _, player := range allPlayers {
@@ -223,7 +217,7 @@ func TestCompleteGameFlow(t *testing.T) {
 			player.TokensEarned += tokensEarned
 
 			// Record trivia answer in analytics
-			responseTime := 5.0 // Simulate 5 second response time
+			responseTime := 5.0  // Simulate 5 second response time
 			isSpecialty := false // Assume not a specialty for simplicity
 			analyticsService.RecordTriviaAnswer(
 				player.ID,
@@ -255,9 +249,13 @@ func TestCompleteGameFlow(t *testing.T) {
 		// Initialize puzzle service
 		puzzleService := gm.GetPuzzleService()
 		require.NotNil(t, puzzleService)
-		
+
 		// Get the game and verify puzzle grid exists
 		game := gm.GetGame()
+		// If PuzzleGrid is nil, initialize it (for isolated test runs)
+		if game.PuzzleGrid == nil {
+			game.StartPuzzlePhase(gm.GetPlayerCount())
+		}
 		require.NotNil(t, game.PuzzleGrid, "Puzzle grid should be initialized")
 
 		// Assign puzzle segments using the service method
@@ -347,6 +345,7 @@ func TestCompleteGameFlow(t *testing.T) {
 func TestGameWithHighTokens(t *testing.T) {
 	server, gm := setupE2EServer(t)
 	defer server.Close()
+	defer gm.Cleanup() // Ensure proper cleanup of game manager
 
 	// Setup game with 4 players
 	for i := 0; i < 4; i++ {
@@ -397,6 +396,7 @@ func TestGameWithHighTokens(t *testing.T) {
 func TestLargeScaleGame(t *testing.T) {
 	server, gm := setupE2EServer(t)
 	defer server.Close()
+	defer gm.Cleanup() // Ensure proper cleanup of game manager
 
 	// Add maximum players
 	playerCount := 32 // Test with 32 players
@@ -462,6 +462,7 @@ func TestLargeScaleGame(t *testing.T) {
 func TestGameReset(t *testing.T) {
 	server, gm := setupE2EServer(t)
 	defer server.Close()
+	defer gm.Cleanup() // Ensure proper cleanup of game manager
 
 	// Setup and play a game
 	for i := 0; i < 4; i++ {

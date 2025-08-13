@@ -4,6 +4,7 @@ import (
 	"canvas-conundrum/constants"
 	"canvas-conundrum/models"
 	"canvas-conundrum/utils"
+	"fmt"
 	"log"
 	"sync"
 	"time"
@@ -259,6 +260,108 @@ func (bs *BroadcastService) BroadcastPhaseTransition(fromPhase, toPhase models.G
 
 	// Send host-specific transition info
 	bs.sendHostPhaseTransition(fromPhase, toPhase)
+
+	// Send phase start events
+	if toPhase == models.PhaseResourceGathering {
+		bs.BroadcastResourcePhaseStart()
+	}
+}
+
+// BroadcastResourcePhaseStart broadcasts resource gathering phase start events
+func (bs *BroadcastService) BroadcastResourcePhaseStart() {
+	gameManager := GetGameInstance()
+	game := gameManager.GetGame()
+
+	// Send phase start to all players
+	playerPayload := map[string]interface{}{
+		"phase":         "resource_gathering",
+		"totalRounds":   constants.ResourceGatheringRounds,
+		"roundDuration": constants.ResourceGatheringRoundDuration,
+		"answerTime":    constants.TriviaAnswerTime,
+		"graceTime":     constants.TriviaGraceTime,
+		"resourceStationHashes": map[string]string{
+			"anchor":  constants.HashAnchorStation,
+			"chronos": constants.HashChronosStation,
+			"guide":   constants.HashGuideStation,
+			"clarity": constants.HashClarityStation,
+		},
+		"tokenThresholds": map[string]int{
+			"anchor":  constants.AnchorTokenThreshold,
+			"chronos": constants.ChronosTokenThreshold,
+			"guide":   constants.GuideTokenThreshold,
+			"clarity": constants.ClarityTokenThreshold,
+		},
+		"difficultySettings": map[string]interface{}{
+			"mode":                 game.Difficulty,
+			"specialtyProbability": bs.getSpecialtyProbability(game.Difficulty),
+			"timeMultiplier":       bs.getTimeMultiplier(game.Difficulty),
+			"thresholdMultiplier":  bs.getThresholdMultiplier(game.Difficulty),
+		},
+	}
+
+	bs.BroadcastToAll(constants.EventResourceToClientPhaseStart, playerPayload)
+
+	// Send phase start to host
+	host := gameManager.GetHost()
+	if host != nil {
+		hostPayload := map[string]interface{}{
+			"phase": "resource_gathering",
+			"monitoringDashboard": map[string]interface{}{
+				"totalRounds":   constants.ResourceGatheringRounds,
+				"currentRound":  0,
+				"roundDuration": constants.ResourceGatheringRoundDuration,
+				"playerDistribution": map[string]int{
+					"anchor":  0,
+					"chronos": 0,
+					"guide":   0,
+					"clarity": 0,
+					"unknown": gameManager.GetPlayerCount(),
+				},
+			},
+			"analyticsTracking": map[string]bool{
+				"questionDelivery":   true,
+				"answerTracking":     true,
+				"locationTracking":   true,
+				"performanceMetrics": true,
+			},
+		}
+
+		bs.SendToHost(host, constants.EventResourceToHostPhaseStart, hostPayload)
+	}
+}
+
+// Helper functions for difficulty settings
+func (bs *BroadcastService) getSpecialtyProbability(difficulty models.DifficultyMode) float64 {
+	switch difficulty {
+	case models.DifficultyEasy:
+		return constants.SpecialtyQFreqEasy
+	case models.DifficultyHard:
+		return constants.SpecialtyQFreqHard
+	default:
+		return constants.SpecialtyQFreqMedium
+	}
+}
+
+func (bs *BroadcastService) getTimeMultiplier(difficulty models.DifficultyMode) float64 {
+	switch difficulty {
+	case models.DifficultyEasy:
+		return constants.EasyTimeMultiplier
+	case models.DifficultyHard:
+		return constants.HardTimeMultiplier
+	default:
+		return constants.MediumTimeMultiplier
+	}
+}
+
+func (bs *BroadcastService) getThresholdMultiplier(difficulty models.DifficultyMode) float64 {
+	switch difficulty {
+	case models.DifficultyEasy:
+		return constants.EasyThresholdMultiplier
+	case models.DifficultyHard:
+		return constants.HardThresholdMultiplier
+	default:
+		return constants.MediumThresholdMultiplier
+	}
 }
 
 // getTransitionReason returns reason for phase transition
@@ -433,7 +536,7 @@ func (bs *BroadcastService) BroadcastPuzzlePhaseStart() {
 	gridSize := game.PuzzleGrid.Size
 	playerSegments := make(map[string]string)
 	allSegmentIds := []string{}
-	
+
 	for _, player := range gameManager.GetAllPlayers() {
 		if player.IsActive && player.AssignedSegment != "" {
 			playerSegments[player.ID] = player.AssignedSegment
@@ -462,18 +565,18 @@ func (bs *BroadcastService) BroadcastPuzzlePhaseStart() {
 	for _, player := range gameManager.GetAllPlayers() {
 		if player.IsActive {
 			playerPayload := map[string]interface{}{
-				"phase":                   "puzzle_assembly",
-				"imageId":                 "masterpiece_001",
-				"assignedSegmentId":       player.AssignedSegment,
-				"individualPuzzleSize":    constants.IndividualPuzzlePieces,
-				"anchorPreSolvedPieces":   game.TeamTokens.GetThreshold(models.TokenAnchor) * 2,
-				"centralGridSize":         gridSize,
-				"totalCentralFragments":   gridSize * gridSize,
-				"clarityPreviewDuration":  constants.ClarityBasePreviewTime + game.TeamTokens.GetThreshold(models.TokenClarity),
-				"guideHighlightCount":     bs.calculateGuideHighlights(gridSize, game.TeamTokens.GetThreshold(models.TokenGuide)),
-				"allSegmentIds":           allSegmentIds,
-				"loadInstructions":        "Load your assigned segment and prepare individual puzzle",
-				"waitingForHost":          true,
+				"phase":                  "puzzle_assembly",
+				"imageId":                "masterpiece_001",
+				"assignedSegmentId":      player.AssignedSegment,
+				"individualPuzzleSize":   constants.IndividualPuzzlePieces,
+				"anchorPreSolvedPieces":  game.TeamTokens.GetThreshold(models.TokenAnchor) * 2,
+				"centralGridSize":        gridSize,
+				"totalCentralFragments":  gridSize * gridSize,
+				"clarityPreviewDuration": constants.ClarityBasePreviewTime + game.TeamTokens.GetThreshold(models.TokenClarity),
+				"guideHighlightCount":    bs.calculateGuideHighlights(gridSize, game.TeamTokens.GetThreshold(models.TokenGuide)),
+				"allSegmentIds":          allSegmentIds,
+				"loadInstructions":       "Load your assigned segment and prepare individual puzzle",
+				"waitingForHost":         true,
 			}
 			bs.SendToPlayer(player, constants.EventPuzzleToClientPhaseLoad, playerPayload)
 		}
@@ -495,14 +598,14 @@ func (bs *BroadcastService) BroadcastPuzzlePhaseStart() {
 	}
 
 	hostPayload := map[string]interface{}{
-		"phase":                      "puzzle_assembly",
-		"imageId":                    "masterpiece_001",
-		"centralGridSize":            gridSize,
-		"totalFragments":             gridSize * gridSize,
-		"isHost":                     true,
-		"playerCount":                gameManager.GetPlayerCount(),
-		"playerSegmentAssignments":   playerSegments,
-		"unassignedSegments":         unassignedSegments,
+		"phase":                    "puzzle_assembly",
+		"imageId":                  "masterpiece_001",
+		"centralGridSize":          gridSize,
+		"totalFragments":           gridSize * gridSize,
+		"isHost":                   true,
+		"playerCount":              gameManager.GetPlayerCount(),
+		"playerSegmentAssignments": playerSegments,
+		"unassignedSegments":       unassignedSegments,
 		"bonusEffects": map[string]interface{}{
 			"anchorPreSolved":  game.TeamTokens.GetThreshold(models.TokenAnchor) * 2,
 			"chronosTimeBonus": game.TeamTokens.GetThreshold(models.TokenChronos) * 20,
@@ -725,13 +828,13 @@ func (bs *BroadcastService) BroadcastResourcePhaseComplete() {
 		// TODO: Get analytics from analytics service when properly implemented
 
 		hostPayload := map[string]interface{}{
-			"phase":     "resource_gathering",
-			"completed": true,
+			"phase":                  "resource_gathering",
+			"completed":              true,
 			"totalQuestionsAnswered": bs.getTotalQuestionsAnswered(),
 			"teamPerformance": map[string]interface{}{
-				"overallAccuracy":      bs.getTeamAccuracy(),
-				"totalTokensEarned":    game.TeamTokens.AnchorTokens + game.TeamTokens.ChronosTokens + game.TeamTokens.GuideTokens + game.TeamTokens.ClarityTokens,
-				"averageResponseTime":  bs.getAverageResponseTime(),
+				"overallAccuracy":     bs.getTeamAccuracy(),
+				"totalTokensEarned":   game.TeamTokens.AnchorTokens + game.TeamTokens.ChronosTokens + game.TeamTokens.GuideTokens + game.TeamTokens.ClarityTokens,
+				"averageResponseTime": bs.getAverageResponseTime(),
 			},
 			"finalTokenDistribution": map[string]int{
 				"anchorTokens":  game.TeamTokens.AnchorTokens,
@@ -788,11 +891,11 @@ func (bs *BroadcastService) BroadcastSegmentCompleted(player *models.Player, fra
 	gameManager := GetGameInstance()
 	game := gameManager.GetGame()
 	puzzleService := gameManager.GetPuzzleService()
-	
+
 	if puzzleService != nil && game.PuzzleGrid != nil {
 		guideThreshold := game.TeamTokens.GetThreshold(models.TokenGuide)
 		highlights := puzzleService.CalculateGuideHighlights(game.PuzzleGrid, fragment.ID, guideThreshold)
-		
+
 		personalState := map[string]interface{}{
 			"personalView": map[string]interface{}{
 				"fragmentId": fragment.ID,
@@ -828,38 +931,113 @@ func (bs *BroadcastService) BroadcastAnalytics(analytics *models.GameAnalytics) 
 	if analytics == nil {
 		return
 	}
-	
+
 	gameManager := GetGameInstance()
-	
-	// Send complete analytics to host
-	if host := gameManager.GetHost(); host != nil {
-		bs.SendToHost(host, constants.EventAnalyticsToHostCompleteReport, analytics)
-	}
-	
-	// Send personal analytics to each player
+	game := gameManager.GetGame()
+
+	// 1. Send personal report to each player (ANALYTICS_TO_PLAYER_PERSONAL_REPORT)
 	for playerID, playerAnalytics := range analytics.PlayerAnalytics {
 		if player, exists := gameManager.GetPlayer(playerID); exists {
 			personalReport := map[string]interface{}{
-				"personalStats": playerAnalytics,
-				"teamRank":      bs.calculatePlayerRank(playerID, analytics),
+				"playerId":      playerID,
+				"playerName":    playerAnalytics.PlayerName,
+				"gameSuccess":   analytics.TeamAnalytics != nil && analytics.TeamAnalytics.GameSuccess,
+				"personalScore": playerAnalytics.TotalScore,
+				"rank":          bs.calculatePlayerRank(playerID, analytics),
+				"totalPlayers":  len(analytics.PlayerAnalytics),
+				"tokenCollection": map[string]interface{}{
+					"anchorTokens":  playerAnalytics.TokensEarned[models.TokenAnchor],
+					"chronosTokens": playerAnalytics.TokensEarned[models.TokenChronos],
+					"guideTokens":   playerAnalytics.TokensEarned[models.TokenGuide],
+					"clarityTokens": playerAnalytics.TokensEarned[models.TokenClarity],
+					"totalTokens":   playerAnalytics.TotalTokens,
+				},
+				"triviaPerformance": map[string]interface{}{
+					"totalQuestions":     playerAnalytics.TotalQuestions,
+					"correctAnswers":     playerAnalytics.CorrectAnswers,
+					"accuracy":           playerAnalytics.Accuracy,
+					"accuracyByCategory": playerAnalytics.AccuracyByCategory,
+					"specialtyPerformance": map[string]interface{}{
+						"specialtyQuestions": playerAnalytics.SpecialtyQuestions,
+						"specialtyCorrect":   playerAnalytics.SpecialtyCorrect,
+						"specialtyAccuracy":  playerAnalytics.SpecialtyAccuracy,
+						"specialtyBonus":     playerAnalytics.SpecialtyBonus,
+					},
+					"averageResponseTime": playerAnalytics.AverageResponseTime,
+				},
+				"puzzleSolvingMetrics": map[string]interface{}{
+					"individualSolveTime":     playerAnalytics.IndividualSolveTime,
+					"individualRank":          playerAnalytics.IndividualRank,
+					"fragmentMoves":           playerAnalytics.FragmentMoves,
+					"successfulMoves":         playerAnalytics.SuccessfulMoves,
+					"moveAccuracy":            playerAnalytics.MoveAccuracy,
+					"recommendationsSent":     playerAnalytics.RecommendationsSent,
+					"recommendationsReceived": playerAnalytics.RecommendationsReceived,
+					"recommendationsAccepted": playerAnalytics.RecommendationsAccepted,
+					"collaborationScore":      playerAnalytics.CollaborationScore,
+				},
+				"achievements": playerAnalytics.Achievements,
+				"scoreBreakdown": map[string]interface{}{
+					"triviaPoints":       playerAnalytics.TriviaPoints,
+					"specialtyBonus":     playerAnalytics.SpecialtyBonus,
+					"puzzlePoints":       playerAnalytics.PuzzlePoints,
+					"collaborationBonus": playerAnalytics.CollaborationBonus,
+					"speedBonus":         playerAnalytics.SpeedBonus,
+					"totalScore":         playerAnalytics.TotalScore,
+				},
 			}
 			bs.SendToPlayer(player, constants.EventAnalyticsToPlayerPersonalReport, personalReport)
 		}
 	}
-	
-	// Send team summary to all players
-	var completionTime float64
-	if analytics.PuzzleAssemblyMetrics != nil {
-		completionTime = analytics.PuzzleAssemblyMetrics.CompletionTime
-	}
-	
+
+	// 2. Send team summary to all players (ANALYTICS_TO_CLIENT_TEAM_SUMMARY)
+	leaderboard := bs.getFullLeaderboard(analytics)
 	teamSummary := map[string]interface{}{
-		"teamStats":      analytics.TeamAnalytics,
-		"gameSuccess":    analytics.TeamAnalytics != nil && analytics.TeamAnalytics.GameSuccess,
-		"completionTime": completionTime,
-		"topPerformers":  bs.getTopPerformers(analytics),
+		"gameSuccess":  analytics.TeamAnalytics != nil && analytics.TeamAnalytics.GameSuccess,
+		"totalScore":   analytics.TeamAnalytics.TotalScore,
+		"totalPlayers": len(analytics.PlayerAnalytics),
+		"gameTime":     analytics.Duration,
+		"teamPerformance": map[string]interface{}{
+			"overallAccuracy":      analytics.TeamAnalytics.OverallAccuracy,
+			"totalTokensCollected": analytics.TeamAnalytics.TotalTokensCollected,
+			"thresholdAchievements": map[string]interface{}{
+				"anchor":  game.TeamTokens.GetThreshold(models.TokenAnchor),
+				"chronos": game.TeamTokens.GetThreshold(models.TokenChronos),
+				"guide":   game.TeamTokens.GetThreshold(models.TokenGuide),
+				"clarity": game.TeamTokens.GetThreshold(models.TokenClarity),
+			},
+			"puzzleCompletionTime":    analytics.PuzzleAssemblyMetrics.CompletionTime,
+			"collaborationEfficiency": analytics.TeamAnalytics.CollaborationEfficiency,
+		},
+		"globalLeaderboard": leaderboard,
+		"teamAchievements":  analytics.TeamAnalytics.TeamAchievements,
+		"notableStats":      bs.getNotableStats(analytics),
 	}
 	bs.BroadcastToAll(constants.EventAnalyticsToClientTeamSummary, teamSummary)
+
+	// 3. Send complete report to host (ANALYTICS_TO_HOST_COMPLETE_REPORT)
+	if host := gameManager.GetHost(); host != nil {
+		hostReport := map[string]interface{}{
+			"gameId":         game.ID,
+			"gameSuccess":    analytics.TeamAnalytics != nil && analytics.TeamAnalytics.GameSuccess,
+			"totalGameTime":  analytics.Duration,
+			"totalPlayers":   len(analytics.PlayerAnalytics),
+			"difficultyMode": string(game.Difficulty),
+			"overallPerformance": map[string]interface{}{
+				"totalScore":     analytics.TeamAnalytics.TotalScore,
+				"averageScore":   analytics.TeamAnalytics.TotalScore / len(analytics.PlayerAnalytics),
+				"completionRate": 1.0, // 100% if game success
+				"efficiency":     analytics.TeamAnalytics.CollaborationEfficiency,
+			},
+			"resourceGatheringAnalytics":    bs.getResourceAnalytics(analytics),
+			"puzzleAssemblyAnalytics":       bs.getPuzzleAnalytics(analytics),
+			"collaborationAnalysis":         bs.getCollaborationAnalysis(analytics),
+			"categoryPerformance":           analytics.CategoryPerformance,
+			"timelineAnalysis":              bs.getTimelineAnalysis(analytics),
+			"recommendationsForImprovement": bs.getRecommendations(analytics),
+		}
+		bs.SendToHost(host, constants.EventAnalyticsToHostCompleteReport, hostReport)
+	}
 }
 
 // calculatePlayerRank calculates a player's rank within the team
@@ -869,14 +1047,14 @@ func (bs *BroadcastService) calculatePlayerRank(playerID string, analytics *mode
 		ID    string
 		Score int
 	}, 0)
-	
+
 	for id, pa := range analytics.PlayerAnalytics {
 		scores = append(scores, struct {
 			ID    string
 			Score int
 		}{id, pa.TotalScore})
 	}
-	
+
 	// Sort by score descending
 	for i := 0; i < len(scores); i++ {
 		for j := i + 1; j < len(scores); j++ {
@@ -885,7 +1063,7 @@ func (bs *BroadcastService) calculatePlayerRank(playerID string, analytics *mode
 			}
 		}
 	}
-	
+
 	// Find rank
 	for i, s := range scores {
 		if s.ID == playerID {
@@ -895,30 +1073,32 @@ func (bs *BroadcastService) calculatePlayerRank(playerID string, analytics *mode
 	return len(scores)
 }
 
-// getTopPerformers gets the top 3 performers
-func (bs *BroadcastService) getTopPerformers(analytics *models.GameAnalytics) []map[string]interface{} {
+// getFullLeaderboard gets the complete player leaderboard
+func (bs *BroadcastService) getFullLeaderboard(analytics *models.GameAnalytics) []map[string]interface{} {
 	gameManager := GetGameInstance()
-	topPerformers := []map[string]interface{}{}
-	
-	// Get top 3 by score
+	leaderboard := []map[string]interface{}{}
+
+	// Get all players with scores
 	type playerScore struct {
 		ID    string
 		Name  string
+		Role  models.Role
 		Score int
 	}
-	
+
 	scores := []playerScore{}
 	for id, pa := range analytics.PlayerAnalytics {
 		if player, exists := gameManager.GetPlayer(id); exists {
 			scores = append(scores, playerScore{
 				ID:    id,
 				Name:  player.Name,
+				Role:  player.Role,
 				Score: pa.TotalScore,
 			})
 		}
 	}
-	
-	// Sort by score
+
+	// Sort by score descending
 	for i := 0; i < len(scores); i++ {
 		for j := i + 1; j < len(scores); j++ {
 			if scores[j].Score > scores[i].Score {
@@ -926,17 +1106,247 @@ func (bs *BroadcastService) getTopPerformers(analytics *models.GameAnalytics) []
 			}
 		}
 	}
-	
-	// Take top 3
-	for i := 0; i < 3 && i < len(scores); i++ {
-		topPerformers = append(topPerformers, map[string]interface{}{
+
+	// Build leaderboard
+	for i, s := range scores {
+		leaderboard = append(leaderboard, map[string]interface{}{
+			"playerId":   s.ID,
+			"playerName": s.Name,
+			"totalScore": s.Score,
 			"rank":       i + 1,
-			"playerName": scores[i].Name,
-			"score":      scores[i].Score,
+			"role":       string(s.Role),
 		})
 	}
-	
-	return topPerformers
+
+	return leaderboard
+}
+
+// getNotableStats gets notable statistics for team summary
+func (bs *BroadcastService) getNotableStats(analytics *models.GameAnalytics) map[string]interface{} {
+	gameManager := GetGameInstance()
+
+	var fastestAnswerer, mostTokens, bestCollaborator, puzzleMVP string
+	var fastestTime float64 = 999999
+	var maxTokens, maxCollab, maxPuzzle int
+
+	for id, pa := range analytics.PlayerAnalytics {
+		if player, exists := gameManager.GetPlayer(id); exists {
+			// Fastest answerer
+			if pa.AverageResponseTime > 0 && pa.AverageResponseTime < fastestTime {
+				fastestTime = pa.AverageResponseTime
+				fastestAnswerer = player.Name
+			}
+
+			// Most tokens
+			if pa.TotalTokens > maxTokens {
+				maxTokens = pa.TotalTokens
+				mostTokens = player.Name
+			}
+
+			// Best collaborator
+			collabScore := pa.RecommendationsAccepted + pa.RecommendationsSent
+			if collabScore > maxCollab {
+				maxCollab = collabScore
+				bestCollaborator = player.Name
+			}
+
+			// Puzzle MVP
+			if pa.SuccessfulMoves > maxPuzzle {
+				maxPuzzle = pa.SuccessfulMoves
+				puzzleMVP = player.Name
+			}
+		}
+	}
+
+	return map[string]interface{}{
+		"fastestAnswerer":  fastestAnswerer,
+		"mostTokens":       mostTokens,
+		"bestCollaborator": bestCollaborator,
+		"puzzleMVP":        puzzleMVP,
+	}
+}
+
+// getResourceAnalytics gets resource gathering analytics for host
+func (bs *BroadcastService) getResourceAnalytics(analytics *models.GameAnalytics) map[string]interface{} {
+	playerPerformance := make(map[string]interface{})
+
+	for id, pa := range analytics.PlayerAnalytics {
+		playerPerformance[id] = map[string]interface{}{
+			"questionsAnswered":   pa.TotalQuestions,
+			"correctAnswers":      pa.CorrectAnswers,
+			"accuracy":            pa.Accuracy,
+			"tokensEarned":        pa.TotalTokens,
+			"averageResponseTime": pa.AverageResponseTime,
+			"specialtyPerformance": map[string]interface{}{
+				"questionsReceived": pa.SpecialtyQuestions,
+				"correctAnswers":    pa.SpecialtyCorrect,
+				"bonusTokens":       pa.SpecialtyBonus,
+			},
+			"stationPreferences": pa.StationPreferences,
+		}
+	}
+
+	// Calculate total questions answered from resource metrics
+	totalQuestions := 0
+	if analytics.ResourceGatheringMetrics != nil {
+		totalQuestions = analytics.ResourceGatheringMetrics.QuestionsAnswered
+	}
+
+	// Get token distribution from game state
+	gameManager := GetGameInstance()
+	game := gameManager.GetGame()
+
+	return map[string]interface{}{
+		"totalRounds":       constants.ResourceGatheringRounds,
+		"questionsAnswered": totalQuestions,
+		"overallAccuracy":   analytics.TeamAnalytics.OverallAccuracy,
+		"tokenDistribution": map[string]interface{}{
+			"anchorTokens":  game.TeamTokens.AnchorTokens,
+			"chronosTokens": game.TeamTokens.ChronosTokens,
+			"guideTokens":   game.TeamTokens.GuideTokens,
+			"clarityTokens": game.TeamTokens.ClarityTokens,
+		},
+		"playerPerformance": playerPerformance,
+	}
+}
+
+// getPuzzleAnalytics gets puzzle assembly analytics for host
+func (bs *BroadcastService) getPuzzleAnalytics(analytics *models.GameAnalytics) map[string]interface{} {
+	if analytics.PuzzleAssemblyMetrics == nil {
+		return map[string]interface{}{}
+	}
+
+	playerContributions := make(map[string]interface{})
+	for id, pa := range analytics.PlayerAnalytics {
+		playerContributions[id] = map[string]interface{}{
+			"individualSolveTime":     pa.IndividualSolveTime,
+			"fragmentMoves":           pa.FragmentMoves,
+			"successfulMoves":         pa.SuccessfulMoves,
+			"recommendationsSent":     pa.RecommendationsSent,
+			"recommendationsReceived": pa.RecommendationsReceived,
+			"recommendationsAccepted": pa.RecommendationsAccepted,
+			"collaborationScore":      pa.CollaborationScore,
+		}
+	}
+
+	return map[string]interface{}{
+		"totalTime":       analytics.PuzzleAssemblyMetrics.TotalTime,
+		"completionTime":  analytics.PuzzleAssemblyMetrics.CompletionTime,
+		"timeUtilization": analytics.PuzzleAssemblyMetrics.CompletionTime / analytics.PuzzleAssemblyMetrics.TotalTime,
+		"individualPhaseMetrics": map[string]interface{}{
+			"averageSolveTime":    analytics.PuzzleAssemblyMetrics.AverageSolveTime,
+			"fastestCompletion":   analytics.PuzzleAssemblyMetrics.FastestCompletion,
+			"slowestCompletion":   analytics.PuzzleAssemblyMetrics.SlowestCompletion,
+			"preSolvedPiecesUsed": analytics.PuzzleAssemblyMetrics.PreSolvedPiecesUsed,
+		},
+		"collaborativePhaseMetrics": map[string]interface{}{
+			"totalMoves":                   analytics.PuzzleAssemblyMetrics.TotalMoves,
+			"successfulMoves":              analytics.PuzzleAssemblyMetrics.SuccessfulMoves,
+			"moveAccuracy":                 analytics.PuzzleAssemblyMetrics.MoveAccuracy,
+			"totalRecommendations":         analytics.PuzzleAssemblyMetrics.TotalRecommendations,
+			"acceptedRecommendations":      analytics.PuzzleAssemblyMetrics.AcceptedRecommendations,
+			"recommendationAcceptanceRate": analytics.PuzzleAssemblyMetrics.RecommendationAcceptanceRate,
+		},
+		"playerContributions": playerContributions,
+	}
+}
+
+// getCollaborationAnalysis gets collaboration analysis for host
+func (bs *BroadcastService) getCollaborationAnalysis(analytics *models.GameAnalytics) map[string]interface{} {
+	if analytics.PuzzleAssemblyMetrics == nil {
+		return map[string]interface{}{}
+	}
+
+	// Find most active recommender and best collaborator
+	var mostActiveID, bestCollabID string
+	var maxRecs, maxAccepted int
+
+	for id, pa := range analytics.PlayerAnalytics {
+		if pa.RecommendationsSent > maxRecs {
+			maxRecs = pa.RecommendationsSent
+			mostActiveID = id
+		}
+		if pa.RecommendationsAccepted > maxAccepted {
+			maxAccepted = pa.RecommendationsAccepted
+			bestCollabID = id
+		}
+	}
+
+	return map[string]interface{}{
+		"communicationScore":  analytics.TeamAnalytics.CollaborationEfficiency,
+		"coordinationScore":   analytics.PuzzleAssemblyMetrics.MoveAccuracy,
+		"averageResponseTime": 15.2, // Placeholder - would need to track actual response times
+		"recommendationNetwork": map[string]interface{}{
+			"totalRecommendations":    analytics.PuzzleAssemblyMetrics.TotalRecommendations,
+			"acceptedRecommendations": analytics.PuzzleAssemblyMetrics.AcceptedRecommendations,
+			"mostActiveRecommender":   mostActiveID,
+			"bestCollaborator":        bestCollabID,
+		},
+		"teamworkMetrics": map[string]interface{}{
+			"mutualAssistanceScore": 0.78, // Placeholder
+			"strategicCoordination": analytics.TeamAnalytics.CollaborationEfficiency,
+			"conflictResolution":    0.92, // Placeholder
+		},
+	}
+}
+
+// getTimelineAnalysis gets timeline analysis for host
+func (bs *BroadcastService) getTimelineAnalysis(analytics *models.GameAnalytics) map[string]interface{} {
+	return map[string]interface{}{
+		"setupPhase":     120, // Placeholder - would need to track actual phase times
+		"resourcePhase":  constants.ResourceGatheringRounds * constants.ResourceGatheringRoundDuration,
+		"puzzlePhase":    analytics.PuzzleAssemblyMetrics.CompletionTime,
+		"analyticsPhase": 0,
+		"phaseTransitions": []map[string]interface{}{
+			{
+				"fromPhase": "setup",
+				"toPhase":   "resource_gathering",
+				"timestamp": time.Now().Format(time.RFC3339),
+				"duration":  5,
+			},
+			{
+				"fromPhase": "resource_gathering",
+				"toPhase":   "puzzle_assembly",
+				"timestamp": time.Now().Format(time.RFC3339),
+				"duration":  30,
+			},
+		},
+	}
+}
+
+// getRecommendations gets recommendations for improvement
+func (bs *BroadcastService) getRecommendations(analytics *models.GameAnalytics) []string {
+	recommendations := []string{}
+
+	// Check accuracy
+	if analytics.TeamAnalytics.OverallAccuracy < 0.6 {
+		recommendations = append(recommendations, "Consider reviewing trivia difficulty settings")
+	} else if analytics.TeamAnalytics.OverallAccuracy > 0.9 {
+		recommendations = append(recommendations, "Consider increasing difficulty for more challenge")
+	}
+
+	// Check collaboration
+	if analytics.TeamAnalytics.CollaborationEfficiency > 0.8 {
+		recommendations = append(recommendations, "Excellent team collaboration observed")
+	} else {
+		recommendations = append(recommendations, "Encourage more player communication during puzzle phase")
+	}
+
+	// Check puzzle performance
+	if analytics.PuzzleAssemblyMetrics != nil {
+		if analytics.PuzzleAssemblyMetrics.CompletionTime < analytics.PuzzleAssemblyMetrics.TotalTime*0.5 {
+			recommendations = append(recommendations, "Team completed puzzle very efficiently")
+		}
+	}
+
+	// Check category performance
+	for cat, perf := range analytics.CategoryPerformance {
+		if perf != nil && perf.Accuracy < 0.5 {
+			recommendations = append(recommendations, fmt.Sprintf("Consider reviewing %s category questions", cat))
+		}
+	}
+
+	return recommendations
 }
 
 // BroadcastPuzzleComplete broadcasts puzzle completion
@@ -1007,6 +1417,50 @@ func (bs *BroadcastService) BroadcastPlayerDisconnected(playerID, playerName str
 		}
 		bs.SendToHost(host, constants.EventSystemToHostPlayerDisconnected, hostPayload)
 	}
+}
+
+// BroadcastHostDisconnected notifies all players when host disconnects
+func (bs *BroadcastService) BroadcastHostDisconnected() {
+	gameManager := GetGameInstance()
+	game := gameManager.GetGame()
+
+	payload := map[string]interface{}{
+		"hostStatus":   "disconnected",
+		"currentPhase": game.CurrentPhase,
+		"gameImpact": map[string]interface{}{
+			"gamePaused":       game.CurrentPhase == models.PhaseSetup || game.CurrentPhase == models.PhaseResourceGathering,
+			"canContinue":      game.CurrentPhase == models.PhasePuzzleAssembly || game.CurrentPhase == models.PhaseAnalytics,
+			"affectedFeatures": []string{"host_monitoring", "phase_transitions"},
+		},
+		"message": "Host disconnected. Game continuing without host monitoring.",
+		"reconnectInfo": map[string]interface{}{
+			"hostCanReconnect":   true,
+			"reconnectTimeLimit": 600,
+			"gameWillContinue":   true,
+		},
+	}
+
+	bs.BroadcastToAll(constants.EventSystemToClientHostDisconnected, payload)
+}
+
+// BroadcastHostReconnected notifies all players when host reconnects
+func (bs *BroadcastService) BroadcastHostReconnected() {
+	gameManager := GetGameInstance()
+	game := gameManager.GetGame()
+
+	payload := map[string]interface{}{
+		"hostStatus":       "reconnected",
+		"currentPhase":     game.CurrentPhase,
+		"restoredFeatures": []string{"host_monitoring", "phase_transitions", "analytics_tracking"},
+		"message":          "Host reconnected. Full monitoring resumed.",
+		"gameImpact": map[string]interface{}{
+			"gameResumed":        false,
+			"monitoringRestored": true,
+			"noInterruption":     true,
+		},
+	}
+
+	bs.BroadcastToAll(constants.EventSystemToClientHostReconnected, payload)
 }
 
 // SendError sends an error message

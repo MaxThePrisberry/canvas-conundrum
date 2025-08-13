@@ -88,6 +88,23 @@ const (
 	PointsPerRecommendationAccepted = 8
 )
 
+// Station Hash Constants
+// These are the QR code hash values for each resource station
+const (
+	HashAnchorStation  = "anchor_station_qr_hash_2025"
+	HashChronosStation = "chronos_station_qr_hash_2025"
+	HashGuideStation   = "guide_station_qr_hash_2025"
+	HashClarityStation = "clarity_station_qr_hash_2025"
+)
+
+// Specialty Question Frequency
+// These determine how often specialty questions appear by difficulty
+const (
+	SpecialtyQFreqEasy   = 0.2 // 20% chance in easy mode
+	SpecialtyQFreqMedium = 0.3 // 30% chance in medium mode
+	SpecialtyQFreqHard   = 0.4 // 40% chance in hard mode
+)
+
 // Grid Size Calculation
 func GetGridSizeForPlayerCount(playerCount int) int {
 	switch {

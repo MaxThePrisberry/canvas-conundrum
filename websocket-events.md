@@ -841,31 +841,6 @@ All server-to-client messages use this format:
   },
   "timestamp": "2025-01-XX:XX:XX.XXXZ"
 }
-**Direction**: Server → Host  
-**Trigger**: Player completes individual segment
-
-```json
-{
-  "event": "PUZZLE_TO_HOST_SEGMENT_COMPLETED",
-  "payload": {
-    "playerId": "player1-uuid",
-    "playerName": "Alice",
-    "segmentId": "segment_a5",
-    "completionTime": 180,
-    "centralGridPosition": {"x": 2, "y": 3},
-    "fragmentId": "fragment_player1-uuid",
-    "phaseTransition": {
-      "playersInPhase2": 4,
-      "playersInPhase3": 1
-    },
-    "completionStats": {
-      "totalCompleted": 1,
-      "totalRequired": 5,
-      "unassignedFragments": 11
-    }
-  },
-  "timestamp": "2025-01-XX:XX:XX.XXXZ"
-}
 ```
 
 ### Collaborative Fragment Movement (Phase 2B)
@@ -1833,18 +1808,18 @@ All server-to-client messages use this format:
 
 ## Event Summary
 
-**Total Events**: 59
-- **Setup Phase**: 6 events
-- **Resource Gathering Phase**: 12 events  
-- **Puzzle Assembly Phase**: 22 events
-- **Post-Game Analytics**: 6 events
-- **System-Wide Events**: 13 events
+**Total Events**: 53
+- **Setup Phase**: 8 events
+- **Resource Gathering Phase**: 10 events  
+- **Puzzle Assembly Phase**: 20 events
+- **Post-Game Analytics**: 5 events
+- **System-Wide Events**: 10 events
 
 **By Direction**:
 - **Client to Server**: 8 events
+- **Host to Server**: 3 events
 - **Server to All Clients**: 15 events
-- **Server to Host Only**: 13 events
+- **Server to Host Only**: 15 events
 - **Server to Individual Players**: 12 events
-- **Bidirectional System**: 2 events
 
 This specification provides exact JSON structures for every WebSocket event in Canvas Conundrum, eliminating ambiguity about payload field names, data types, and message formats. Each event includes comprehensive context, making implementation straightforward for both client and server developers.

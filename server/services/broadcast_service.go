@@ -119,8 +119,7 @@ func (bs *BroadcastService) BroadcastLobbyStatus() {
 
 	// Create lobby status payload
 	payload := map[string]interface{}{
-		"currentPlayers": connectedCount + 1, // Include host in total
-		"nonHostPlayers": connectedCount,
+		"currentPlayers": connectedCount, // Only count actual players, not host
 		"minPlayers":     constants.MinPlayers,
 		"maxPlayers":     constants.MaxPlayers,
 		"playerRoles": map[string]int{

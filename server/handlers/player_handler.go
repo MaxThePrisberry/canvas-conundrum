@@ -513,8 +513,8 @@ func handlePing(player *models.Player, payload json.RawMessage) {
 			"clientTimestamp": data.ClientTimestamp,
 			"sequenceNumber":  data.SequenceNumber,
 			"serverHealth": map[string]interface{}{
-				"activeConnections": gameManager.GetPlayerCount() + 1, // Include host
-				"serverLoad":        0.15,                             // Placeholder
+				"activeConnections": gameManager.GetPlayerCount(), // Only count players, not host
+				"serverLoad":        0.15,                         // Placeholder
 				"gamePhase":         gameManager.GetCurrentPhase(),
 			},
 		}

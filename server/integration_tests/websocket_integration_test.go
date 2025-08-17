@@ -177,9 +177,8 @@ func TestPlayerConfiguration(t *testing.T) {
 	require.NoError(t, err)
 
 	// Check player count - should be currentPlayers not totalPlayers per spec
-	// Note: currentPlayers ALWAYS includes +1 for host in broadcast_service.go line 120
-	assert.Equal(t, float64(2), payload["currentPlayers"]) // 1 player + 1 (always added) = 2
-	assert.Equal(t, float64(1), payload["nonHostPlayers"]) // 1 player configured
+	// Note: currentPlayers should ONLY count actual players, not host (per game design spec)
+	assert.Equal(t, float64(1), payload["currentPlayers"]) // 1 player only
 	assert.Equal(t, float64(1), payload["readyPlayers"])   // Player is marked ready after configuration
 }
 

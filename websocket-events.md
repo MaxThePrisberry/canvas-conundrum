@@ -146,8 +146,7 @@ All server-to-client messages use this format:
 {
   "event": "SETUP_TO_CLIENT_LOBBY_STATUS",
   "payload": {
-    "currentPlayers": 6,
-    "nonHostPlayers": 5,
+    "currentPlayers": 5,
     "minPlayers": 4,
     "maxPlayers": 64,
     "playerRoles": {

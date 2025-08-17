@@ -143,8 +143,8 @@ def main():
     parser.add_argument(
         "-o", "--output",
         type=Path,
-        default=Path("./puzzle_segments"),
-        help="Output directory for processed images (default: ./puzzle_segments)"
+        default=Path("./server/public/images/puzzle"),
+        help="Output directory for processed images (default: ./server/public/images/puzzle)"
     )
     
     args = parser.parse_args()

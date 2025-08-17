@@ -12,7 +12,6 @@ const (
 
 	// Puzzle Image Settings
 	DefaultPuzzleImage = "nature_image"
-	PuzzleImagesPath   = "./puzzle_images/puzzle_segments"
 
 	// Server Settings
 	DefaultPort         = "8080"

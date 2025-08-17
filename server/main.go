@@ -123,11 +123,11 @@ func setupRoutes() *mux.Router {
 	// Serve puzzle images
 	r.PathPrefix("/images/puzzle/").Handler(
 		http.StripPrefix("/images/puzzle/",
-			http.FileServer(http.Dir("./puzzle_images/puzzle_segments/"))))
+			http.FileServer(http.Dir("./public/images/puzzle/"))))
 
 	r.PathPrefix("/host/").Handler(http.StripPrefix("/host/", http.FileServer(http.Dir("./public/host/"))))
 
-	// Serve client static files (if built)
+	// Serve client static files
 	r.PathPrefix("/").Handler(http.FileServer(http.Dir("./public/client/")))
 
 	return r

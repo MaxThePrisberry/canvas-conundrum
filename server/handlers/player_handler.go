@@ -258,7 +258,7 @@ func handleTriviaAnswer(player *models.Player, payload json.RawMessage) {
 		broadcastService.SendToPlayer(player, constants.EventResourceToPlayerAnswerResult, resultPayload)
 
 		// Broadcast team progress update
-		broadcastService.BroadcastToAll(constants.EventResourceToClientTeamProgress, getTeamProgressPayload())
+		broadcastService.BroadcastToAllPlayers(constants.EventResourceToClientTeamProgress, getTeamProgressPayload())
 	}
 }
 

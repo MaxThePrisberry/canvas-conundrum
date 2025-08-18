@@ -135,7 +135,7 @@ func (bs *BroadcastService) BroadcastLobbyStatus() {
 		"waitingMessage":    bs.getWaitingMessage(readyCount, connectedCount),
 	}
 
-	bs.BroadcastToAll(constants.EventSetupToClientLobbyStatus, payload)
+	bs.BroadcastToAllPlayers(constants.EventSetupToClientLobbyStatus, payload)
 
 	// Send detailed roster to host
 	bs.sendHostPlayerRoster()
@@ -355,7 +355,7 @@ func (bs *BroadcastService) BroadcastResourcePhaseStart() {
 		},
 	}
 
-	bs.BroadcastToAll(constants.EventResourceToClientPhaseStart, playerPayload)
+	bs.BroadcastToAllPlayers(constants.EventResourceToClientPhaseStart, playerPayload)
 
 	// Send phase start to host
 	host := gameManager.GetHost()
@@ -1067,7 +1067,7 @@ func (bs *BroadcastService) BroadcastAnalytics(analytics *models.GameAnalytics) 
 		"teamAchievements":  analytics.TeamAnalytics.TeamAchievements,
 		"notableStats":      bs.getNotableStats(analytics),
 	}
-	bs.BroadcastToAll(constants.EventAnalyticsToClientTeamSummary, teamSummary)
+	bs.BroadcastToAllPlayers(constants.EventAnalyticsToClientTeamSummary, teamSummary)
 
 	// 3. Send complete report to host (ANALYTICS_TO_HOST_COMPLETE_REPORT)
 	if host := gameManager.GetHost(); host != nil {
@@ -1494,7 +1494,7 @@ func (bs *BroadcastService) BroadcastHostDisconnected() {
 		},
 	}
 
-	bs.BroadcastToAll(constants.EventSystemToClientHostDisconnected, payload)
+	bs.BroadcastToAllPlayers(constants.EventSystemToClientHostDisconnected, payload)
 }
 
 // BroadcastHostReconnected notifies all players when host reconnects
@@ -1514,7 +1514,7 @@ func (bs *BroadcastService) BroadcastHostReconnected() {
 		},
 	}
 
-	bs.BroadcastToAll(constants.EventSystemToClientHostReconnected, payload)
+	bs.BroadcastToAllPlayers(constants.EventSystemToClientHostReconnected, payload)
 }
 
 // SendError sends an error message

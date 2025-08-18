@@ -589,7 +589,7 @@ func TestGameManagerCompleteSegment(t *testing.T) {
 		// Initialize puzzle grid for the game
 		game := gm.GetGame()
 		game.PuzzleGrid = models.NewPuzzleGrid(3)
-		
+
 		err := gm.CompleteSegment("player1", "A1")
 		assert.NoError(t, err)
 
@@ -722,3 +722,317 @@ func TestGameManagerTimers(t *testing.T) {
 	})
 }
 */
+
+// TestGameManagerRosterBroadcasting tests the roster update broadcasting functionality
+func TestGameManagerRosterBroadcasting(t *testing.T) {
+	t.Run("AddPlayer_WithHostAndBroadcastService_ShouldNotCrash", func(t *testing.T) {
+		// Reset singleton
+		gameInstance = nil
+		once = sync.Once{}
+		gm := GetGameInstance()
+
+		// Set up real broadcast service
+		gm.SetBroadcastService(NewBroadcastService())
+
+		// Set up host with connection
+		host := models.NewHost("test-host", &websocket.Conn{})
+		gm.SetHost(host)
+
+		// Add a player - should not crash and should call broadcast logic
+		player := models.NewPlayer("player1", nil)
+		player.IsActive = true
+		err := gm.AddPlayer(player)
+
+		assert.NoError(t, err)
+		assert.Equal(t, 1, gm.GetPlayerCount())
+	})
+
+	t.Run("AddPlayer_WithoutHost_ShouldNotCrash", func(t *testing.T) {
+		// Reset singleton
+		gameInstance = nil
+		once = sync.Once{}
+		gm := GetGameInstance()
+
+		// Set up broadcast service but no host
+		gm.SetBroadcastService(NewBroadcastService())
+
+		// Add a player - should work without broadcasting
+		player := models.NewPlayer("player1", nil)
+		player.IsActive = true
+		err := gm.AddPlayer(player)
+
+		assert.NoError(t, err)
+		assert.Equal(t, 1, gm.GetPlayerCount())
+	})
+
+	t.Run("AddPlayer_WithoutBroadcastService_ShouldNotCrash", func(t *testing.T) {
+		// Reset singleton
+		gameInstance = nil
+		once = sync.Once{}
+		gm := GetGameInstance()
+
+		// Set up host but no broadcast service
+		host := models.NewHost("test-host", &websocket.Conn{})
+		gm.SetHost(host)
+
+		// Add a player - should not crash without broadcast service
+		player := models.NewPlayer("player1", nil)
+		player.IsActive = true
+		err := gm.AddPlayer(player)
+
+		assert.NoError(t, err)
+		assert.Equal(t, 1, gm.GetPlayerCount())
+	})
+
+	t.Run("AddPlayer_HostWithoutConnection_ShouldNotCrash", func(t *testing.T) {
+		// Reset singleton
+		gameInstance = nil
+		once = sync.Once{}
+		gm := GetGameInstance()
+
+		// Set up broadcast service
+		gm.SetBroadcastService(NewBroadcastService())
+
+		// Set up host without connection
+		host := models.NewHost("test-host", nil)
+		gm.SetHost(host)
+
+		// Add a player - should work but not broadcast
+		player := models.NewPlayer("player1", nil)
+		player.IsActive = true
+		err := gm.AddPlayer(player)
+
+		assert.NoError(t, err)
+		assert.Equal(t, 1, gm.GetPlayerCount())
+	})
+
+	t.Run("AddPlayer_PlayerReconnection_ShouldWork", func(t *testing.T) {
+		// Reset singleton
+		gameInstance = nil
+		once = sync.Once{}
+		gm := GetGameInstance()
+
+		// Set up broadcast service
+		gm.SetBroadcastService(NewBroadcastService())
+
+		// Set up host with connection
+		host := models.NewHost("test-host", &websocket.Conn{})
+		gm.SetHost(host)
+
+		// Add a player first time
+		player := models.NewPlayer("player1", nil)
+		player.IsActive = true
+		err := gm.AddPlayer(player)
+		assert.NoError(t, err)
+		assert.Equal(t, 1, gm.GetPlayerCount())
+
+		// Mark player as disconnected
+		gm.RemovePlayer("player1")
+		assert.Equal(t, 0, gm.GetPlayerCount())
+
+		// Reconnect the same player
+		reconnectPlayer := models.NewPlayer("player1", nil)
+		reconnectPlayer.IsActive = true
+		err = gm.AddPlayer(reconnectPlayer)
+
+		assert.NoError(t, err)
+		assert.Equal(t, 1, gm.GetPlayerCount())
+
+		// Verify player is marked as active
+		retrievedPlayer, exists := gm.GetPlayer("player1")
+		assert.True(t, exists)
+		assert.True(t, retrievedPlayer.IsActive)
+	})
+
+	t.Run("RemovePlayer_InSetupPhase_WithHostAndBroadcastService", func(t *testing.T) {
+		// Reset singleton
+		gameInstance = nil
+		once = sync.Once{}
+		gm := GetGameInstance()
+
+		// Set up broadcast service
+		gm.SetBroadcastService(NewBroadcastService())
+
+		// Set up host with connection
+		host := models.NewHost("test-host", &websocket.Conn{})
+		gm.SetHost(host)
+
+		// Add a player first
+		player := models.NewPlayer("player1", nil)
+		player.IsActive = true
+		gm.AddPlayer(player)
+		assert.Equal(t, 1, gm.GetPlayerCount())
+
+		// Remove player (game is in setup phase by default)
+		gm.RemovePlayer("player1")
+
+		// Player should be inactive
+		assert.Equal(t, 0, gm.GetPlayerCount())
+		retrievedPlayer, exists := gm.GetPlayer("player1")
+		assert.True(t, exists)                    // Player still exists in map
+		assert.False(t, retrievedPlayer.IsActive) // But is inactive
+	})
+
+	t.Run("RemovePlayer_InNonSetupPhase_ShouldWork", func(t *testing.T) {
+		// Reset singleton
+		gameInstance = nil
+		once = sync.Once{}
+		gm := GetGameInstance()
+
+		// Set up broadcast service
+		gm.SetBroadcastService(NewBroadcastService())
+
+		// Set up host with connection
+		host := models.NewHost("test-host", &websocket.Conn{})
+		gm.SetHost(host)
+
+		// Add a player first
+		player := models.NewPlayer("player1", nil)
+		player.IsActive = true
+		gm.AddPlayer(player)
+
+		// Change game phase to resource gathering
+		game := gm.GetGame()
+		game.CurrentPhase = models.PhaseResourceGathering
+
+		// Remove player (game is NOT in setup phase)
+		gm.RemovePlayer("player1")
+
+		// Player should be inactive
+		assert.Equal(t, 0, gm.GetPlayerCount())
+		retrievedPlayer, exists := gm.GetPlayer("player1")
+		assert.True(t, exists)                    // Player still exists in map
+		assert.False(t, retrievedPlayer.IsActive) // But is inactive
+	})
+
+	t.Run("RemovePlayer_WithoutHost_ShouldWork", func(t *testing.T) {
+		// Reset singleton
+		gameInstance = nil
+		once = sync.Once{}
+		gm := GetGameInstance()
+
+		// Set up broadcast service but no host
+		gm.SetBroadcastService(NewBroadcastService())
+
+		// Add a player first
+		player := models.NewPlayer("player1", nil)
+		player.IsActive = true
+		gm.AddPlayer(player)
+
+		// Remove player
+		gm.RemovePlayer("player1")
+
+		// Player should be inactive
+		assert.Equal(t, 0, gm.GetPlayerCount())
+		retrievedPlayer, exists := gm.GetPlayer("player1")
+		assert.True(t, exists)                    // Player still exists in map
+		assert.False(t, retrievedPlayer.IsActive) // But is inactive
+	})
+
+	t.Run("RemovePlayer_WithoutBroadcastService_ShouldNotCrash", func(t *testing.T) {
+		// Reset singleton
+		gameInstance = nil
+		once = sync.Once{}
+		gm := GetGameInstance()
+
+		// Set up host but no broadcast service
+		host := models.NewHost("test-host", &websocket.Conn{})
+		gm.SetHost(host)
+
+		// Add a player first
+		player := models.NewPlayer("player1", nil)
+		player.IsActive = true
+		gm.AddPlayer(player)
+
+		// Remove player - should not crash without broadcast service
+		gm.RemovePlayer("player1")
+
+		// Player should be inactive
+		assert.Equal(t, 0, gm.GetPlayerCount())
+		retrievedPlayer, exists := gm.GetPlayer("player1")
+		assert.True(t, exists)                    // Player still exists in map
+		assert.False(t, retrievedPlayer.IsActive) // But is inactive
+	})
+
+	t.Run("Multiple_PlayerOperations_ShouldWorkCorrectly", func(t *testing.T) {
+		// Reset singleton
+		gameInstance = nil
+		once = sync.Once{}
+		gm := GetGameInstance()
+
+		// Set up broadcast service
+		gm.SetBroadcastService(NewBroadcastService())
+
+		// Set up host with connection
+		host := models.NewHost("test-host", &websocket.Conn{})
+		gm.SetHost(host)
+
+		// Add multiple players
+		for i := 0; i < 3; i++ {
+			player := models.NewPlayer(string(rune('a'+i)), nil)
+			player.IsActive = true
+			err := gm.AddPlayer(player)
+			assert.NoError(t, err)
+		}
+
+		// Should have 3 players
+		assert.Equal(t, 3, gm.GetPlayerCount())
+
+		// Remove one player
+		gm.RemovePlayer("a")
+
+		// Should have 2 active players
+		assert.Equal(t, 2, gm.GetPlayerCount())
+
+		// Reconnect removed player
+		reconnectPlayer := models.NewPlayer("a", nil)
+		reconnectPlayer.IsActive = true
+		err := gm.AddPlayer(reconnectPlayer)
+		assert.NoError(t, err)
+
+		// Should have 3 active players again
+		assert.Equal(t, 3, gm.GetPlayerCount())
+	})
+
+	t.Run("BroadcastingLogic_VerifyConditions", func(t *testing.T) {
+		// Reset singleton
+		gameInstance = nil
+		once = sync.Once{}
+		gm := GetGameInstance()
+
+		// Test condition: no broadcast service
+		player1 := models.NewPlayer("player1", nil)
+		player1.IsActive = true
+		err := gm.AddPlayer(player1)
+		assert.NoError(t, err) // Should not crash
+
+		// Add broadcast service
+		gm.SetBroadcastService(NewBroadcastService())
+
+		// Test condition: no host
+		player2 := models.NewPlayer("player2", nil)
+		player2.IsActive = true
+		err = gm.AddPlayer(player2)
+		assert.NoError(t, err) // Should not crash
+
+		// Add host without connection
+		host := models.NewHost("test-host", nil)
+		gm.SetHost(host)
+
+		player3 := models.NewPlayer("player3", nil)
+		player3.IsActive = true
+		err = gm.AddPlayer(player3)
+		assert.NoError(t, err) // Should not crash
+
+		// Add connection to host
+		host.Connection = &websocket.Conn{}
+
+		player4 := models.NewPlayer("player4", nil)
+		player4.IsActive = true
+		err = gm.AddPlayer(player4)
+		assert.NoError(t, err) // Should work and broadcast
+
+		// Verify all players were added correctly
+		assert.Equal(t, 4, gm.GetPlayerCount())
+	})
+}

@@ -107,13 +107,15 @@ func (gm *GameManager) IsHostConnected() bool {
 
 // AddPlayer adds a new player to the game or reconnects an existing player
 func (gm *GameManager) AddPlayer(player *models.Player) error {
-	gm.mu.Lock()
-	defer gm.mu.Unlock()
+	var shouldBroadcast bool
+	var broadcastSvc *BroadcastService
 
+	gm.mu.Lock()
 	// Check if this is a reconnection
 	if existingPlayer, exists := gm.players[player.ID]; exists {
 		// Player reconnection
 		if gm.game.CurrentPhase == models.PhasePuzzleAssembly {
+			gm.mu.Unlock()
 			// Cannot reconnect during puzzle phase at all (per specification)
 			return fmt.Errorf("cannot reconnect during puzzle assembly phase")
 		}
@@ -125,17 +127,32 @@ func (gm *GameManager) AddPlayer(player *models.Player) error {
 		existingPlayer.Send = player.Send
 		existingPlayer.Done = player.Done
 		log.Printf("Player %s reconnected", player.ID)
+
+		// Set up broadcast for reconnection
+		if gm.broadcastSvc != nil && gm.host != nil && gm.host.Connection != nil {
+			shouldBroadcast = true
+			broadcastSvc = gm.broadcastSvc
+		}
+		gm.mu.Unlock()
+
+		// Send roster update outside of lock for reconnection
+		if shouldBroadcast {
+			log.Printf("Sending roster update to host after player %s reconnected", player.ID)
+			broadcastSvc.BroadcastLobbyStatus()
+		}
 		return nil
 	}
 
 	// New player joining
 	// Check if game is in progress
 	if gm.game.CurrentPhase != models.PhaseSetup {
+		gm.mu.Unlock()
 		return fmt.Errorf("cannot join game in progress")
 	}
 
 	// Check max players
 	if len(gm.players) >= gm.game.MaxPlayers {
+		gm.mu.Unlock()
 		return fmt.Errorf("maximum players reached")
 	}
 
@@ -148,16 +165,32 @@ func (gm *GameManager) AddPlayer(player *models.Player) error {
 	}
 
 	log.Printf("Player %s joined the game", player.ID)
+
+	// Set up broadcast for new player
+	if gm.broadcastSvc != nil && gm.host != nil && gm.host.Connection != nil {
+		shouldBroadcast = true
+		broadcastSvc = gm.broadcastSvc
+	}
+	gm.mu.Unlock()
+
+	// Send updated roster to host outside of lock to avoid deadlock
+	if shouldBroadcast {
+		log.Printf("Sending roster update to host after player %s joined", player.ID)
+		broadcastSvc.BroadcastLobbyStatus()
+	}
+
 	return nil
 }
 
 // RemovePlayer removes a player from the game
 func (gm *GameManager) RemovePlayer(playerID string) {
-	gm.mu.Lock()
-	defer gm.mu.Unlock()
+	var shouldBroadcast bool
+	var broadcastSvc *BroadcastService
 
+	gm.mu.Lock()
 	player, exists := gm.players[playerID]
 	if !exists {
+		gm.mu.Unlock()
 		log.Printf("RemovePlayer: Player %s not found", playerID)
 		return
 	}
@@ -214,7 +247,20 @@ func (gm *GameManager) RemovePlayer(playerID string) {
 		}
 	}
 
+	// Check if we should broadcast roster update (only during setup phase)
+	if gm.game.CurrentPhase == models.PhaseSetup && gm.broadcastSvc != nil && gm.host != nil && gm.host.Connection != nil {
+		shouldBroadcast = true
+		broadcastSvc = gm.broadcastSvc
+	}
+
 	log.Printf("Player %s disconnected", playerID)
+	gm.mu.Unlock()
+
+	// Send updated roster to host outside of lock to avoid deadlock
+	if shouldBroadcast {
+		log.Printf("Sending roster update to host after player %s disconnected", playerID)
+		broadcastSvc.BroadcastLobbyStatus()
+	}
 }
 
 // handlePuzzleDisconnection handles player disconnection during puzzle phase

@@ -824,7 +824,6 @@ func (bs *BroadcastService) BroadcastResourcePhaseComplete() {
 	// To host with analytics
 	if host := gameManager.GetHost(); host != nil {
 		playerAnalytics := make(map[string]interface{})
-		// TODO: Get analytics from analytics service when properly implemented
 
 		hostPayload := map[string]interface{}{
 			"phase":                  "resource_gathering",

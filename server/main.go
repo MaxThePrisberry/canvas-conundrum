@@ -6,10 +6,12 @@ import (
 	"canvas-conundrum/services"
 	"context"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 	"time"
 
@@ -84,10 +86,35 @@ func setupLogging(cfg *config.Config) {
 	// Set log format
 	log.SetFlags(log.Ldate | log.Ltime | log.Lshortfile)
 
-	// In production, you might want to log to a file
+	// In production, log to both file and console
 	if cfg.IsProduction() {
-		// TODO: Setup file logging
+		setupFileLogging()
 	}
+}
+
+func setupFileLogging() {
+	// Create logs directory if it doesn't exist
+	logsDir := "logs"
+	if err := os.MkdirAll(logsDir, 0755); err != nil {
+		log.Printf("Failed to create logs directory: %v", err)
+		return
+	}
+
+	// Create log file with timestamp
+	timestamp := time.Now().Format("2006-01-02_15-04-05")
+	logFile := filepath.Join(logsDir, fmt.Sprintf("canvas-conundrum_%s.log", timestamp))
+
+	file, err := os.OpenFile(logFile, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
+	if err != nil {
+		log.Printf("Failed to open log file: %v", err)
+		return
+	}
+
+	// Write to both file and console
+	multiWriter := io.MultiWriter(os.Stdout, file)
+	log.SetOutput(multiWriter)
+
+	log.Printf("Production logging enabled - writing to %s", logFile)
 }
 
 func initializeServices() error {

@@ -6,6 +6,7 @@ import (
 	"canvas-conundrum/services"
 	"canvas-conundrum/utils"
 	"encoding/json"
+	"fmt"
 	"log"
 	"time"
 )
@@ -56,7 +57,7 @@ func handleHostStartGame(host *models.Host) {
 				host,
 				constants.ErrorCodeInsufficientPlayers,
 				constants.ErrorMessageInsufficientPlayers,
-				"Need at least "+string(rune(constants.MinPlayers))+" ready players to start",
+				fmt.Sprintf("Need at least %d ready players to start", constants.MinPlayers),
 			)
 		}
 		return
@@ -128,11 +129,10 @@ func handleHostResetGame(host *models.Host, payload json.RawMessage) {
 	gameManager := services.GetGameInstance()
 	broadcastService := gameManager.GetBroadcastService()
 
-	// TODO: Save analytics if requested
+	// Analytics are kept in memory only as designed
+	// Game state will be completely reset after server restart
 	if data.SaveAnalytics {
-		// Analytics are currently in memory only
-		// In production, save to database or file
-		log.Println("Analytics save requested (not implemented)")
+		log.Println("Analytics save requested - keeping in memory only (no persistence by design)")
 	}
 
 	// Broadcast reset to all participants

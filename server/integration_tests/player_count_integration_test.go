@@ -40,11 +40,14 @@ func TestPlayerCountingWithHost(t *testing.T) {
 	require.NoError(t, err)
 	defer player1.Close()
 
+	// Clear any existing messages to avoid race condition
+	player1.ClearMessages()
+
 	// Configure the player
 	err = player1.ConfigurePlayer("Player1", "art_enthusiast", []string{"general"})
 	require.NoError(t, err)
 
-	// Wait for lobby status update
+	// Wait for lobby status update (after configuration)
 	msg, err := player1.WaitForEvent(constants.EventSetupToClientLobbyStatus, 2*time.Second)
 	require.NoError(t, err)
 

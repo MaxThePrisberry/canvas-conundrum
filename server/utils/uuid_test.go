@@ -32,17 +32,15 @@ func TestGeneratePlayerID(t *testing.T) {
 	// Player IDs should be different
 	assert.NotEqual(t, playerID1, playerID2)
 
-	// Should start with "player-"
-	assert.True(t, strings.HasPrefix(playerID1, "player-"))
-	assert.True(t, strings.HasPrefix(playerID2, "player-"))
+	// Should be valid UUID format (36 characters with dashes)
+	assert.Len(t, playerID1, 36)
+	assert.Len(t, playerID2, 36)
 
-	// Should be longer than just the prefix
-	assert.Greater(t, len(playerID1), 7)
-	assert.Greater(t, len(playerID2), 7)
-
-	// The UUID part should be valid format
-	uuidPart := playerID1[7:] // Remove "player-" prefix
-	assert.Len(t, uuidPart, 36)
+	// Should contain dashes in correct positions
+	assert.Equal(t, "-", string(playerID1[8]))
+	assert.Equal(t, "-", string(playerID1[13]))
+	assert.Equal(t, "-", string(playerID1[18]))
+	assert.Equal(t, "-", string(playerID1[23]))
 }
 
 func TestGenerateFragmentID(t *testing.T) {

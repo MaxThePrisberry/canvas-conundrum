@@ -145,7 +145,7 @@ func (bs *BroadcastService) BroadcastLobbyStatus() {
 func (bs *BroadcastService) getWaitingMessage(readyCount, connectedCount int) string {
 	needed := constants.MinPlayers - readyCount
 	if needed > 0 {
-		return "Waiting for " + string(rune(needed)) + " more player(s) to be ready"
+		return fmt.Sprintf("Waiting for %d more player(s) to be ready", needed)
 	}
 	if !GetGameInstance().IsHostConnected() {
 		return "Waiting for host to connect"

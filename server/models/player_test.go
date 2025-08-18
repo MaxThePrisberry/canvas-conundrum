@@ -263,3 +263,90 @@ func TestHostTimestamp(t *testing.T) {
 	assert.True(t, host.ConnectedAt.Before(time.Now().Add(time.Second)))
 	assert.True(t, host.ConnectedAt.After(time.Now().Add(-time.Minute)))
 }
+
+func TestRoleGetBonusTokenType(t *testing.T) {
+	tests := []struct {
+		role     Role
+		expected TokenType
+	}{
+		{RoleArtEnthusiast, TokenClarity},
+		{RoleDetective, TokenGuide},
+		{RoleTourist, TokenChronos},
+		{RoleJanitor, TokenAnchor},
+		{RoleNone, ""},
+		{Role("invalid"), ""},
+	}
+
+	for _, tt := range tests {
+		t.Run(string(tt.role), func(t *testing.T) {
+			result := tt.role.GetBonusTokenType()
+			assert.Equal(t, tt.expected, result)
+		})
+	}
+}
+
+func TestPlayerGetAccuracy(t *testing.T) {
+	player := NewPlayer("test", nil)
+
+	t.Run("No questions answered", func(t *testing.T) {
+		accuracy := player.GetAccuracy()
+		assert.Equal(t, 0.0, accuracy)
+	})
+
+	t.Run("Some questions answered", func(t *testing.T) {
+		player.QuestionsAnswered = 10
+		player.CorrectAnswers = 7
+		accuracy := player.GetAccuracy()
+		assert.InDelta(t, 0.7, accuracy, 0.01)
+	})
+
+	t.Run("All questions correct", func(t *testing.T) {
+		player.QuestionsAnswered = 5
+		player.CorrectAnswers = 5
+		accuracy := player.GetAccuracy()
+		assert.Equal(t, 1.0, accuracy)
+	})
+
+	t.Run("No correct answers", func(t *testing.T) {
+		player.QuestionsAnswered = 5
+		player.CorrectAnswers = 0
+		accuracy := player.GetAccuracy()
+		assert.Equal(t, 0.0, accuracy)
+	})
+}
+
+func TestPlayerCanMoveFragment(t *testing.T) {
+	player := NewPlayer("test", nil)
+
+	t.Run("Never moved before", func(t *testing.T) {
+		canMove := player.CanMoveFragment(1000) // 1 second cooldown
+		assert.True(t, canMove)
+	})
+
+	t.Run("Recent move", func(t *testing.T) {
+		player.LastMoveTime = time.Now()
+		canMove := player.CanMoveFragment(1000) // 1 second cooldown
+		assert.False(t, canMove)
+	})
+
+	t.Run("Old move", func(t *testing.T) {
+		player.LastMoveTime = time.Now().Add(-5 * time.Second)
+		canMove := player.CanMoveFragment(1000) // 1 second cooldown
+		assert.True(t, canMove)
+	})
+}
+
+func TestPlayerUpdateLastMove(t *testing.T) {
+	player := NewPlayer("test", nil)
+
+	// Initial state
+	assert.Zero(t, player.LastMoveTime)
+
+	// Update last move
+	beforeUpdate := time.Now()
+	player.UpdateLastMove()
+	afterUpdate := time.Now()
+
+	assert.True(t, player.LastMoveTime.After(beforeUpdate) || player.LastMoveTime.Equal(beforeUpdate))
+	assert.True(t, player.LastMoveTime.Before(afterUpdate) || player.LastMoveTime.Equal(afterUpdate))
+}

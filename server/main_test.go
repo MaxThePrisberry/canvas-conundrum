@@ -2,6 +2,10 @@ package main
 
 import (
 	"canvas-conundrum/config"
+	"canvas-conundrum/services"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -96,4 +100,192 @@ func TestSetupLogging_Production(t *testing.T) {
 	stat, err := os.Stat(logsDir)
 	require.NoError(t, err)
 	assert.True(t, stat.IsDir(), "logs directory should be created in production")
+}
+
+func TestInitializeServices(t *testing.T) {
+	t.Run("Successful Initialization", func(t *testing.T) {
+		err := initializeServices()
+		assert.NoError(t, err)
+		
+		// Verify services were set up
+		gameManager := services.GetGameInstance()
+		assert.NotNil(t, gameManager.GetTriviaService())
+		assert.NotNil(t, gameManager.GetPuzzleService())
+		assert.NotNil(t, gameManager.GetBroadcastService())
+		assert.NotNil(t, gameManager.GetAnalyticsService())
+	})
+}
+
+func TestSetupRoutes(t *testing.T) {
+	router := setupRoutes()
+	assert.NotNil(t, router)
+	
+	t.Run("Health Endpoint", func(t *testing.T) {
+		req, err := http.NewRequest("GET", "/health", nil)
+		require.NoError(t, err)
+		
+		rr := httptest.NewRecorder()
+		router.ServeHTTP(rr, req)
+		
+		assert.Equal(t, http.StatusOK, rr.Code)
+		assert.Equal(t, "application/json", rr.Header().Get("Content-Type"))
+		
+		// Verify response contains expected fields
+		body := rr.Body.String()
+		assert.Contains(t, body, "status")
+		assert.Contains(t, body, "timestamp")
+		assert.Contains(t, body, "gamePhase")
+		assert.Contains(t, body, "playerCount")
+		assert.Contains(t, body, "hostConnected")
+	})
+	
+	t.Run("WebSocket Player Endpoint", func(t *testing.T) {
+		req, err := http.NewRequest("GET", "/ws", nil)
+		require.NoError(t, err)
+		
+		rr := httptest.NewRecorder()
+		router.ServeHTTP(rr, req)
+		
+		// Should get a bad request because it's not a proper WebSocket upgrade
+		assert.Equal(t, http.StatusBadRequest, rr.Code)
+	})
+	
+	t.Run("WebSocket Host Endpoint", func(t *testing.T) {
+		req, err := http.NewRequest("GET", "/ws/host/test-uuid", nil)
+		require.NoError(t, err)
+		
+		rr := httptest.NewRecorder()
+		router.ServeHTTP(rr, req)
+		
+		// Should get unauthorized or bad request for invalid UUID
+		assert.True(t, rr.Code == http.StatusUnauthorized || rr.Code == http.StatusBadRequest)
+	})
+	
+	t.Run("Static File Endpoints", func(t *testing.T) {
+		// Test puzzle images endpoint
+		req, err := http.NewRequest("GET", "/images/puzzle/test.jpg", nil)
+		require.NoError(t, err)
+		
+		rr := httptest.NewRecorder()
+		router.ServeHTTP(rr, req)
+		
+		// Should get 404 since file doesn't exist, but route is handled
+		assert.Equal(t, http.StatusNotFound, rr.Code)
+		
+		// Test host files endpoint  
+		req, err = http.NewRequest("GET", "/host/index.html", nil)
+		require.NoError(t, err)
+		
+		rr = httptest.NewRecorder()
+		router.ServeHTTP(rr, req)
+		
+		// May get 301 redirect or 404 depending on file server behavior
+		assert.True(t, rr.Code == http.StatusNotFound || rr.Code == http.StatusMovedPermanently)
+		
+		// Test client files endpoint
+		req, err = http.NewRequest("GET", "/index.html", nil)
+		require.NoError(t, err)
+		
+		rr = httptest.NewRecorder()
+		router.ServeHTTP(rr, req)
+		
+		// May get 301 redirect or 404 depending on file server behavior
+		assert.True(t, rr.Code == http.StatusNotFound || rr.Code == http.StatusMovedPermanently)
+	})
+}
+
+func TestHandleHealth(t *testing.T) {
+	// Initialize services for a realistic health check
+	err := initializeServices()
+	require.NoError(t, err)
+	
+	t.Run("Valid Health Check Response", func(t *testing.T) {
+		req, err := http.NewRequest("GET", "/health", nil)
+		require.NoError(t, err)
+		
+		rr := httptest.NewRecorder()
+		handler := http.HandlerFunc(handleHealth)
+		handler.ServeHTTP(rr, req)
+		
+		assert.Equal(t, http.StatusOK, rr.Code)
+		assert.Equal(t, "application/json", rr.Header().Get("Content-Type"))
+		
+		// Parse JSON response
+		var healthData map[string]interface{}
+		body := rr.Body.String()
+		
+		// Since the response is manually formatted, let's verify it contains the right structure
+		assert.Contains(t, body, `"status":"healthy"`)
+		assert.Contains(t, body, `"timestamp":`)
+		assert.Contains(t, body, `"gamePhase":`)
+		assert.Contains(t, body, `"playerCount":`)
+		assert.Contains(t, body, `"hostConnected":`)
+		
+		// Try to parse as JSON to ensure it's valid
+		err = json.Unmarshal([]byte(body), &healthData)
+		assert.NoError(t, err, "Health response should be valid JSON")
+		
+		// Verify expected fields
+		assert.Equal(t, "healthy", healthData["status"])
+		assert.NotNil(t, healthData["timestamp"])
+		assert.NotNil(t, healthData["gamePhase"])
+		assert.NotNil(t, healthData["playerCount"])
+		assert.NotNil(t, healthData["hostConnected"])
+	})
+}
+
+func TestRouteMethodRestrictions(t *testing.T) {
+	router := setupRoutes()
+	
+	t.Run("Health Endpoint - POST Not Allowed", func(t *testing.T) {
+		req, err := http.NewRequest("POST", "/health", strings.NewReader("{}"))
+		require.NoError(t, err)
+		
+		rr := httptest.NewRecorder()
+		router.ServeHTTP(rr, req)
+		
+		// Router returns 404 for unmatched routes, which is expected behavior
+		assert.True(t, rr.Code == http.StatusMethodNotAllowed || rr.Code == http.StatusNotFound)
+	})
+	
+	t.Run("WebSocket Endpoints - POST Not Allowed", func(t *testing.T) {
+		req, err := http.NewRequest("POST", "/ws", strings.NewReader("{}"))
+		require.NoError(t, err)
+		
+		rr := httptest.NewRecorder()
+		router.ServeHTTP(rr, req)
+		
+		// Router returns 404 for unmatched routes, which is expected behavior
+		assert.True(t, rr.Code == http.StatusMethodNotAllowed || rr.Code == http.StatusNotFound)
+	})
+}
+
+func TestMainRouterIntegration(t *testing.T) {
+	// This tests the overall router setup without starting the actual server
+	t.Run("Router Setup Complete", func(t *testing.T) {
+		router := setupRoutes()
+		assert.NotNil(t, router)
+		
+		// Test that the router can handle a variety of requests without panicking
+		testPaths := []string{
+			"/health",
+			"/ws",
+			"/ws/host/invalid-uuid",
+			"/images/puzzle/test.jpg",
+			"/host/index.html",
+			"/nonexistent-path",
+		}
+		
+		for _, path := range testPaths {
+			req, err := http.NewRequest("GET", path, nil)
+			require.NoError(t, err)
+			
+			rr := httptest.NewRecorder()
+			
+			// Should not panic
+			assert.NotPanics(t, func() {
+				router.ServeHTTP(rr, req)
+			}, "Router should handle path %s without panicking", path)
+		}
+	})
 }

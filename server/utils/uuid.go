@@ -11,7 +11,7 @@ func GenerateUUID() string {
 
 // GeneratePlayerID generates a new player ID
 func GeneratePlayerID() string {
-	return "player-" + GenerateUUID()
+	return GenerateUUID()
 }
 
 // GenerateFragmentID generates a new fragment ID

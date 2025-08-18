@@ -8,7 +8,7 @@ import (
 )
 
 func TestNewPlayer(t *testing.T) {
-	playerID := "test-player-123"
+	playerID := "123e4567-e89b-12d3-a456-426614174000"
 	player := NewPlayer(playerID, nil)
 
 	assert.NotNil(t, player)
@@ -162,7 +162,7 @@ func TestPlayerConnectionStatus(t *testing.T) {
 }
 
 func TestNewHost(t *testing.T) {
-	hostID := "test-host-456"
+	hostID := "987fcdeb-51a2-43d1-9f12-123456789abc"
 	host := NewHost(hostID, nil)
 
 	assert.NotNil(t, host)

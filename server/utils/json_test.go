@@ -65,7 +65,7 @@ func TestParseMessage(t *testing.T) {
 		jsonData := `{
 			"event": "TEST_EVENT",
 			"auth": {
-				"token": "player-123"
+				"token": "123e4567-e89b-12d3-a456-426614174000"
 			},
 			"payload": {
 				"key": "value"
@@ -77,7 +77,7 @@ func TestParseMessage(t *testing.T) {
 		require.NoError(t, err)
 
 		assert.Equal(t, "TEST_EVENT", msg.Event)
-		assert.Equal(t, "player-123", msg.Auth.Token)
+		assert.Equal(t, "123e4567-e89b-12d3-a456-426614174000", msg.Auth.Token)
 		assert.Contains(t, string(msg.Payload), "key")
 		assert.Contains(t, string(msg.Payload), "value")
 	})

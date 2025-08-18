@@ -15,7 +15,7 @@ import (
 // CreateTestPlayer creates a test player with mock connection
 func CreateTestPlayer(id string) *models.Player {
 	if id == "" {
-		id = "test-player-" + uuid.New().String()
+		id = uuid.New().String()
 	}
 	player := models.NewPlayer(id, nil)
 	return player
@@ -24,7 +24,7 @@ func CreateTestPlayer(id string) *models.Player {
 // CreateTestHost creates a test host with mock connection
 func CreateTestHost(id string) *models.Host {
 	if id == "" {
-		id = "test-host-" + uuid.New().String()
+		id = uuid.New().String()
 	}
 	host := models.NewHost(id, nil)
 	return host

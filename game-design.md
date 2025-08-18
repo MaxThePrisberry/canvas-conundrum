@@ -80,9 +80,10 @@ All communication after initial connection requires authentication using the sta
 - Host does not select a role
 
 **Character Distribution Algorithm:**
-- Calculates max per role: `(playerCount + 3) / 4`
+- Calculates max per role: `max(1, (playerCount + 3) / 4)`
 - Ensures representation of all roles in larger groups
 - As players join, more people are allowed to choose each role
+- Minimum of 1 player per role to ensure all roles are always available with small player counts
 
 ### Trivia Specialty Selection (Players Only)
 **Available Categories:**
@@ -214,7 +215,7 @@ Players connect, select roles and specialties, host monitors readiness and start
 
 **Individual Puzzle Mechanics:**
 - **Assignment**: Each player receives exactly one unique segment ID (e.g., `segment_a5`, `segment_b2`)
-- **Client Responsibilities**: 
+- **Client Responsibilities**:
   - Load segment image using provided ID
   - Split segment into 16 individual jigsaw pieces
   - Shuffle pieces randomly for puzzle challenge
@@ -310,7 +311,7 @@ Player Count → Grid Size → Total Fragments
 - **Position Validation**: All swaps validated against grid boundaries (0 to gridSize-1)
 - **Collision Resolution**: Fragments swap positions or one fragment moves to open grid space
 - **Permission Checking**: Server validates ownership before allowing movement
-- **State Synchronization**: 
+- **State Synchronization**:
   - Host: Immediate updates on all movements
   - Players: Updates every `constants.GridUpdateInterval` seconds
 
@@ -326,7 +327,7 @@ Player Count → Grid Size → Total Fragments
 - **Central Puzzle State**: Complete grid state sent to all players every `constants.GridUpdateInterval` seconds
 - **Host Updates**: Receives immediate updates on all fragment movements and state changes
 - **Personal Puzzle State**: Individual view with guide highlighting (from guide tokens)
-- **Update Frequency**: 
+- **Update Frequency**:
   - Players: Periodic updates every `constants.GridUpdateInterval` seconds (default 3s)
   - Host: Immediate updates on all changes
 - **Phase Tracking**: Server implicitly tracks each player as Phase 2A (individual) or Phase 2B (collaborative)

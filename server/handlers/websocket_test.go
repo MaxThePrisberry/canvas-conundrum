@@ -23,15 +23,15 @@ import (
 func resetGameManager() {
 	// Get the singleton and fully clean it
 	gameManager := services.GetGameInstance()
-	gameManager.Cleanup() // Clean up any running timers/goroutines
+	gameManager.Cleanup()   // Clean up any running timers/goroutines
 	gameManager.ResetGame() // Reset the game state
 }
 
 func TestHandlePlayerWebSocket(t *testing.T) {
 	// Prevent parallel execution since tests share singleton state
-	
+
 	resetGameManager()
-	
+
 	// Set up services for proper message handling
 	gameManager := services.GetGameInstance()
 	broadcastService := services.NewBroadcastService()
@@ -51,7 +51,7 @@ func TestHandlePlayerWebSocket(t *testing.T) {
 
 		// Set a read deadline to prevent hanging
 		conn.SetReadDeadline(time.Now().Add(2 * time.Second))
-		
+
 		// Should receive roles available message
 		_, message, err := conn.ReadMessage()
 		if err != nil {
@@ -64,7 +64,7 @@ func TestHandlePlayerWebSocket(t *testing.T) {
 		msg, err := utils.ParseMessage(message)
 		if err == nil {
 			assert.Equal(t, constants.EventSetupToPlayerRolesAvailable, msg.Event)
-			
+
 			// Unmarshal payload to access fields
 			var payloadMap map[string]interface{}
 			err := json.Unmarshal(msg.Payload, &payloadMap)
@@ -83,7 +83,7 @@ func TestHandlePlayerWebSocket(t *testing.T) {
 
 func TestHandleHostWebSocket(t *testing.T) {
 	// Prevent parallel execution since tests share singleton state
-	
+
 	// Set up shared server for all test cases
 	router := mux.NewRouter()
 	router.HandleFunc("/ws/host/{uuid}", HandleHostWebSocket)
@@ -93,7 +93,7 @@ func TestHandleHostWebSocket(t *testing.T) {
 	t.Run("Valid Host UUID", func(t *testing.T) {
 		// Clean reset for each test run
 		resetGameManager()
-		
+
 		// Set up services for proper message handling
 		gameManager := services.GetGameInstance()
 		broadcastService := services.NewBroadcastService()
@@ -150,10 +150,10 @@ func TestHandleHostWebSocket(t *testing.T) {
 	t.Run("Invalid Host UUID", func(t *testing.T) {
 		// Clean reset for this test too
 		resetGameManager()
-		
+
 		// Small delay to ensure previous test cleanup is complete
 		time.Sleep(10 * time.Millisecond)
-		
+
 		url := "ws" + strings.TrimPrefix(server.URL, "http") + "/ws/host/invalid-uuid"
 
 		// This should fail before WebSocket upgrade
@@ -167,79 +167,79 @@ func TestSendConnectionError(t *testing.T) {
 	// Test that the function exists and can be called
 	// We'll test this by ensuring the function compiles and runs without issues
 	// when called with a real WebSocket connection from the integration tests
-	
+
 	// For now, just test that the function signature is correct
 	assert.NotNil(t, sendConnectionError)
 }
 
 func TestSendHostConnectionConfirmed(t *testing.T) {
 	// Prevent parallel execution since tests share singleton state
-	
+
 	resetGameManager()
 	gameManager := services.GetGameInstance()
-	
+
 	// Set up broadcast service
 	broadcastService := services.NewBroadcastService()
 	gameManager.SetBroadcastService(broadcastService)
-	
+
 	host := models.NewHost("test-host", nil)
-	
+
 	sendHostConnectionConfirmed(host)
-	
+
 	// Should have attempted to send message
 	assert.True(t, true) // If no panic, test passes
 }
 
 func TestSendRolesAvailable(t *testing.T) {
 	// Prevent parallel execution since tests share singleton state
-	
+
 	resetGameManager()
 	gameManager := services.GetGameInstance()
-	
+
 	// Set up broadcast service
 	broadcastService := services.NewBroadcastService()
 	gameManager.SetBroadcastService(broadcastService)
-	
+
 	player := models.NewPlayer("test-player", nil)
-	
+
 	sendRolesAvailable(player)
-	
+
 	// Should have attempted to send message
 	assert.True(t, true) // If no panic, test passes
 }
 
 func TestSendAuthError(t *testing.T) {
 	// Prevent parallel execution since tests share singleton state
-	
+
 	resetGameManager()
 	gameManager := services.GetGameInstance()
-	
+
 	// Set up broadcast service
 	broadcastService := services.NewBroadcastService()
 	gameManager.SetBroadcastService(broadcastService)
-	
+
 	player := models.NewPlayer("test-player", nil)
-	
+
 	sendAuthError(player)
-	
+
 	// Should have attempted to send message
 	assert.True(t, true) // If no panic, test passes
 }
 
 func TestSendHostAuthError(t *testing.T) {
 	// Prevent parallel execution since tests share singleton state
-	
+
 	resetGameManager()
 	gameManager := services.GetGameInstance()
-	
+
 	// Set up broadcast service
 	broadcastService := services.NewBroadcastService()
 	gameManager.SetBroadcastService(broadcastService)
-	
+
 	host := models.NewHost("test-host", nil)
-	
+
 	sendHostAuthError(host)
-	
+
 	// Should have attempted to send message
 	assert.True(t, true) // If no panic, test passes
 }
@@ -248,7 +248,7 @@ func TestSendHostAuthError(t *testing.T) {
 func TestHandlePlayerReadWithNilConn(t *testing.T) {
 	t.Run("Nil Connection", func(t *testing.T) {
 		player := models.NewPlayer("test-player", nil)
-		
+
 		// Should handle nil connection gracefully
 		done := make(chan bool, 1)
 		go func() {
@@ -261,7 +261,7 @@ func TestHandlePlayerReadWithNilConn(t *testing.T) {
 			close(player.Done)
 			handlePlayerRead(player)
 		}()
-		
+
 		select {
 		case <-done:
 			// Test passed
@@ -274,7 +274,7 @@ func TestHandlePlayerReadWithNilConn(t *testing.T) {
 func TestHandlePlayerWriteWithNilConn(t *testing.T) {
 	t.Run("Nil Connection", func(t *testing.T) {
 		player := models.NewPlayer("test-player", nil)
-		
+
 		done := make(chan bool, 1)
 		go func() {
 			defer func() {
@@ -286,7 +286,7 @@ func TestHandlePlayerWriteWithNilConn(t *testing.T) {
 			close(player.Done)
 			handlePlayerWrite(player)
 		}()
-		
+
 		select {
 		case <-done:
 			// Test passed
@@ -299,7 +299,7 @@ func TestHandlePlayerWriteWithNilConn(t *testing.T) {
 func TestHandleHostReadWithNilConn(t *testing.T) {
 	t.Run("Nil Connection", func(t *testing.T) {
 		host := models.NewHost("test-host", nil)
-		
+
 		done := make(chan bool, 1)
 		go func() {
 			defer func() {
@@ -311,7 +311,7 @@ func TestHandleHostReadWithNilConn(t *testing.T) {
 			close(host.Done)
 			handleHostRead(host)
 		}()
-		
+
 		select {
 		case <-done:
 			// Test passed
@@ -324,7 +324,7 @@ func TestHandleHostReadWithNilConn(t *testing.T) {
 func TestHandleHostWriteWithNilConn(t *testing.T) {
 	t.Run("Nil Connection", func(t *testing.T) {
 		host := models.NewHost("test-host", nil)
-		
+
 		done := make(chan bool, 1)
 		go func() {
 			defer func() {
@@ -336,10 +336,10 @@ func TestHandleHostWriteWithNilConn(t *testing.T) {
 			close(host.Done)
 			handleHostWrite(host)
 		}()
-		
+
 		select {
 		case <-done:
-			// Test passed  
+			// Test passed
 		case <-time.After(100 * time.Millisecond):
 			t.Error("handleHostWrite did not exit in time")
 		}

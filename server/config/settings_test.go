@@ -9,10 +9,10 @@ import (
 func TestConstants(t *testing.T) {
 	t.Run("Host UUID", func(t *testing.T) {
 		assert.NotEmpty(t, HostUUID)
-		assert.Len(t, HostUUID, 36) // Standard UUID length
+		assert.Len(t, HostUUID, 36)       // Standard UUID length
 		assert.Contains(t, HostUUID, "-") // Should contain dashes
 	})
-	
+
 	t.Run("Station Hashes", func(t *testing.T) {
 		hashes := []string{
 			HashAnchorStation,
@@ -20,14 +20,14 @@ func TestConstants(t *testing.T) {
 			HashGuideStation,
 			HashClarityStation,
 		}
-		
+
 		for _, hash := range hashes {
 			assert.NotEmpty(t, hash)
 			assert.Contains(t, hash, "STATION")
 			assert.Contains(t, hash, "QR_HASH")
 			assert.Contains(t, hash, "2024")
 		}
-		
+
 		// All hashes should be unique
 		hashSet := make(map[string]bool)
 		for _, hash := range hashes {
@@ -35,7 +35,7 @@ func TestConstants(t *testing.T) {
 			hashSet[hash] = true
 		}
 	})
-	
+
 	t.Run("Server Settings", func(t *testing.T) {
 		assert.Equal(t, "8080", DefaultPort)
 		assert.Greater(t, WebSocketBufferSize, 0)
@@ -43,7 +43,7 @@ func TestConstants(t *testing.T) {
 		assert.Greater(t, PingPeriod, 0)
 		assert.Greater(t, PongWait, 0)
 		assert.Greater(t, WriteWait, 0)
-		
+
 		// Reasonable defaults
 		assert.Equal(t, 1024, WebSocketBufferSize)
 		assert.Equal(t, 8192, MaxMessageSize)
@@ -51,7 +51,7 @@ func TestConstants(t *testing.T) {
 		assert.Equal(t, 60, PongWait)
 		assert.Equal(t, 10, WriteWait)
 	})
-	
+
 	t.Run("Puzzle Settings", func(t *testing.T) {
 		assert.NotEmpty(t, DefaultPuzzleImage)
 		assert.Equal(t, "nature_image", DefaultPuzzleImage)
@@ -67,7 +67,7 @@ func TestStationEnum(t *testing.T) {
 			ClarityStation,
 			UnknownStation,
 		}
-		
+
 		expectedNames := []string{
 			"anchor",
 			"chronos",
@@ -75,11 +75,11 @@ func TestStationEnum(t *testing.T) {
 			"clarity",
 			"unknown",
 		}
-		
+
 		for i, station := range stations {
 			assert.Equal(t, expectedNames[i], string(station))
 		}
-		
+
 		// All stations should be unique
 		stationSet := make(map[Station]bool)
 		for _, station := range stations {
@@ -105,7 +105,7 @@ func TestGetStationFromHash(t *testing.T) {
 		{"Wrong format", "anchor_station_qr_hash_2024", UnknownStation},
 		{"Case sensitive", "anchor_station_qr_hash_2024", UnknownStation},
 	}
-	
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			result := GetStationFromHash(tt.hash)
@@ -122,7 +122,7 @@ func TestGetStationFromHashAllStations(t *testing.T) {
 		HashGuideStation:   GuideStation,
 		HashClarityStation: ClarityStation,
 	}
-	
+
 	for hash, expectedStation := range hashToStation {
 		result := GetStationFromHash(hash)
 		assert.Equal(t, expectedStation, result, "Hash %s should map to station %s", hash, expectedStation)
@@ -146,13 +146,13 @@ func TestHashUniqueness(t *testing.T) {
 		HashGuideStation,
 		HashClarityStation,
 	}
-	
+
 	hashSet := make(map[string]bool)
 	for _, hash := range hashes {
 		assert.False(t, hashSet[hash], "Duplicate hash found: %s", hash)
 		hashSet[hash] = true
 	}
-	
+
 	assert.Len(t, hashSet, len(hashes), "All hashes should be unique")
 }
 
@@ -163,7 +163,7 @@ func TestConstantValues(t *testing.T) {
 		assert.True(t, WriteWait > 0, "WriteWait should be positive")
 		assert.True(t, WriteWait < PingPeriod, "WriteWait should be less than PingPeriod")
 	})
-	
+
 	t.Run("Buffer sizes are reasonable", func(t *testing.T) {
 		assert.True(t, MaxMessageSize > WebSocketBufferSize, "MaxMessageSize should be larger than WebSocketBufferSize")
 		assert.True(t, WebSocketBufferSize >= 512, "WebSocketBufferSize should be at least 512 bytes")

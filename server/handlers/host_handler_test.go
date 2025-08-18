@@ -65,61 +65,61 @@ func TestHandleHostStartGame_InsufficientPlayers(t *testing.T) {
 func TestHandleHostMessage(t *testing.T) {
 	resetGameManager()
 	gameManager := services.GetGameInstance()
-	
+
 	// Set up services
 	broadcastService := services.NewBroadcastService()
 	gameManager.SetBroadcastService(broadcastService)
-	
+
 	host := test_helpers.CreateTestHost("test-host")
-	
+
 	t.Run("Start Game Event", func(t *testing.T) {
 		payload := map[string]interface{}{}
 		msg := test_helpers.CreateTestMessage(constants.EventSetupToServerStartGame, payload)
-		
+
 		// Should not panic
 		HandleHostMessage(host, msg)
 		assert.True(t, true)
 	})
-	
+
 	t.Run("Start Puzzle Timer Event", func(t *testing.T) {
 		payload := map[string]interface{}{}
 		msg := test_helpers.CreateTestMessage(constants.EventPuzzleToServerStartTimer, payload)
-		
+
 		HandleHostMessage(host, msg)
 		assert.True(t, true)
 	})
-	
+
 	t.Run("Reset Game Event", func(t *testing.T) {
 		payload := map[string]interface{}{
 			"confirmReset":  true,
 			"saveAnalytics": false,
 		}
-		
+
 		msg := test_helpers.CreateTestMessage(constants.EventAnalyticsToServerResetGame, payload)
-		
+
 		HandleHostMessage(host, msg)
 		assert.True(t, true)
 	})
-	
+
 	t.Run("Ping Event", func(t *testing.T) {
 		payload := map[string]interface{}{
 			"clientTimestamp": "2025-01-01T00:00:00Z",
 			"sequenceNumber":  1,
 		}
-		
+
 		msg := test_helpers.CreateTestMessage(constants.EventSystemPing, payload)
-		
+
 		HandleHostMessage(host, msg)
 		assert.True(t, true)
 	})
-	
+
 	t.Run("Unknown Event", func(t *testing.T) {
 		payload := map[string]interface{}{
 			"data": "test",
 		}
-		
+
 		msg := test_helpers.CreateTestMessage("UNKNOWN_EVENT", payload)
-		
+
 		HandleHostMessage(host, msg)
 		assert.True(t, true)
 	})
@@ -130,34 +130,34 @@ func TestHandleHostStartPuzzleTimer(t *testing.T) {
 	gameManager := services.GetGameInstance()
 	broadcastService := services.NewBroadcastService()
 	gameManager.SetBroadcastService(broadcastService)
-	
+
 	host := test_helpers.CreateTestHost("test-host")
-	
+
 	t.Run("Not In Puzzle Phase", func(t *testing.T) {
 		// Game not in puzzle phase - should fail gracefully
 		handleHostStartPuzzleTimer(host)
 		assert.True(t, true) // Test passes if no panic
 	})
-	
+
 	t.Run("Puzzle Phase State Validation", func(t *testing.T) {
 		// Test the conditions for starting puzzle timer without actually starting it
 		game := gameManager.GetGame()
 		game.CurrentPhase = models.PhasePuzzleAssembly
 		game.PuzzleGrid = models.NewPuzzleGrid(3)
-		
+
 		// Verify conditions are correct for timer start
 		assert.Equal(t, models.PhasePuzzleAssembly, game.CurrentPhase)
 		assert.NotNil(t, game.PuzzleGrid)
 		assert.False(t, game.PuzzleTimerStarted)
-		
+
 		// Test that timer flag can be set (simulating what would happen)
 		game.PuzzleTimerStarted = true
 		assert.True(t, game.PuzzleTimerStarted)
-		
+
 		// Test the total puzzle time calculation
 		totalTime := game.GetTotalPuzzleTime()
 		assert.Greater(t, totalTime, 0)
-		
+
 		// Test timer already started error condition
 		game.PuzzleTimerStarted = true
 		err := gameManager.StartPuzzleTimer()
@@ -171,32 +171,32 @@ func TestHandleHostPing(t *testing.T) {
 	gameManager := services.GetGameInstance()
 	broadcastService := services.NewBroadcastService()
 	gameManager.SetBroadcastService(broadcastService)
-	
+
 	host := test_helpers.CreateTestHost("test-host")
-	
+
 	t.Run("Valid Ping", func(t *testing.T) {
 		payload := map[string]interface{}{
 			"clientTimestamp": "2025-01-01T00:00:00Z",
 			"sequenceNumber":  123,
 		}
 		payloadJSON, _ := json.Marshal(payload)
-		
+
 		handleHostPing(host, payloadJSON)
 		assert.True(t, true) // Test passes if no panic
 	})
-	
+
 	t.Run("Invalid JSON", func(t *testing.T) {
 		handleHostPing(host, []byte("invalid json"))
 		assert.True(t, true) // Test passes if no panic
 	})
-	
+
 	t.Run("Missing Fields", func(t *testing.T) {
 		payload := map[string]interface{}{
 			"clientTimestamp": "2025-01-01T00:00:00Z",
 			// Missing sequenceNumber
 		}
 		payloadJSON, _ := json.Marshal(payload)
-		
+
 		handleHostPing(host, payloadJSON)
 		assert.True(t, true) // Test passes if no panic
 	})
@@ -231,45 +231,45 @@ func TestHandleHostResetGame(t *testing.T) {
 	gameManager := services.GetGameInstance()
 	broadcastService := services.NewBroadcastService()
 	gameManager.SetBroadcastService(broadcastService)
-	
+
 	host := test_helpers.CreateTestHost("test-host")
-	
+
 	t.Run("Valid Reset Request", func(t *testing.T) {
 		payload := map[string]interface{}{
 			"confirmReset":  true,
 			"saveAnalytics": false,
 		}
 		payloadJSON, _ := json.Marshal(payload)
-		
+
 		handleHostResetGame(host, payloadJSON)
-		
+
 		// Verify game was reset
 		assert.Equal(t, string(models.PhaseSetup), gameManager.GetCurrentPhase())
 	})
-	
+
 	t.Run("Reset Not Confirmed", func(t *testing.T) {
 		payload := map[string]interface{}{
 			"confirmReset":  false,
 			"saveAnalytics": false,
 		}
 		payloadJSON, _ := json.Marshal(payload)
-		
+
 		handleHostResetGame(host, payloadJSON)
 		assert.True(t, true) // Test passes if no panic
 	})
-	
+
 	t.Run("Invalid JSON", func(t *testing.T) {
 		handleHostResetGame(host, []byte("invalid json"))
 		assert.True(t, true) // Test passes if no panic
 	})
-	
+
 	t.Run("With Save Analytics", func(t *testing.T) {
 		payload := map[string]interface{}{
 			"confirmReset":  true,
 			"saveAnalytics": true,
 		}
 		payloadJSON, _ := json.Marshal(payload)
-		
+
 		handleHostResetGame(host, payloadJSON)
 		assert.True(t, true) // Test passes if no panic
 	})
@@ -307,19 +307,19 @@ func TestHandleHostResetGame_PayloadParsing(t *testing.T) {
 func TestHostHandlerEdgeCases(t *testing.T) {
 	resetGameManager()
 	_ = services.GetGameInstance()
-	
+
 	host := test_helpers.CreateTestHost("test-host")
-	
+
 	t.Run("No Broadcast Service", func(t *testing.T) {
 		// Test handlers without broadcast service
 		payload := map[string]interface{}{}
 		msg := test_helpers.CreateTestMessage(constants.EventSetupToServerStartGame, payload)
-		
+
 		// Should handle gracefully without broadcast service
 		HandleHostMessage(host, msg)
 		assert.True(t, true)
 	})
-	
+
 	t.Run("Nil Host", func(t *testing.T) {
 		// Test with nil host - should not panic
 		defer func() {
@@ -327,7 +327,7 @@ func TestHostHandlerEdgeCases(t *testing.T) {
 				t.Errorf("handleHostStartGame should not panic with nil host: %v", r)
 			}
 		}()
-		
+
 		handleHostStartGame(nil)
 		assert.True(t, true)
 	})
@@ -336,11 +336,11 @@ func TestHostHandlerEdgeCases(t *testing.T) {
 func TestHostHandlerIntegration(t *testing.T) {
 	resetGameManager()
 	gameManager := services.GetGameInstance()
-	
+
 	host := test_helpers.CreateTestHost("test-host")
 	// Create a mock connection for CanStartGame to work
 	host.Connection = &websocket.Conn{}
-	
+
 	t.Run("Complete Game Flow", func(t *testing.T) {
 		// Test without broadcast service to avoid deadlock
 		// Add players
@@ -352,30 +352,30 @@ func TestHostHandlerIntegration(t *testing.T) {
 			player.IsActive = true
 			gameManager.AddPlayer(player)
 		}
-		
+
 		// Set host without broadcast service to avoid deadlock
 		gameManager.SetHost(host)
-		
+
 		// Test starting game conditions
 		canStart := gameManager.CanStartGame()
 		assert.True(t, canStart)
-		
+
 		// Test the game state
 		game := gameManager.GetGame()
 		assert.Equal(t, string(models.PhaseSetup), gameManager.GetCurrentPhase())
-		
+
 		// Test phase transitions manually
 		game.CurrentPhase = models.PhaseResourceGathering
 		assert.Equal(t, string(models.PhaseResourceGathering), gameManager.GetCurrentPhase())
-		
+
 		game.CurrentPhase = models.PhasePuzzleAssembly
 		game.PuzzleGrid = models.NewPuzzleGrid(3)
-		
+
 		// Test puzzle timer configuration
 		assert.False(t, game.PuzzleTimerStarted)
 		totalTime := game.GetTotalPuzzleTime()
 		assert.Greater(t, totalTime, 0)
-		
+
 		// Test reset functionality (simple version)
 		gameManager.ResetGame()
 		assert.Equal(t, string(models.PhaseSetup), gameManager.GetCurrentPhase())

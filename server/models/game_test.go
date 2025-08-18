@@ -460,9 +460,9 @@ func TestPuzzleGrid(t *testing.T) {
 
 func TestGameStartResourceGathering(t *testing.T) {
 	game := NewGame()
-	
+
 	game.StartResourceGathering()
-	
+
 	assert.Equal(t, PhaseResourceGathering, game.CurrentPhase)
 	assert.True(t, game.GameStarted)
 	assert.Equal(t, 1, game.CurrentRound)
@@ -471,38 +471,38 @@ func TestGameStartResourceGathering(t *testing.T) {
 func TestGameStartNextRound(t *testing.T) {
 	game := NewGame()
 	game.CurrentRound = 1
-	
+
 	game.StartNextRound()
-	
+
 	assert.Equal(t, 2, game.CurrentRound)
 }
 
 func TestGameStartPuzzlePhase(t *testing.T) {
 	game := NewGame()
-	
+
 	game.StartPuzzlePhase(4)
-	
+
 	assert.Equal(t, PhasePuzzleAssembly, game.CurrentPhase)
 	assert.NotNil(t, game.PuzzleGrid)
 }
 
 func TestGameStartPuzzleTimer(t *testing.T) {
 	game := NewGame()
-	
+
 	game.StartPuzzleTimer()
-	
+
 	assert.NotZero(t, game.PuzzleStartTime)
 }
 
 func TestGameGetPuzzleTimeRemaining(t *testing.T) {
 	game := NewGame()
 	game.PlayerCount = 4
-	
+
 	t.Run("Timer not started", func(t *testing.T) {
 		remaining := game.GetPuzzleTimeRemaining()
 		assert.Equal(t, game.GetTotalPuzzleTime(), remaining)
 	})
-	
+
 	t.Run("Timer started", func(t *testing.T) {
 		game.StartPuzzleTimer()
 		remaining := game.GetPuzzleTimeRemaining()
@@ -514,20 +514,20 @@ func TestGameGetPuzzleTimeRemaining(t *testing.T) {
 
 func TestGameGetClarityPreviewTime(t *testing.T) {
 	tests := []struct {
-		name           string
-		clarityTokens  int
-		expectedTime   int
+		name          string
+		clarityTokens int
+		expectedTime  int
 	}{
 		{"No clarity tokens", 0, constants.ClarityBasePreviewTime},
-		{"One threshold", 30, constants.ClarityBasePreviewTime + 1}, // 30/30 = 1 threshold
+		{"One threshold", 30, constants.ClarityBasePreviewTime + 1},  // 30/30 = 1 threshold
 		{"Two thresholds", 60, constants.ClarityBasePreviewTime + 2}, // 60/30 = 2 thresholds
 	}
-	
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			game := NewGame()
 			game.TeamTokens.ClarityTokens = tt.clarityTokens
-			
+
 			previewTime := game.GetClarityPreviewTime()
 			assert.Equal(t, tt.expectedTime, previewTime)
 		})
@@ -537,9 +537,9 @@ func TestGameGetClarityPreviewTime(t *testing.T) {
 func TestGameCompleteGame(t *testing.T) {
 	game := NewGame()
 	game.StartPuzzleTimer() // Need to start timer first
-	
+
 	game.CompleteGame(true)
-	
+
 	assert.Equal(t, PhaseAnalytics, game.CurrentPhase)
 	assert.True(t, game.PuzzleCompleted)
 	assert.True(t, game.PuzzleSuccess)
@@ -548,7 +548,7 @@ func TestGameCompleteGame(t *testing.T) {
 
 func TestGameReset(t *testing.T) {
 	game := NewGame()
-	
+
 	// Modify game state
 	game.CurrentPhase = PhasePuzzleAssembly
 	game.GameStarted = true
@@ -556,9 +556,9 @@ func TestGameReset(t *testing.T) {
 	game.PlayerCount = 8
 	game.CurrentRound = 3
 	game.TeamTokens.AddTokens(TokenAnchor, 50)
-	
+
 	game.Reset()
-	
+
 	// Should be back to initial state
 	assert.Equal(t, PhaseSetup, game.CurrentPhase)
 	assert.False(t, game.GameStarted)
@@ -576,7 +576,7 @@ func TestTeamTokensGetTokenCount(t *testing.T) {
 	tokens.ChronosTokens = 30
 	tokens.GuideTokens = 20
 	tokens.ClarityTokens = 40
-	
+
 	tests := []struct {
 		tokenType TokenType
 		expected  int
@@ -587,7 +587,7 @@ func TestTeamTokensGetTokenCount(t *testing.T) {
 		{TokenClarity, 40},
 		{TokenType("invalid"), 0},
 	}
-	
+
 	for _, tt := range tests {
 		t.Run(string(tt.tokenType), func(t *testing.T) {
 			count := tokens.GetTokenCount(tt.tokenType)
@@ -599,16 +599,16 @@ func TestTeamTokensGetTokenCount(t *testing.T) {
 func TestTeamTokensGetThresholdWithDifficulty(t *testing.T) {
 	tokens := NewTeamTokens()
 	tokens.AnchorTokens = 50 // Should be 2 thresholds normally
-	
+
 	tests := []struct {
 		difficulty DifficultyMode
 		expected   int
 	}{
-		{DifficultyEasy, 2}, // 50 * 0.8 / 25 = 1.6, but original is 2, so max(2, 2) = 2
+		{DifficultyEasy, 2},   // 50 * 0.8 / 25 = 1.6, but original is 2, so max(2, 2) = 2
 		{DifficultyMedium, 2}, // 50 * 1.0 / 25 = 2
-		{DifficultyHard, 1}, // 50 * 1.2 / 25 = 2.4, but original is 2, so min(2, 1) = 1
+		{DifficultyHard, 1},   // 50 * 1.2 / 25 = 2.4, but original is 2, so min(2, 1) = 1
 	}
-	
+
 	for _, tt := range tests {
 		t.Run(string(tt.difficulty), func(t *testing.T) {
 			threshold := tokens.GetThresholdWithDifficulty(TokenAnchor, tt.difficulty)
@@ -619,15 +619,15 @@ func TestTeamTokensGetThresholdWithDifficulty(t *testing.T) {
 
 func TestPuzzleGridIsOwned(t *testing.T) {
 	grid := NewPuzzleGrid(3)
-	
+
 	frag1 := grid.AddFragment("A1", "player1")
 	frag2 := grid.AddFragment("A2", "")
-	
+
 	t.Run("Fragment is owned", func(t *testing.T) {
 		isOwned := frag1.IsOwned()
 		assert.True(t, isOwned)
 	})
-	
+
 	t.Run("Fragment is not owned", func(t *testing.T) {
 		isOwned := frag2.IsOwned()
 		assert.False(t, isOwned)
@@ -636,7 +636,7 @@ func TestPuzzleGridIsOwned(t *testing.T) {
 
 func TestPuzzleGridIsCorrect(t *testing.T) {
 	grid := NewPuzzleGrid(2)
-	
+
 	// Create fragments in correct positions
 	frag1 := &Fragment{
 		ID:              "f1",
@@ -650,12 +650,12 @@ func TestPuzzleGridIsCorrect(t *testing.T) {
 		Position:        Position{X: 1, Y: 0},
 		CorrectPosition: Position{X: 1, Y: 0},
 	}
-	
+
 	grid.Fragments[frag1.ID] = frag1
 	grid.Fragments[frag2.ID] = frag2
 	grid.Grid[0][0] = frag1
 	grid.Grid[0][1] = frag2
-	
+
 	// Test each fragment is in correct position
 	assert.True(t, frag1.IsCorrect())
 	assert.True(t, frag2.IsCorrect())
@@ -664,9 +664,9 @@ func TestPuzzleGridIsCorrect(t *testing.T) {
 func TestPuzzleGridGetGuideHighlights(t *testing.T) {
 	grid := NewPuzzleGrid(3)
 	frag := grid.AddFragment("A1", "player1")
-	
+
 	highlights := grid.GetGuideHighlights(frag.ID, 0)
-	
+
 	// Should return some guide highlights
 	assert.NotNil(t, highlights)
 }

@@ -156,11 +156,11 @@ func (m *MockWebSocketConn) SetPongHandler(h func(string) error) {
 }
 
 // Helper methods for assertions
-func (m *MockWebSocketConn) WasReadDeadlineSet() bool    { return m.ReadDeadlineSet }
-func (m *MockWebSocketConn) WasWriteDeadlineSet() bool   { return m.WriteDeadlineSet }
-func (m *MockWebSocketConn) WasPongHandlerSet() bool     { return m.PongHandlerSet }
-func (m *MockWebSocketConn) WasMessageWritten() bool     { return m.MessageWritten }
-func (m *MockWebSocketConn) WasPingWritten() bool        { return m.PingWritten }
+func (m *MockWebSocketConn) WasReadDeadlineSet() bool  { return m.ReadDeadlineSet }
+func (m *MockWebSocketConn) WasWriteDeadlineSet() bool { return m.WriteDeadlineSet }
+func (m *MockWebSocketConn) WasPongHandlerSet() bool   { return m.PongHandlerSet }
+func (m *MockWebSocketConn) WasMessageWritten() bool   { return m.MessageWritten }
+func (m *MockWebSocketConn) WasPingWritten() bool      { return m.PingWritten }
 
 // GameStateAssertion provides fluent assertions for game state
 type GameStateAssertion struct {

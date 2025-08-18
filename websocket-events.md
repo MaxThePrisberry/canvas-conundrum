@@ -36,7 +36,7 @@ All server-to-client messages use this format:
 ### Initial Connection Events
 
 #### `SETUP_TO_HOST_CONNECTION_CONFIRMED`
-**Direction**: Server → Host  
+**Direction**: Server → Host
 **Trigger**: Host connects to `/ws/host/{uuid}`
 
 ```json
@@ -60,8 +60,8 @@ All server-to-client messages use this format:
 ```
 
 #### `SETUP_TO_PLAYER_ROLES_AVAILABLE`
-**Direction**: Server → Player  
-**Trigger**: Player connects to `/ws`
+**Direction**: Server → Player
+**Trigger**: Player connects to `/ws` or when role availability changes due to more players joining
 
 ```json
 {
@@ -105,7 +105,7 @@ All server-to-client messages use this format:
     ],
     "triviaCategories": [
       "general",
-      "geography", 
+      "geography",
       "history",
       "music",
       "science",
@@ -120,7 +120,7 @@ All server-to-client messages use this format:
 ### Role and Specialty Selection
 
 #### `SETUP_TO_SERVER_PLAYER_CONFIGURATION`
-**Direction**: Player → Server  
+**Direction**: Player → Server
 **Trigger**: Player completes role and specialty selection
 
 ```json
@@ -139,7 +139,7 @@ All server-to-client messages use this format:
 ```
 
 #### `SETUP_TO_CLIENT_LOBBY_STATUS`
-**Direction**: Server → All Players  
+**Direction**: Server → All Players
 **Trigger**: Any player joins/leaves or changes configuration
 
 ```json
@@ -166,7 +166,7 @@ All server-to-client messages use this format:
 ```
 
 #### `SETUP_TO_HOST_PLAYER_ROSTER`
-**Direction**: Server → Host  
+**Direction**: Server → Host
 **Trigger**: Any change to player status
 
 ```json
@@ -209,7 +209,7 @@ All server-to-client messages use this format:
 ### Game Start
 
 #### `SETUP_TO_SERVER_START_GAME`
-**Direction**: Host → Server  
+**Direction**: Host → Server
 **Trigger**: Host clicks start game button
 
 ```json
@@ -224,7 +224,7 @@ All server-to-client messages use this format:
 ```
 
 #### `SETUP_TO_CLIENT_GAME_STARTED`
-**Direction**: Server → All Players  
+**Direction**: Server → All Players
 **Trigger**: Host starts game successfully
 
 ```json
@@ -241,7 +241,7 @@ All server-to-client messages use this format:
 ```
 
 #### `SETUP_TO_HOST_GAME_STARTED`
-**Direction**: Server → Host  
+**Direction**: Server → Host
 **Trigger**: Game successfully started
 
 ```json
@@ -270,7 +270,7 @@ All server-to-client messages use this format:
 ### Phase Initialization
 
 #### `RESOURCE_TO_CLIENT_PHASE_START`
-**Direction**: Server → All Players  
+**Direction**: Server → All Players
 **Trigger**: Resource gathering phase begins
 
 ```json
@@ -284,7 +284,7 @@ All server-to-client messages use this format:
     "graceTime": 30,
     "resourceStationHashes": {
       "anchor": "hash_anchor_station_constant",
-      "chronos": "hash_chronos_station_constant", 
+      "chronos": "hash_chronos_station_constant",
       "guide": "hash_guide_station_constant",
       "clarity": "hash_clarity_station_constant"
     },
@@ -306,7 +306,7 @@ All server-to-client messages use this format:
 ```
 
 #### `RESOURCE_TO_HOST_PHASE_START`
-**Direction**: Server → Host  
+**Direction**: Server → Host
 **Trigger**: Resource gathering phase begins
 
 ```json
@@ -340,7 +340,7 @@ All server-to-client messages use this format:
 ### Location Verification
 
 #### `RESOURCE_TO_SERVER_LOCATION_VERIFIED`
-**Direction**: Player → Server  
+**Direction**: Player → Server
 **Trigger**: Player scans QR code at new station
 
 ```json
@@ -361,7 +361,7 @@ All server-to-client messages use this format:
 ### Trivia Questions and Answers
 
 #### `RESOURCE_TO_PLAYER_TRIVIA_QUESTION`
-**Direction**: Server → Individual Player  
+**Direction**: Server → Individual Player
 **Trigger**: Start of each resource gathering round
 
 ```json
@@ -377,7 +377,7 @@ All server-to-client messages use this format:
     "timeLimit": 30,
     "options": [
       "Paris",
-      "London", 
+      "London",
       "Berlin",
       "Madrid"
     ],
@@ -390,7 +390,7 @@ All server-to-client messages use this format:
 ```
 
 #### `RESOURCE_TO_SERVER_TRIVIA_ANSWER`
-**Direction**: Player → Server  
+**Direction**: Player → Server
 **Trigger**: Player selects answer or time expires
 
 ```json
@@ -411,7 +411,7 @@ All server-to-client messages use this format:
 ```
 
 #### `RESOURCE_TO_PLAYER_ANSWER_RESULT`
-**Direction**: Server → Individual Player  
+**Direction**: Server → Individual Player
 **Trigger**: Answer period ends for question
 
 ```json
@@ -440,7 +440,7 @@ All server-to-client messages use this format:
 ### Progress Updates
 
 #### `RESOURCE_TO_CLIENT_TEAM_PROGRESS`
-**Direction**: Server → All Players  
+**Direction**: Server → All Players
 **Trigger**: After each round or significant progress
 
 ```json
@@ -493,7 +493,7 @@ All server-to-client messages use this format:
 ```
 
 #### `RESOURCE_TO_HOST_ROUND_ANALYTICS`
-**Direction**: Server → Host  
+**Direction**: Server → Host
 **Trigger**: After each question round
 
 ```json
@@ -518,7 +518,7 @@ All server-to-client messages use this format:
         "runningAccuracy": 0.85
       },
       "player2-uuid": {
-        "location": "clarity", 
+        "location": "clarity",
         "answerCorrect": false,
         "responseTime": 28.7,
         "tokensEarned": 0,
@@ -545,7 +545,7 @@ All server-to-client messages use this format:
 ### Phase Completion
 
 #### `RESOURCE_TO_CLIENT_PHASE_COMPLETE`
-**Direction**: Server → All Players  
+**Direction**: Server → All Players
 **Trigger**: All resource gathering rounds completed
 
 ```json
@@ -580,7 +580,7 @@ All server-to-client messages use this format:
 ```
 
 #### `RESOURCE_TO_HOST_PHASE_COMPLETE`
-**Direction**: Server → Host  
+**Direction**: Server → Host
 **Trigger**: Resource gathering phase ends
 
 ```json
@@ -597,7 +597,7 @@ All server-to-client messages use this format:
     },
     "finalTokenDistribution": {
       "anchorTokens": 87,
-      "chronosTokens": 64, 
+      "chronosTokens": 64,
       "guideTokens": 52,
       "clarityTokens": 78
     },
@@ -627,7 +627,7 @@ All server-to-client messages use this format:
 ### Phase Initialization
 
 #### `PUZZLE_TO_CLIENT_PHASE_LOAD`
-**Direction**: Server → All Players  
+**Direction**: Server → All Players
 **Trigger**: Puzzle phase begins
 
 ```json
@@ -645,7 +645,7 @@ All server-to-client messages use this format:
     "guideHighlightCount": 9,
     "allSegmentIds": [
       "segment_01", "segment_02", "segment_03", "segment_04",
-      "segment_05", "segment_06", "segment_07", "segment_08", 
+      "segment_05", "segment_06", "segment_07", "segment_08",
       "segment_09", "segment_10", "segment_11", "segment_12",
       "segment_13", "segment_14", "segment_15", "segment_16"
     ],
@@ -657,7 +657,7 @@ All server-to-client messages use this format:
 ```
 
 #### `PUZZLE_TO_HOST_PHASE_LOAD`
-**Direction**: Server → Host  
+**Direction**: Server → Host
 **Trigger**: Puzzle phase begins
 
 ```json
@@ -698,7 +698,7 @@ All server-to-client messages use this format:
 ### Timer Management
 
 #### `PUZZLE_TO_SERVER_START_TIMER`
-**Direction**: Host → Server  
+**Direction**: Host → Server
 **Trigger**: Host starts puzzle timer
 
 ```json
@@ -713,7 +713,7 @@ All server-to-client messages use this format:
 ```
 
 #### `PUZZLE_TO_CLIENT_TIMER_START`
-**Direction**: Server → All Players  
+**Direction**: Server → All Players
 **Trigger**: Puzzle timer started by host
 
 ```json
@@ -737,7 +737,7 @@ All server-to-client messages use this format:
 ```
 
 #### `PUZZLE_TO_HOST_TIMER_START`
-**Direction**: Server → Host  
+**Direction**: Server → Host
 **Trigger**: Puzzle timer started
 
 ```json
@@ -759,7 +759,7 @@ All server-to-client messages use this format:
 ### Individual Puzzle Solving (Phase 2A)
 
 #### `PUZZLE_TO_SERVER_SEGMENT_COMPLETED`
-**Direction**: Player → Server  
+**Direction**: Player → Server
 **Trigger**: Player completes their 16-piece individual puzzle
 
 ```json
@@ -780,7 +780,7 @@ All server-to-client messages use this format:
 ```
 
 #### `PUZZLE_TO_PLAYER_SEGMENT_ACKNOWLEDGED`
-**Direction**: Server → Individual Player  
+**Direction**: Server → Individual Player
 **Trigger**: Server processes segment completion
 
 ```json
@@ -815,7 +815,7 @@ All server-to-client messages use this format:
 ```
 
 #### `PUZZLE_TO_HOST_SEGMENT_COMPLETED`
-**Direction**: Server → Host  
+**Direction**: Server → Host
 **Trigger**: Player completes individual segment
 
 ```json
@@ -845,7 +845,7 @@ All server-to-client messages use this format:
 ### Collaborative Fragment Movement (Phase 2B)
 
 #### `PUZZLE_TO_SERVER_FRAGMENT_MOVE`
-**Direction**: Player → Server  
+**Direction**: Player → Server
 **Trigger**: Player attempts to swap fragments on central grid
 
 ```json
@@ -865,7 +865,7 @@ All server-to-client messages use this format:
 ```
 
 #### `PUZZLE_TO_PLAYER_MOVE_RESULT`
-**Direction**: Server → Individual Player  
+**Direction**: Server → Individual Player
 **Trigger**: Server processes movement request
 
 ```json
@@ -890,7 +890,7 @@ All server-to-client messages use this format:
 ### Grid State Updates
 
 #### `PUZZLE_TO_CLIENT_GRID_STATE`
-**Direction**: Server → All Players  
+**Direction**: Server → All Players
 **Trigger**: Periodic updates (every 3 seconds) or after movements
 
 ```json
@@ -920,7 +920,7 @@ All server-to-client messages use this format:
 ```
 
 #### `PUZZLE_TO_HOST_GRID_STATE`
-**Direction**: Server → Host  
+**Direction**: Server → Host
 **Trigger**: Immediate updates on any change
 
 ```json
@@ -964,7 +964,7 @@ All server-to-client messages use this format:
 ### Strategic Collaboration
 
 #### `PUZZLE_TO_SERVER_RECOMMEND_MOVE`
-**Direction**: Player → Server  
+**Direction**: Player → Server
 **Trigger**: Player sends recommendation to another player
 
 ```json
@@ -984,7 +984,7 @@ All server-to-client messages use this format:
 ```
 
 #### `PUZZLE_TO_PLAYER_MOVE_RECOMMENDATION`
-**Direction**: Server → Target Player  
+**Direction**: Server → Target Player
 **Trigger**: Another player sends recommendation
 
 ```json
@@ -1009,7 +1009,7 @@ All server-to-client messages use this format:
 ```
 
 #### `PUZZLE_TO_SERVER_RECOMMENDATION_RESPONSE`
-**Direction**: Player → Server  
+**Direction**: Player → Server
 **Trigger**: Player responds to recommendation
 
 ```json
@@ -1028,7 +1028,7 @@ All server-to-client messages use this format:
 ```
 
 #### `PUZZLE_TO_PLAYER_RECOMMENDATION_RESULT`
-**Direction**: Server → Original Player  
+**Direction**: Server → Original Player
 **Trigger**: Target player responds to recommendation
 
 ```json
@@ -1055,7 +1055,7 @@ All server-to-client messages use this format:
 ```
 
 #### `PUZZLE_TO_PLAYER_RECOMMENDATION_EXPIRED`
-**Direction**: Server → Target Player  
+**Direction**: Server → Target Player
 **Trigger**: Recommendation becomes invalid due to grid changes
 
 ```json
@@ -1073,7 +1073,7 @@ All server-to-client messages use this format:
 ### Puzzle Completion
 
 #### `PUZZLE_TO_CLIENT_COMPLETED_SUCCESS`
-**Direction**: Server → All Participants  
+**Direction**: Server → All Participants
 **Trigger**: Puzzle completed successfully
 
 ```json
@@ -1093,7 +1093,7 @@ All server-to-client messages use this format:
     },
     "teamAchievements": [
       "Perfect Collaboration",
-      "Strategic Masters", 
+      "Strategic Masters",
       "Time Efficient"
     ],
     "nextPhase": "analytics"
@@ -1103,7 +1103,7 @@ All server-to-client messages use this format:
 ```
 
 #### `PUZZLE_TO_CLIENT_COMPLETED_TIMEOUT`
-**Direction**: Server → All Participants  
+**Direction**: Server → All Participants
 **Trigger**: Time expires before completion
 
 ```json
@@ -1132,7 +1132,7 @@ All server-to-client messages use this format:
 ```
 
 #### `PUZZLE_TO_HOST_COMPLETION_ANALYTICS`
-**Direction**: Server → Host  
+**Direction**: Server → Host
 **Trigger**: Puzzle phase ends (success or timeout)
 
 ```json
@@ -1180,7 +1180,7 @@ All server-to-client messages use this format:
 ### Analytics Distribution
 
 #### `ANALYTICS_TO_PLAYER_PERSONAL_REPORT`
-**Direction**: Server → Individual Player  
+**Direction**: Server → Individual Player
 **Trigger**: Game completion
 
 ```json
@@ -1247,7 +1247,7 @@ All server-to-client messages use this format:
 ```
 
 #### `ANALYTICS_TO_CLIENT_TEAM_SUMMARY`
-**Direction**: Server → All Players  
+**Direction**: Server → All Players
 **Trigger**: Game completion
 
 ```json
@@ -1279,7 +1279,7 @@ All server-to-client messages use this format:
         "role": "detective"
       },
       {
-        "playerId": "player2-uuid", 
+        "playerId": "player2-uuid",
         "playerName": "Bob",
         "totalScore": 1720,
         "rank": 2,
@@ -1314,7 +1314,7 @@ All server-to-client messages use this format:
     ],
     "notableStats": {
       "fastestAnswerer": "Alice",
-      "mostTokens": "Charlie", 
+      "mostTokens": "Charlie",
       "bestCollaborator": "Bob",
       "puzzleMVP": "Diana"
     }
@@ -1324,7 +1324,7 @@ All server-to-client messages use this format:
 ```
 
 #### `ANALYTICS_TO_HOST_COMPLETE_REPORT`
-**Direction**: Server → Host  
+**Direction**: Server → Host
 **Trigger**: Game completion
 
 ```json
@@ -1464,7 +1464,7 @@ All server-to-client messages use this format:
           "duration": 5
         },
         {
-          "fromPhase": "resource_gathering", 
+          "fromPhase": "resource_gathering",
           "toPhase": "puzzle_assembly",
           "timestamp": "2025-01-XX:XX:XX.XXXZ",
           "duration": 30
@@ -1485,7 +1485,7 @@ All server-to-client messages use this format:
 ### Game Reset
 
 #### `ANALYTICS_TO_SERVER_RESET_GAME`
-**Direction**: Host → Server  
+**Direction**: Host → Server
 **Trigger**: Host initiates new game
 
 ```json
@@ -1503,7 +1503,7 @@ All server-to-client messages use this format:
 ```
 
 #### `ANALYTICS_TO_CLIENT_GAME_RESET`
-**Direction**: Server → All Participants  
+**Direction**: Server → All Participants
 **Trigger**: Host resets game
 
 ```json
@@ -1528,7 +1528,7 @@ All server-to-client messages use this format:
 ### Error Handling
 
 #### `SYSTEM_TO_CLIENT_ERROR`
-**Direction**: Server → Client  
+**Direction**: Server → Client
 **Trigger**: Various error conditions
 
 ```json
@@ -1556,7 +1556,7 @@ All server-to-client messages use this format:
 ```
 
 #### `SYSTEM_TO_HOST_ERROR`
-**Direction**: Server → Host  
+**Direction**: Server → Host
 **Trigger**: Host-specific errors
 
 ```json
@@ -1588,7 +1588,7 @@ All server-to-client messages use this format:
 ### Connection Management
 
 #### `SYSTEM_TO_CLIENT_DISCONNECTION_WARNING`
-**Direction**: Server → Client  
+**Direction**: Server → Client
 **Trigger**: Connection issues detected
 
 ```json
@@ -1615,7 +1615,7 @@ All server-to-client messages use this format:
 ```
 
 #### `SYSTEM_TO_CLIENT_HOST_DISCONNECTED`
-**Direction**: Server → All Players  
+**Direction**: Server → All Players
 **Trigger**: Host disconnects
 
 ```json
@@ -1623,7 +1623,7 @@ All server-to-client messages use this format:
   "event": "SYSTEM_TO_CLIENT_HOST_DISCONNECTED",
   "payload": {
     "hostStatus": "disconnected",
-    "currentPhase": "puzzle_assembly", 
+    "currentPhase": "puzzle_assembly",
     "gameImpact": {
       "gamePaused": false,
       "canContinue": true,
@@ -1641,7 +1641,7 @@ All server-to-client messages use this format:
 ```
 
 #### `SYSTEM_TO_CLIENT_HOST_RECONNECTED`
-**Direction**: Server → All Players  
+**Direction**: Server → All Players
 **Trigger**: Host reconnects
 
 ```json
@@ -1663,7 +1663,7 @@ All server-to-client messages use this format:
 ```
 
 #### `SYSTEM_TO_HOST_PLAYER_DISCONNECTED`
-**Direction**: Server → Host  
+**Direction**: Server → Host
 **Trigger**: Player disconnects
 
 ```json
@@ -1700,7 +1700,7 @@ All server-to-client messages use this format:
 ### Heartbeat and Health
 
 #### `SYSTEM_PING`
-**Direction**: Client → Server  
+**Direction**: Client → Server
 **Trigger**: Periodic heartbeat (every 30 seconds)
 
 ```json
@@ -1720,7 +1720,7 @@ All server-to-client messages use this format:
 ```
 
 #### `SYSTEM_PONG`
-**Direction**: Server → Client  
+**Direction**: Server → Client
 **Trigger**: Response to ping
 
 ```json
@@ -1744,7 +1744,7 @@ All server-to-client messages use this format:
 ### Phase Transitions
 
 #### `SYSTEM_TO_CLIENT_PHASE_TRANSITION`
-**Direction**: Server → All Participants  
+**Direction**: Server → All Participants
 **Trigger**: Game phase changes
 
 ```json
@@ -1772,7 +1772,7 @@ All server-to-client messages use this format:
 ```
 
 #### `SYSTEM_TO_HOST_PHASE_TRANSITION`
-**Direction**: Server → Host  
+**Direction**: Server → Host
 **Trigger**: Game phase changes
 
 ```json
@@ -1809,7 +1809,7 @@ All server-to-client messages use this format:
 
 **Total Events**: 53
 - **Setup Phase**: 8 events
-- **Resource Gathering Phase**: 10 events  
+- **Resource Gathering Phase**: 10 events
 - **Puzzle Assembly Phase**: 20 events
 - **Post-Game Analytics**: 5 events
 - **System-Wide Events**: 10 events

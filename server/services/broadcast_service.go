@@ -658,7 +658,6 @@ func (bs *BroadcastService) BroadcastPuzzlePhaseStart() {
 		"imageId":                  "masterpiece_001",
 		"centralGridSize":          gridSize,
 		"totalFragments":           gridSize * gridSize,
-		"isHost":                   true,
 		"playerCount":              gameManager.GetPlayerCount(),
 		"playerSegmentAssignments": playerSegments,
 		"unassignedSegments":       unassignedSegments,

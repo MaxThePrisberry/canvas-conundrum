@@ -300,7 +300,6 @@ func sendHostConnectionConfirmed(host *models.Host) {
 
 	payload := map[string]interface{}{
 		"playerId": host.ID,
-		"isHost":   true,
 		"message":  "Connected as game host",
 		"gameConfig": map[string]interface{}{
 			"minPlayers":                     constants.MinPlayers,
@@ -371,7 +370,6 @@ func sendRolesAvailable(player *models.Player) {
 
 	payload := map[string]interface{}{
 		"playerId": player.ID,
-		"isHost":   false,
 		"roles":    roles,
 		"triviaCategories": []string{
 			"general", "geography", "history", "music", "science", "video_games",

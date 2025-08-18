@@ -44,7 +44,6 @@ All server-to-client messages use this format:
   "event": "SETUP_TO_HOST_CONNECTION_CONFIRMED",
   "payload": {
     "playerId": "uuid-generated-by-server",
-    "isHost": true,
     "message": "Connected as game host",
     "gameConfig": {
       "minPlayers": 4,
@@ -68,7 +67,6 @@ All server-to-client messages use this format:
   "event": "SETUP_TO_PLAYER_ROLES_AVAILABLE",
   "payload": {
     "playerId": "uuid-generated-by-server",
-    "isHost": false,
     "roles": [
       {
         "roleType": "art_enthusiast",
@@ -668,7 +666,6 @@ All server-to-client messages use this format:
     "imageId": "masterpiece_001",
     "centralGridSize": 4,
     "totalFragments": 16,
-    "isHost": true,
     "playerCount": 5,
     "playerSegmentAssignments": {
       "player1-uuid": "segment_a1",

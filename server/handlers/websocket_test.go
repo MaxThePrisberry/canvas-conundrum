@@ -131,13 +131,11 @@ func TestHandleHostWebSocket(t *testing.T) {
 				err := json.Unmarshal(msg.Payload, &payloadMap)
 				if err == nil {
 					assert.Contains(t, payloadMap, "playerId")
-					assert.Contains(t, payloadMap, "isHost")
 					assert.Contains(t, payloadMap, "gameConfig")
 				} else {
 					// If payload unmarshal fails, check the raw string
 					payloadStr := string(message)
 					assert.Contains(t, payloadStr, "playerId")
-					assert.Contains(t, payloadStr, "isHost")
 					assert.Contains(t, payloadStr, "gameConfig")
 				}
 			} else {

@@ -76,7 +76,6 @@ func TestPlayerWebSocketConnection(t *testing.T) {
 	// Check payload
 	payload := msg["payload"].(map[string]interface{})
 	assert.NotEmpty(t, payload["playerId"])
-	assert.False(t, payload["isHost"].(bool))
 	assert.NotNil(t, payload["roles"])
 
 	// Verify roles structure
@@ -124,7 +123,6 @@ func TestHostWebSocketConnection(t *testing.T) {
 
 		payload := msg["payload"].(map[string]interface{})
 		assert.NotEmpty(t, payload["playerId"])
-		assert.True(t, payload["isHost"].(bool))
 		assert.Equal(t, "Connected as game host", payload["message"])
 
 		// Check game config

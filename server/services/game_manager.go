@@ -257,16 +257,17 @@ func (gm *GameManager) GetAllPlayers() map[string]*models.Player {
 
 // SetHost sets the game host or reconnects an existing host
 func (gm *GameManager) SetHost(host *models.Host) error {
-	gm.mu.Lock()
-	defer gm.mu.Unlock()
+	var wasReconnection bool
+	var broadcastSvc *BroadcastService
 
+	gm.mu.Lock()
 	// If we have an existing host with an active connection, reject
 	if gm.host != nil && gm.host.Connection != nil {
+		gm.mu.Unlock()
 		return fmt.Errorf("host already connected")
 	}
 
 	// If this is a reconnection (same host ID), update the connection
-	wasReconnection := false
 	if gm.host != nil && gm.host.ID == host.ID {
 		gm.host.Connection = host.Connection
 		gm.host.ConnectedAt = time.Now()
@@ -278,9 +279,13 @@ func (gm *GameManager) SetHost(host *models.Host) error {
 		log.Printf("Host %s connected", host.ID)
 	}
 
-	// Broadcast host reconnection if this was a reconnection
-	if wasReconnection && gm.broadcastSvc != nil {
-		gm.broadcastSvc.BroadcastHostReconnected()
+	// Store reference to broadcast service before unlocking
+	broadcastSvc = gm.broadcastSvc
+	gm.mu.Unlock()
+
+	// Broadcast host reconnection outside the lock to avoid deadlock
+	if wasReconnection && broadcastSvc != nil {
+		broadcastSvc.BroadcastHostReconnected()
 	}
 
 	return nil
@@ -856,6 +861,20 @@ func (gm *GameManager) ResetGame() {
 		}
 	}
 	gm.players = make(map[string]*models.Player)
+
+	// Clear host
+	if gm.host != nil && gm.host.Done != nil {
+		// Safely close channel using recover to handle already closed channels
+		func() {
+			defer func() {
+				if r := recover(); r != nil {
+					// Channel was already closed, ignore
+				}
+			}()
+			close(gm.host.Done)
+		}()
+	}
+	gm.host = nil
 
 	// Clear recommendations
 	gm.recommendations = make(map[string]*models.MoveRecommendation)

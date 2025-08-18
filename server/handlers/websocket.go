@@ -78,8 +78,8 @@ func HandleHostWebSocket(w http.ResponseWriter, r *http.Request) {
 	}
 	defer conn.Close()
 
-	// Generate host ID
-	hostID := utils.GenerateUUID()
+	// Use configured host UUID for host ID
+	hostID := config.HostUUID
 
 	// Create host instance
 	host := models.NewHost(hostID, conn)

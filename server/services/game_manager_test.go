@@ -3,6 +3,9 @@ package services
 import (
 	"canvas-conundrum/constants"
 	"canvas-conundrum/models"
+	"canvas-conundrum/test_helpers"
+	"fmt"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -1034,5 +1037,336 @@ func TestGameManagerRosterBroadcasting(t *testing.T) {
 
 		// Verify all players were added correctly
 		assert.Equal(t, 4, gm.GetPlayerCount())
+	})
+}
+
+func TestGameManagerRoleAvailabilityHelpers(t *testing.T) {
+	t.Run("GetRoleAvailabilityMap Basic Functionality", func(t *testing.T) {
+		// Reset singleton
+		gameInstance = nil
+		once = sync.Once{}
+		gm := GetGameInstance()
+
+		// Test with no players - all roles should be available
+		availability := gm.GetRoleAvailabilityMap()
+		assert.True(t, availability[models.RoleArtEnthusiast])
+		assert.True(t, availability[models.RoleDetective])
+		assert.True(t, availability[models.RoleTourist])
+		assert.True(t, availability[models.RoleJanitor])
+
+		// Add players to affect availability
+		players := make([]*models.Player, 4)
+		for i := 0; i < 4; i++ {
+			player := models.NewPlayer(fmt.Sprintf("player%d", i+1), nil)
+			player.IsActive = true
+			players[i] = player
+			gm.AddPlayer(player)
+		}
+
+		// With 4 players, max per role is (4+3)/4 = 1
+		// All roles should still be available initially
+		availability = gm.GetRoleAvailabilityMap()
+		assert.True(t, availability[models.RoleArtEnthusiast])
+		assert.True(t, availability[models.RoleDetective])
+		assert.True(t, availability[models.RoleTourist])
+		assert.True(t, availability[models.RoleJanitor])
+
+		// Configure all players with art_enthusiast role
+		for i := 0; i < 4; i++ {
+			players[i].Role = models.RoleArtEnthusiast
+		}
+
+		// Now art_enthusiast should be unavailable, others still available
+		availability = gm.GetRoleAvailabilityMap()
+		assert.False(t, availability[models.RoleArtEnthusiast])
+		assert.True(t, availability[models.RoleDetective])
+		assert.True(t, availability[models.RoleTourist])
+		assert.True(t, availability[models.RoleJanitor])
+	})
+
+	t.Run("GetRoleAvailabilityMap with Inactive Players", func(t *testing.T) {
+		// Reset singleton
+		gameInstance = nil
+		once = sync.Once{}
+		gm := GetGameInstance()
+
+		// Add 4 active players and 2 inactive players
+		for i := 0; i < 4; i++ {
+			player := models.NewPlayer(fmt.Sprintf("active%d", i+1), nil)
+			player.IsActive = true
+			player.Role = models.RoleArtEnthusiast
+			gm.AddPlayer(player)
+		}
+
+		for i := 0; i < 2; i++ {
+			player := models.NewPlayer(fmt.Sprintf("inactive%d", i+1), nil)
+			player.IsActive = false
+			player.Role = models.RoleDetective
+			gm.AddPlayer(player)
+		}
+
+		// Total players = 6, but inactive players still count for capacity
+		// Max per role = (6+3)/4 = 2
+		// Art enthusiast has 4 players (exceeds capacity), detective has 2 (at capacity)
+		availability := gm.GetRoleAvailabilityMap()
+		assert.False(t, availability[models.RoleArtEnthusiast]) // 4 > 2
+		assert.False(t, availability[models.RoleDetective])     // 2 = 2
+		assert.True(t, availability[models.RoleTourist])        // 0 < 2
+		assert.True(t, availability[models.RoleJanitor])        // 0 < 2
+	})
+
+	t.Run("CheckRoleAvailabilityChanged Detection", func(t *testing.T) {
+		// Reset singleton
+		gameInstance = nil
+		once = sync.Once{}
+		gm := GetGameInstance()
+
+		// Create two availability maps
+		before := map[models.Role]bool{
+			models.RoleArtEnthusiast: true,
+			models.RoleDetective:     true,
+			models.RoleTourist:       false,
+			models.RoleJanitor:       true,
+		}
+
+		// Same as before - should return false
+		after := map[models.Role]bool{
+			models.RoleArtEnthusiast: true,
+			models.RoleDetective:     true,
+			models.RoleTourist:       false,
+			models.RoleJanitor:       true,
+		}
+		assert.False(t, gm.CheckRoleAvailabilityChanged(before, after))
+
+		// Different - should return true
+		afterChanged := map[models.Role]bool{
+			models.RoleArtEnthusiast: false, // Changed from true to false
+			models.RoleDetective:     true,
+			models.RoleTourist:       false,
+			models.RoleJanitor:       true,
+		}
+		assert.True(t, gm.CheckRoleAvailabilityChanged(before, afterChanged))
+
+		// Another change - should return true
+		afterChanged2 := map[models.Role]bool{
+			models.RoleArtEnthusiast: true,
+			models.RoleDetective:     true,
+			models.RoleTourist:       true, // Changed from false to true
+			models.RoleJanitor:       true,
+		}
+		assert.True(t, gm.CheckRoleAvailabilityChanged(before, afterChanged2))
+	})
+}
+
+func TestGameManagerRoleAvailabilityBroadcasting(t *testing.T) {
+	t.Run("Player Join Only Broadcasts When Capacity Actually Changes", func(t *testing.T) {
+		// Reset singleton
+		gameInstance = nil
+		once = sync.Once{}
+		gm := GetGameInstance()
+		broadcastSvc := NewBroadcastService()
+		gm.SetBroadcastService(broadcastSvc)
+
+		// Add host to enable broadcasting
+		host := test_helpers.CreateTestHost("test-host")
+		host.Connection = &websocket.Conn{} // Set non-nil connection for broadcasting check
+		gm.SetHost(host)
+
+		// Add first 4 players and have them select roles to fill capacity of 1
+		players := make([]*models.Player, 4)
+		for i := 0; i < 4; i++ {
+			player := models.NewPlayer(fmt.Sprintf("player%d", i+1), nil)
+			player.IsActive = true
+			player.Send = make(chan []byte, 100) // Add send channel for broadcasting
+			players[i] = player
+			gm.AddPlayer(player)
+
+			// Clear lobby status messages
+			select {
+			case <-player.Send:
+			default:
+			}
+		}
+
+		// Configure all 4 players with different roles to fill capacity (capacity=1 each)
+		roles := []models.Role{models.RoleArtEnthusiast, models.RoleDetective, models.RoleTourist, models.RoleJanitor}
+		for i, role := range roles {
+			err := gm.UpdatePlayerConfiguration(players[i].ID, fmt.Sprintf("Player%d", i+1), role, []string{"science"})
+			assert.NoError(t, err)
+			// Clear any configuration broadcast messages
+			select {
+			case <-players[i].Send:
+			default:
+			}
+		}
+
+		// Add 5th player (capacity increases from 1 to 2, making all roles available again)
+		player5 := models.NewPlayer("player5", nil)
+		player5.IsActive = true
+		player5.Send = make(chan []byte, 100) // Add send channel for broadcasting
+		err := gm.AddPlayer(player5)
+		assert.NoError(t, err)
+
+		// Should broadcast role availability to all players since roles that were full (1/1) are now available (1/2)
+		foundBroadcast := false
+		allPlayers := gm.GetAllPlayers()
+		for _, player := range allPlayers {
+			if player.IsActive {
+				select {
+				case msg := <-player.Send:
+					if strings.Contains(string(msg), "SETUP_TO_PLAYER_ROLES_AVAILABLE") {
+						foundBroadcast = true
+						break
+					}
+				case <-time.After(50 * time.Millisecond):
+					// May not receive due to timing, check next player
+				}
+			}
+		}
+
+		if !foundBroadcast {
+			t.Error("Expected role availability broadcast when capacity increased from 1 to 2")
+		}
+	})
+
+	t.Run("Player Configuration Triggers Role Broadcast When Role Becomes Full", func(t *testing.T) {
+		// Reset singleton
+		gameInstance = nil
+		once = sync.Once{}
+		gm := GetGameInstance()
+		broadcastSvc := NewBroadcastService()
+		gm.SetBroadcastService(broadcastSvc)
+
+		// Add 4 players (max per role = (4+3)/4 = 1)
+		players := make([]*models.Player, 4)
+		for i := 0; i < 4; i++ {
+			player := models.NewPlayer(fmt.Sprintf("player%d", i+1), nil)
+			player.IsActive = true
+			players[i] = player
+			gm.AddPlayer(player)
+			// Clear the join broadcast message
+			select {
+			case <-player.Send:
+			default:
+			}
+		}
+
+		// Configure first player with art_enthusiast role
+		err := gm.UpdatePlayerConfiguration(players[0].ID, "Player1", models.RoleArtEnthusiast, []string{"science"})
+		assert.NoError(t, err)
+
+		// Should broadcast role availability since art_enthusiast became full
+		foundBroadcast := false
+		for _, player := range players {
+			select {
+			case msg := <-player.Send:
+				if string(msg) != "" {
+					assert.Contains(t, string(msg), "SETUP_TO_PLAYER_ROLES_AVAILABLE")
+					foundBroadcast = true
+				}
+			case <-time.After(100 * time.Millisecond):
+				// Some players might not receive due to timing
+			}
+		}
+		assert.True(t, foundBroadcast, "At least one player should receive role availability broadcast")
+
+		// Configure second player with detective role (different role, shouldn't change art_enthusiast availability)
+		err = gm.UpdatePlayerConfiguration(players[1].ID, "Player2", models.RoleDetective, []string{"history"})
+		assert.NoError(t, err)
+
+		// Should broadcast since detective became full too
+		foundBroadcast = false
+		for _, player := range players {
+			select {
+			case msg := <-player.Send:
+				if string(msg) != "" {
+					assert.Contains(t, string(msg), "SETUP_TO_PLAYER_ROLES_AVAILABLE")
+					foundBroadcast = true
+				}
+			case <-time.After(100 * time.Millisecond):
+				// Some players might not receive due to timing
+			}
+		}
+		assert.True(t, foundBroadcast, "At least one player should receive role availability broadcast")
+	})
+
+	t.Run("Player Removal Does NOT Broadcast When Inactive Players Keep Role Slots", func(t *testing.T) {
+		// This test verifies that inactive players still count toward role capacity
+		// So removing a player with a role should NOT make that role available to others
+		// Reset singleton
+		gameInstance = nil
+		once = sync.Once{}
+		gm := GetGameInstance()
+		broadcastSvc := NewBroadcastService()
+		gm.SetBroadcastService(broadcastSvc)
+
+		// Add host to enable broadcasting
+		host := test_helpers.CreateTestHost("test-host")
+		host.Connection = &websocket.Conn{} // Set non-nil connection for broadcasting check
+		gm.SetHost(host)
+
+		// Add 5 players (capacity = 2) and configure 2 players with art_enthusiast to fill capacity
+		players := make([]*models.Player, 5)
+		for i := 0; i < 5; i++ {
+			player := models.NewPlayer(fmt.Sprintf("player%d", i+1), nil)
+			player.IsActive = true
+			player.Send = make(chan []byte, 100) // Add send channel for broadcasting
+			players[i] = player
+			gm.AddPlayer(player)
+
+			// Clear any existing messages
+			select {
+			case <-player.Send:
+			default:
+			}
+		}
+
+		// Configure 2 players with art_enthusiast role to fill capacity (2/2)
+		err := gm.UpdatePlayerConfiguration(players[0].ID, "Player1", models.RoleArtEnthusiast, []string{"science"})
+		assert.NoError(t, err)
+		err = gm.UpdatePlayerConfiguration(players[1].ID, "Player2", models.RoleArtEnthusiast, []string{"science"})
+		assert.NoError(t, err)
+
+		// Clear ALL broadcast messages from configuration
+		time.Sleep(10 * time.Millisecond) // Give time for any async broadcasts
+		for _, player := range players {
+			for {
+				select {
+				case <-player.Send:
+					// Keep draining until empty
+				default:
+					goto next_player
+				}
+			}
+		next_player:
+		}
+
+		// Remove one art_enthusiast player - but role should STILL be full because inactive players count
+		gm.RemovePlayer(players[1].ID) // Remove player2 with art_enthusiast role
+
+		// Wait a bit for any potential broadcasts
+		time.Sleep(10 * time.Millisecond)
+
+		// Should NOT broadcast role availability since art_enthusiast remains full (2/2) - inactive player still counts
+		foundBroadcast := false
+		allPlayers := gm.GetAllPlayers()
+		for _, player := range allPlayers {
+			if player.IsActive {
+				select {
+				case msg := <-player.Send:
+					if strings.Contains(string(msg), "SETUP_TO_PLAYER_ROLES_AVAILABLE") {
+						t.Logf("Unexpected role availability broadcast found: %s", string(msg))
+						foundBroadcast = true
+						break
+					}
+				default:
+					// No message expected, which is correct
+				}
+			}
+		}
+
+		if foundBroadcast {
+			t.Error("Should NOT broadcast role availability when inactive players still hold role slots")
+		}
 	})
 }

@@ -3,15 +3,17 @@ package services
 import (
 	"canvas-conundrum/models"
 	"canvas-conundrum/test_helpers"
+	"fmt"
+	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 )
 
 func resetGameManager() {
-	// Create a new game manager instance for clean tests
-	gameManager := GetGameInstance()
-	gameManager.ResetGame()
+	// Reset singleton for clean tests
+	gameInstance = nil
+	once = sync.Once{}
 }
 
 func TestNewBroadcastService(t *testing.T) {
@@ -356,11 +358,106 @@ func TestBroadcastServiceConcurrency(t *testing.T) {
 		gameManager.AddPlayer(player)
 	}
 
-	// Test concurrent broadcasts
+	// Test concurrent broadcasts and wait for completion
+	var wg sync.WaitGroup
 	for i := 0; i < 10; i++ {
-		go service.BroadcastToAllPlayers("concurrent_test", map[string]int{"iteration": i})
+		wg.Add(1)
+		go func(iteration int) {
+			defer wg.Done()
+			service.BroadcastToAllPlayers("concurrent_test", map[string]int{"iteration": iteration})
+		}(i)
 	}
+
+	// Wait for all broadcasts to complete
+	wg.Wait()
 
 	// Test should complete without race conditions or panics
 	assert.True(t, true)
+}
+
+func TestBroadcastServiceRoleAvailability(t *testing.T) {
+	service := NewBroadcastService()
+
+	t.Run("BroadcastRoleAvailability with Players", func(t *testing.T) {
+		resetGameManager()
+		gameManager := GetGameInstance()
+		gameManager.SetBroadcastService(service)
+
+		// Add players to set up role distribution
+		players := make([]*models.Player, 3)
+		for i := 0; i < 3; i++ {
+			player := test_helpers.CreateTestPlayer(fmt.Sprintf("player%d", i+1))
+			player.IsActive = true
+			players[i] = player
+			gameManager.AddPlayer(player)
+		}
+
+		// Configure one player with a role to affect availability
+		err := gameManager.UpdatePlayerConfiguration(players[0].ID, "Player1", models.RoleArtEnthusiast, []string{"science"})
+		assert.NoError(t, err)
+
+		// Call BroadcastRoleAvailability
+		service.BroadcastRoleAvailability()
+
+		// Verify that active players receive the role availability message
+		for i, player := range players {
+			if player.IsActive {
+				select {
+				case msg := <-player.Send:
+					assert.Contains(t, string(msg), "SETUP_TO_PLAYER_ROLES_AVAILABLE")
+					assert.Contains(t, string(msg), "roles")
+					assert.Contains(t, string(msg), "art_enthusiast")
+					assert.Contains(t, string(msg), "detective")
+					assert.Contains(t, string(msg), "tourist")
+					assert.Contains(t, string(msg), "janitor")
+					assert.Contains(t, string(msg), "triviaCategories")
+				default:
+					t.Errorf("Player %d should have received role availability message", i+1)
+				}
+			}
+		}
+	})
+
+	t.Run("BroadcastRoleAvailability with No Players", func(t *testing.T) {
+		resetGameManager()
+		gameManager := GetGameInstance()
+		gameManager.SetBroadcastService(service)
+
+		// Should not panic with no players
+		service.BroadcastRoleAvailability()
+		assert.True(t, true)
+	})
+
+	t.Run("BroadcastRoleAvailability Role Limits Reflected", func(t *testing.T) {
+		resetGameManager()
+		gameManager := GetGameInstance()
+		gameManager.SetBroadcastService(service)
+
+		// Add 4 players (capacity formula: (4+3)/4 = 1 per role)
+		players := make([]*models.Player, 4)
+		for i := 0; i < 4; i++ {
+			player := test_helpers.CreateTestPlayer(fmt.Sprintf("player%d", i+1))
+			player.IsActive = true
+			players[i] = player
+			gameManager.AddPlayer(player)
+		}
+
+		// Configure only 1 player with art_enthusiast role to fill capacity
+		err := gameManager.UpdatePlayerConfiguration(players[0].ID, "Player1", models.RoleArtEnthusiast, []string{"science"})
+		assert.NoError(t, err)
+
+		// Call BroadcastRoleAvailability
+		service.BroadcastRoleAvailability()
+
+		// Check that art_enthusiast role shows as unavailable (capacity reached)
+		select {
+		case msg := <-players[0].Send:
+			msgStr := string(msg)
+			assert.Contains(t, msgStr, "SETUP_TO_PLAYER_ROLES_AVAILABLE")
+			// Art enthusiast should be unavailable (capacity of 1 reached)
+			assert.Contains(t, msgStr, `"available":false`)
+		default:
+			t.Error("Player should have received role availability message")
+		}
+	})
 }

@@ -916,11 +916,8 @@ func (gm *GameManager) Cleanup() {
 		default:
 			// Channel might be closed or full, ignore
 		}
-		// Stop the ticker
-		if gm.puzzleSvc.expirationTicker != nil {
-			gm.puzzleSvc.expirationTicker.Stop()
-			gm.puzzleSvc.expirationTicker = nil
-		}
+		// The ticker will be stopped by the goroutine when it receives the stop signal
+		// Don't manually stop or nil the ticker here to avoid race conditions
 		// Clear the service reference
 		gm.puzzleSvc = nil
 	}

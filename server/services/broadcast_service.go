@@ -141,6 +141,63 @@ func (bs *BroadcastService) BroadcastLobbyStatus() {
 	bs.sendHostPlayerRoster()
 }
 
+// BroadcastRoleAvailability broadcasts role availability to all players
+func (bs *BroadcastService) BroadcastRoleAvailability() {
+	gameManager := GetGameInstance()
+	roleDistribution := gameManager.GetRoleDistribution()
+
+	// Check role availability using same logic as sendRolesAvailable
+	maxPerRole := (gameManager.GetPlayerCount() + 3) / 4
+	if maxPerRole < 1 {
+		maxPerRole = 1 // Ensure at least 1 player can select each role
+	}
+
+	roles := []map[string]interface{}{
+		{
+			"roleType":       "art_enthusiast",
+			"displayName":    "Art Enthusiast",
+			"resourceBonus":  constants.RoleResourceMultiplier,
+			"bonusTokenType": "clarity",
+			"description":    "Excels at clarity token collection",
+			"available":      roleDistribution[models.RoleArtEnthusiast] < maxPerRole,
+		},
+		{
+			"roleType":       "detective",
+			"displayName":    "Detective",
+			"resourceBonus":  constants.RoleResourceMultiplier,
+			"bonusTokenType": "guide",
+			"description":    "Excels at guide token collection",
+			"available":      roleDistribution[models.RoleDetective] < maxPerRole,
+		},
+		{
+			"roleType":       "tourist",
+			"displayName":    "Tourist",
+			"resourceBonus":  constants.RoleResourceMultiplier,
+			"bonusTokenType": "chronos",
+			"description":    "Excels at chronos token collection",
+			"available":      roleDistribution[models.RoleTourist] < maxPerRole,
+		},
+		{
+			"roleType":       "janitor",
+			"displayName":    "Janitor",
+			"resourceBonus":  constants.RoleResourceMultiplier,
+			"bonusTokenType": "anchor",
+			"description":    "Excels at anchor token collection",
+			"available":      roleDistribution[models.RoleJanitor] < maxPerRole,
+		},
+	}
+
+	payload := map[string]interface{}{
+		"roles": roles,
+		"triviaCategories": []string{
+			"general", "geography", "history", "music", "science", "video_games",
+		},
+		"maxSpecialties": constants.MaxSpecialtiesPerPlayer,
+	}
+
+	bs.BroadcastToAllPlayers(constants.EventSetupToPlayerRolesAvailable, payload)
+}
+
 // getWaitingMessage generates appropriate waiting message
 func (bs *BroadcastService) getWaitingMessage(readyCount, connectedCount int) string {
 	needed := constants.MinPlayers - readyCount

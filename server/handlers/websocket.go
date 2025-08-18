@@ -330,6 +330,9 @@ func sendRolesAvailable(player *models.Player) {
 
 	// Check role availability
 	maxPerRole := (gameManager.GetPlayerCount() + 3) / 4
+	if maxPerRole < 1 {
+		maxPerRole = 1 // Ensure at least 1 player can select each role
+	}
 
 	roles := []map[string]interface{}{
 		{

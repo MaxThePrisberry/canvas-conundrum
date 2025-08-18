@@ -108,7 +108,12 @@ func (gm *GameManager) IsHostConnected() bool {
 // AddPlayer adds a new player to the game or reconnects an existing player
 func (gm *GameManager) AddPlayer(player *models.Player) error {
 	var shouldBroadcast bool
+	var shouldBroadcastRoles bool
 	var broadcastSvc *BroadcastService
+	var beforeAvailability map[models.Role]bool
+
+	// Capture role availability before adding player
+	beforeAvailability = gm.GetRoleAvailabilityMap()
 
 	gm.mu.Lock()
 	// Check if this is a reconnection
@@ -173,10 +178,20 @@ func (gm *GameManager) AddPlayer(player *models.Player) error {
 	}
 	gm.mu.Unlock()
 
+	// Check if role availability changed after adding player (outside lock)
+	afterAvailability := gm.GetRoleAvailabilityMap()
+	shouldBroadcastRoles = gm.CheckRoleAvailabilityChanged(beforeAvailability, afterAvailability)
+
 	// Send updated roster to host outside of lock to avoid deadlock
 	if shouldBroadcast {
 		log.Printf("Sending roster update to host after player %s joined", player.ID)
 		broadcastSvc.BroadcastLobbyStatus()
+	}
+
+	// Broadcast role availability changes if any occurred
+	if shouldBroadcastRoles && broadcastSvc != nil {
+		log.Printf("Broadcasting role availability changes after player %s joined", player.ID)
+		broadcastSvc.BroadcastRoleAvailability()
 	}
 
 	return nil
@@ -185,7 +200,12 @@ func (gm *GameManager) AddPlayer(player *models.Player) error {
 // RemovePlayer removes a player from the game
 func (gm *GameManager) RemovePlayer(playerID string) {
 	var shouldBroadcast bool
+	var shouldBroadcastRoles bool
 	var broadcastSvc *BroadcastService
+	var beforeAvailability map[models.Role]bool
+
+	// Capture role availability before removing player
+	beforeAvailability = gm.GetRoleAvailabilityMap()
 
 	gm.mu.Lock()
 	player, exists := gm.players[playerID]
@@ -197,6 +217,14 @@ func (gm *GameManager) RemovePlayer(playerID string) {
 
 	log.Printf("RemovePlayer: Removing player %s (name: %s)", playerID, player.Name)
 	player.IsActive = false
+
+	// Calculate updated player count while holding lock (player.IsActive is already set to false)
+	updatedPlayerCount := 0
+	for _, p := range gm.players {
+		if p.IsActive {
+			updatedPlayerCount++
+		}
+	}
 
 	// Notify host of disconnection (in all phases)
 	if gm.broadcastSvc != nil && gm.host != nil {
@@ -216,7 +244,7 @@ func (gm *GameManager) RemovePlayer(playerID string) {
 				"playerName":         player.Name,
 				"disconnectionTime":  time.Now().Format(time.RFC3339),
 				"currentPhase":       string(gm.game.CurrentPhase),
-				"updatedPlayerCount": len(gm.players) - 1, // -1 because this player is disconnecting
+				"updatedPlayerCount": updatedPlayerCount,
 			}
 
 			// Add phase-specific impact info for puzzle phase
@@ -256,10 +284,20 @@ func (gm *GameManager) RemovePlayer(playerID string) {
 	log.Printf("Player %s disconnected", playerID)
 	gm.mu.Unlock()
 
+	// Check if role availability changed after removing player (outside lock)
+	afterAvailability := gm.GetRoleAvailabilityMap()
+	shouldBroadcastRoles = gm.CheckRoleAvailabilityChanged(beforeAvailability, afterAvailability)
+
 	// Send updated roster to host outside of lock to avoid deadlock
 	if shouldBroadcast {
 		log.Printf("Sending roster update to host after player %s disconnected", playerID)
 		broadcastSvc.BroadcastLobbyStatus()
+	}
+
+	// Broadcast role availability changes if any occurred (only during setup phase)
+	if shouldBroadcastRoles && gm.game.CurrentPhase == models.PhaseSetup && broadcastSvc != nil {
+		log.Printf("Broadcasting role availability changes after player %s disconnected", playerID)
+		broadcastSvc.BroadcastRoleAvailability()
 	}
 }
 
@@ -370,21 +408,25 @@ func (gm *GameManager) GetHost() *models.Host {
 
 // UpdatePlayerConfiguration updates a player's role and specialties
 func (gm *GameManager) UpdatePlayerConfiguration(playerID string, name string, role models.Role, specialties []string) error {
-	gm.mu.Lock()
-	defer gm.mu.Unlock()
+	// Capture role availability before making changes
+	beforeAvailability := gm.GetRoleAvailabilityMap()
 
+	gm.mu.Lock()
 	player, exists := gm.players[playerID]
 	if !exists {
+		gm.mu.Unlock()
 		return fmt.Errorf("player not found")
 	}
 
 	// Validate role availability
 	if !gm.isRoleAvailable(role, playerID) {
+		gm.mu.Unlock()
 		return fmt.Errorf("role not available")
 	}
 
 	// Validate specialties
 	if len(specialties) > constants.MaxSpecialtiesPerPlayer {
+		gm.mu.Unlock()
 		return fmt.Errorf("too many specialties selected")
 	}
 
@@ -400,12 +442,28 @@ func (gm *GameManager) UpdatePlayerConfiguration(playerID string, name string, r
 	player.IsReady = true
 
 	log.Printf("Player %s configured: role=%s, specialties=%v", playerID, role, specialties)
+
+	broadcastSvc := gm.broadcastSvc
+	gm.mu.Unlock()
+
+	// Check if role availability changed after the update (outside lock)
+	afterAvailability := gm.GetRoleAvailabilityMap()
+	shouldBroadcast := gm.CheckRoleAvailabilityChanged(beforeAvailability, afterAvailability)
+
+	// Broadcast role availability changes if any occurred
+	if shouldBroadcast && broadcastSvc != nil {
+		broadcastSvc.BroadcastRoleAvailability()
+	}
+
 	return nil
 }
 
 // isRoleAvailable checks if a role is available for selection
 func (gm *GameManager) isRoleAvailable(role models.Role, excludePlayerID string) bool {
 	maxPerRole := (len(gm.players) + 3) / 4
+	if maxPerRole < 1 {
+		maxPerRole = 1 // Ensure at least 1 player can select each role
+	}
 
 	count := 0
 	for id, player := range gm.players {
@@ -436,6 +494,55 @@ func (gm *GameManager) GetRoleDistribution() map[models.Role]int {
 	}
 
 	return distribution
+}
+
+// GetRoleAvailabilityMap returns the availability status of all roles
+func (gm *GameManager) GetRoleAvailabilityMap() map[models.Role]bool {
+	gm.mu.RLock()
+	defer gm.mu.RUnlock()
+
+	// Calculate distribution inline to avoid double locking
+	distribution := map[models.Role]int{
+		models.RoleArtEnthusiast: 0,
+		models.RoleDetective:     0,
+		models.RoleTourist:       0,
+		models.RoleJanitor:       0,
+	}
+
+	for _, player := range gm.players {
+		if player.Role != models.RoleNone {
+			distribution[player.Role]++
+		}
+	}
+
+	maxPerRole := (len(gm.players) + 3) / 4
+	if maxPerRole < 1 {
+		maxPerRole = 1 // Ensure at least 1 player can select each role
+	}
+
+	return map[models.Role]bool{
+		models.RoleArtEnthusiast: distribution[models.RoleArtEnthusiast] < maxPerRole,
+		models.RoleDetective:     distribution[models.RoleDetective] < maxPerRole,
+		models.RoleTourist:       distribution[models.RoleTourist] < maxPerRole,
+		models.RoleJanitor:       distribution[models.RoleJanitor] < maxPerRole,
+	}
+}
+
+// CheckRoleAvailabilityChanged compares two role availability maps and returns true if any changed
+func (gm *GameManager) CheckRoleAvailabilityChanged(before, after map[models.Role]bool) bool {
+	roles := []models.Role{
+		models.RoleArtEnthusiast,
+		models.RoleDetective,
+		models.RoleTourist,
+		models.RoleJanitor,
+	}
+
+	for _, role := range roles {
+		if before[role] != after[role] {
+			return true
+		}
+	}
+	return false
 }
 
 // CanStartGame checks if the game can be started

@@ -9,6 +9,12 @@ func GenerateUUID() string {
 	return uuid.New().String()
 }
 
+// IsValidUUID validates if a string is a valid UUID format
+func IsValidUUID(str string) bool {
+	_, err := uuid.Parse(str)
+	return err == nil
+}
+
 // GeneratePlayerID generates a new player ID
 func GeneratePlayerID() string {
 	return GenerateUUID()

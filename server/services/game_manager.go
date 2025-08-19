@@ -106,11 +106,12 @@ func (gm *GameManager) IsHostConnected() bool {
 }
 
 // AddPlayer adds a new player to the game or reconnects an existing player
-func (gm *GameManager) AddPlayer(player *models.Player) error {
+func (gm *GameManager) AddPlayer(player *models.Player) (bool, error) {
 	var shouldBroadcast bool
 	var shouldBroadcastRoles bool
 	var broadcastSvc *BroadcastService
 	var beforeAvailability map[models.Role]bool
+	var isReconnection bool
 
 	// Capture role availability before adding player
 	beforeAvailability = gm.GetRoleAvailabilityMap()
@@ -119,11 +120,8 @@ func (gm *GameManager) AddPlayer(player *models.Player) error {
 	// Check if this is a reconnection
 	if existingPlayer, exists := gm.players[player.ID]; exists {
 		// Player reconnection
-		if gm.game.CurrentPhase == models.PhasePuzzleAssembly {
-			gm.mu.Unlock()
-			// Cannot reconnect during puzzle phase at all (per specification)
-			return fmt.Errorf("cannot reconnect during puzzle assembly phase")
-		}
+		// Note: Puzzle phase connections are blocked at HTTP level in HandlePlayerWebSocket
+		// so we don't need to check that here anymore
 
 		// Update connection and mark as active
 		existingPlayer.Connection = player.Connection
@@ -131,6 +129,7 @@ func (gm *GameManager) AddPlayer(player *models.Player) error {
 		existingPlayer.LastSeen = time.Now()
 		existingPlayer.Send = player.Send
 		existingPlayer.Done = player.Done
+		isReconnection = true
 		log.Printf("Player %s reconnected", player.ID)
 
 		// Set up broadcast for reconnection
@@ -145,20 +144,20 @@ func (gm *GameManager) AddPlayer(player *models.Player) error {
 			log.Printf("Sending roster update to host after player %s reconnected", player.ID)
 			broadcastSvc.BroadcastLobbyStatus()
 		}
-		return nil
+		return isReconnection, nil
 	}
 
 	// New player joining
 	// Check if game is in progress
 	if gm.game.CurrentPhase != models.PhaseSetup {
 		gm.mu.Unlock()
-		return fmt.Errorf("cannot join game in progress")
+		return false, fmt.Errorf("cannot join game in progress")
 	}
 
 	// Check max players
 	if len(gm.players) >= gm.game.MaxPlayers {
 		gm.mu.Unlock()
-		return fmt.Errorf("maximum players reached")
+		return false, fmt.Errorf("maximum players reached")
 	}
 
 	gm.players[player.ID] = player
@@ -194,7 +193,7 @@ func (gm *GameManager) AddPlayer(player *models.Player) error {
 		broadcastSvc.BroadcastRoleAvailability()
 	}
 
-	return nil
+	return false, nil
 }
 
 // RemovePlayer removes a player from the game
@@ -340,7 +339,7 @@ func (gm *GameManager) GetAllPlayers() map[string]*models.Player {
 }
 
 // SetHost sets the game host or reconnects an existing host
-func (gm *GameManager) SetHost(host *models.Host) error {
+func (gm *GameManager) SetHost(host *models.Host) (bool, error) {
 	var wasReconnection bool
 	var broadcastSvc *BroadcastService
 
@@ -348,7 +347,7 @@ func (gm *GameManager) SetHost(host *models.Host) error {
 	// If we have an existing host with an active connection, reject
 	if gm.host != nil && gm.host.Connection != nil {
 		gm.mu.Unlock()
-		return fmt.Errorf("host already connected")
+		return false, fmt.Errorf("host already connected")
 	}
 
 	// If this is a reconnection (same host ID), update the connection
@@ -372,7 +371,7 @@ func (gm *GameManager) SetHost(host *models.Host) error {
 		broadcastSvc.BroadcastHostReconnected()
 	}
 
-	return nil
+	return wasReconnection, nil
 }
 
 // RemoveHost disconnects the host (but keeps the host object for reconnection)

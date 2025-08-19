@@ -411,7 +411,7 @@ func TestLargeScaleGame(t *testing.T) {
 		}[i%4]
 		player.IsReady = true
 		player.IsActive = true
-		err := gm.AddPlayer(player)
+		_, err := gm.AddPlayer(player)
 		require.NoError(t, err)
 	}
 

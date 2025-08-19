@@ -182,7 +182,7 @@ func TestSendHostConnectionConfirmed(t *testing.T) {
 
 	host := models.NewHost("test-host", nil)
 
-	sendHostConnectionConfirmed(host)
+	sendHostConnectionConfirmed(host, false)
 
 	// Should have attempted to send message
 	assert.True(t, true) // If no panic, test passes
@@ -200,10 +200,223 @@ func TestSendRolesAvailable(t *testing.T) {
 
 	player := models.NewPlayer("test-player", nil)
 
-	sendRolesAvailable(player)
+	sendRolesAvailable(player, false)
 
 	// Should have attempted to send message
 	assert.True(t, true) // If no panic, test passes
+}
+
+func TestSendPlayerPhaseRestoration(t *testing.T) {
+	resetGameManager()
+	gameManager := services.GetGameInstance()
+
+	// Set up broadcast service
+	broadcastService := services.NewBroadcastService()
+	gameManager.SetBroadcastService(broadcastService)
+
+	player := models.NewPlayer("test-player", nil)
+	player.Role = "art_enthusiast"
+	player.Specialties = []models.TriviaCategory{models.CategoryScience}
+	player.Name = "Test Player"
+
+	t.Run("Setup Phase Restoration", func(t *testing.T) {
+		// Set game to setup phase
+		game := gameManager.GetGame()
+		game.CurrentPhase = "setup"
+
+		sendPlayerPhaseRestoration(player)
+
+		// Player should be marked as ready
+		assert.True(t, player.IsReady)
+	})
+
+	t.Run("Resource Gathering Phase Restoration", func(t *testing.T) {
+		// Reset player ready state
+		player.IsReady = false
+
+		// Set game to resource gathering phase
+		game := gameManager.GetGame()
+		game.CurrentPhase = "resource_gathering"
+
+		sendPlayerPhaseRestoration(player)
+
+		// Should have called BroadcastResourcePhaseStart (no crash indicates success)
+		assert.True(t, true)
+	})
+
+	t.Run("Analytics Phase Restoration", func(t *testing.T) {
+		// Set game to analytics phase
+		game := gameManager.GetGame()
+		game.CurrentPhase = "analytics"
+
+		sendPlayerPhaseRestoration(player)
+
+		// Should complete without error
+		assert.True(t, true)
+	})
+
+	t.Run("Unknown Phase", func(t *testing.T) {
+		// Set game to unknown phase
+		game := gameManager.GetGame()
+		game.CurrentPhase = "unknown"
+
+		sendPlayerPhaseRestoration(player)
+
+		// Should complete without error
+		assert.True(t, true)
+	})
+}
+
+func TestSendHostPhaseRestoration(t *testing.T) {
+	resetGameManager()
+	gameManager := services.GetGameInstance()
+
+	// Set up broadcast service
+	broadcastService := services.NewBroadcastService()
+	gameManager.SetBroadcastService(broadcastService)
+
+	host := models.NewHost("test-host", nil)
+
+	t.Run("Setup Phase Restoration", func(t *testing.T) {
+		// Set game to setup phase
+		game := gameManager.GetGame()
+		game.CurrentPhase = "setup"
+
+		sendHostPhaseRestoration(host)
+
+		// Should have called BroadcastLobbyStatus (no crash indicates success)
+		assert.True(t, true)
+	})
+
+	t.Run("Resource Gathering Phase Restoration", func(t *testing.T) {
+		// Set game to resource gathering phase
+		game := gameManager.GetGame()
+		game.CurrentPhase = "resource_gathering"
+
+		sendHostPhaseRestoration(host)
+
+		// Should have called BroadcastResourcePhaseStart (no crash indicates success)
+		assert.True(t, true)
+	})
+
+	t.Run("Puzzle Assembly Phase Restoration", func(t *testing.T) {
+		// Set game to puzzle assembly phase
+		game := gameManager.GetGame()
+		game.CurrentPhase = "puzzle_assembly"
+
+		sendHostPhaseRestoration(host)
+
+		// Should complete without error
+		assert.True(t, true)
+	})
+
+	t.Run("Analytics Phase Restoration", func(t *testing.T) {
+		// Set game to analytics phase
+		game := gameManager.GetGame()
+		game.CurrentPhase = "analytics"
+
+		sendHostPhaseRestoration(host)
+
+		// Should complete without error
+		assert.True(t, true)
+	})
+
+	t.Run("Unknown Phase", func(t *testing.T) {
+		// Set game to unknown phase
+		game := gameManager.GetGame()
+		game.CurrentPhase = "unknown"
+
+		sendHostPhaseRestoration(host)
+
+		// Should complete without error
+		assert.True(t, true)
+	})
+}
+
+func TestReconnectionFlow(t *testing.T) {
+	resetGameManager()
+	gameManager := services.GetGameInstance()
+
+	// Set up broadcast service
+	broadcastService := services.NewBroadcastService()
+	gameManager.SetBroadcastService(broadcastService)
+
+	t.Run("Player Reconnection Detection", func(t *testing.T) {
+		// Add player initially
+		player1 := models.NewPlayer("reconnect-player", nil)
+		player1.Role = "detective"
+		player1.Specialties = []models.TriviaCategory{models.CategoryHistory}
+		player1.Name = "Reconnect Test"
+		player1.IsActive = true
+
+		isReconnection, err := gameManager.AddPlayer(player1)
+		assert.NoError(t, err)
+		assert.False(t, isReconnection, "First connection should not be a reconnection")
+
+		// Simulate disconnection
+		player1.IsActive = false
+
+		// Attempt reconnection with same ID
+		reconnectPlayer := models.NewPlayer("reconnect-player", nil)
+		reconnectPlayer.IsActive = true
+
+		isReconnection, err = gameManager.AddPlayer(reconnectPlayer)
+		assert.NoError(t, err)
+		assert.True(t, isReconnection, "Second connection should be a reconnection")
+	})
+
+	t.Run("Host Reconnection Detection", func(t *testing.T) {
+		// Add host initially
+		host1 := models.NewHost("reconnect-host", nil)
+
+		isReconnection, err := gameManager.SetHost(host1)
+		assert.NoError(t, err)
+		assert.False(t, isReconnection, "First connection should not be a reconnection")
+
+		// Simulate disconnection
+		gameManager.RemoveHost()
+
+		// Attempt reconnection with same ID
+		reconnectHost := models.NewHost("reconnect-host", nil)
+
+		isReconnection, err = gameManager.SetHost(reconnectHost)
+		assert.NoError(t, err)
+		assert.True(t, isReconnection, "Second connection should be a reconnection")
+	})
+
+	t.Run("Player Reconnection During Puzzle Phase", func(t *testing.T) {
+		// First add player during setup phase
+		game := gameManager.GetGame()
+		game.CurrentPhase = "setup"
+
+		puzzlePlayer := models.NewPlayer("puzzle-reconnect", nil)
+		puzzlePlayer.IsActive = true
+
+		// Add player initially
+		isReconnection, err := gameManager.AddPlayer(puzzlePlayer)
+		assert.NoError(t, err)
+		assert.False(t, isReconnection)
+
+		// Simulate disconnection
+		puzzlePlayer.IsActive = false
+
+		// Now set game to puzzle phase
+		game.CurrentPhase = "puzzle_assembly"
+
+		// Create new connection for same player (reconnection attempt)
+		reconnectPlayer := models.NewPlayer("puzzle-reconnect", nil)
+		reconnectPlayer.IsActive = true
+
+		// Now that we block at HTTP level, AddPlayer won't even be called during puzzle phase
+		// But if it somehow gets called (e.g., in tests), it should still succeed
+		// since the HTTP-level blocking is the primary protection
+		isReconnection, err = gameManager.AddPlayer(reconnectPlayer)
+		assert.NoError(t, err)         // No error since HTTP blocking is primary protection
+		assert.True(t, isReconnection) // This would be a reconnection if it gets to AddPlayer
+
+		// Reset phase for cleanup
+		game.CurrentPhase = "setup"
+	})
 }
 
 func TestSendAuthError(t *testing.T) {

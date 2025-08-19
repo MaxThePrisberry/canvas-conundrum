@@ -73,16 +73,16 @@ func TestGameManagerPlayerManagement(t *testing.T) {
 		player2 := models.NewPlayer("player2", nil)
 		player2.IsActive = true // Mark as active for testing
 
-		err := gm.AddPlayer(player1)
+		_, err := gm.AddPlayer(player1)
 		assert.NoError(t, err)
 		assert.Equal(t, 1, gm.GetPlayerCount())
 
-		err = gm.AddPlayer(player2)
+		_, err = gm.AddPlayer(player2)
 		assert.NoError(t, err)
 		assert.Equal(t, 2, gm.GetPlayerCount())
 
 		// Try adding duplicate
-		err = gm.AddPlayer(player1)
+		_, err = gm.AddPlayer(player1)
 		assert.NoError(t, err) // AddPlayer doesn't check for duplicates
 		assert.Equal(t, 2, gm.GetPlayerCount())
 	})
@@ -121,7 +121,7 @@ func TestGameManagerPlayerManagement(t *testing.T) {
 		reconnectPlayer := models.NewPlayer("player1", nil)
 		reconnectPlayer.IsActive = true
 
-		err := gm.AddPlayer(reconnectPlayer)
+		_, err := gm.AddPlayer(reconnectPlayer)
 		assert.NoError(t, err)
 
 		// Player should be active again
@@ -143,7 +143,7 @@ func TestGameManagerHostManagement(t *testing.T) {
 
 	t.Run("SetHost", func(t *testing.T) {
 		host := models.NewHost("host1", nil)
-		err := gm.SetHost(host)
+		_, err := gm.SetHost(host)
 		assert.NoError(t, err)
 
 		retrievedHost := gm.GetHost()
@@ -153,7 +153,7 @@ func TestGameManagerHostManagement(t *testing.T) {
 		// Try setting another host when one exists (but with nil connection)
 		// This should succeed since the current host has no connection
 		host2 := models.NewHost("host2", nil)
-		err = gm.SetHost(host2)
+		_, err = gm.SetHost(host2)
 		assert.NoError(t, err)
 		assert.Equal(t, "host2", gm.GetHost().ID)
 	})
@@ -168,13 +168,13 @@ func TestGameManagerHostManagement(t *testing.T) {
 
 		// Host can reconnect with same ID
 		reconnectHost := models.NewHost("host2", nil)
-		err := gm.SetHost(reconnectHost)
+		_, err := gm.SetHost(reconnectHost)
 		assert.NoError(t, err)
 		assert.Equal(t, "host2", gm.GetHost().ID)
 
 		// Different host can also connect since current one has nil connection
 		host3 := models.NewHost("host3", nil)
-		err = gm.SetHost(host3)
+		_, err = gm.SetHost(host3)
 		assert.NoError(t, err)
 		assert.Equal(t, "host3", gm.GetHost().ID)
 	})
@@ -200,12 +200,12 @@ func TestGameManagerGameFlow(t *testing.T) {
 		player.Role = models.Role("role")
 		player.IsReady = true
 		player.IsActive = true // Mark as active for testing
-		gm.AddPlayer(player)
+		_, _ = gm.AddPlayer(player)
 	}
 
 	// Add host for game to start
 	host := models.NewHost("test-host", &websocket.Conn{})
-	gm.SetHost(host)
+	_, _ = gm.SetHost(host)
 
 	t.Run("StartGame", func(t *testing.T) {
 		// Set difficulty before starting
@@ -309,7 +309,7 @@ func TestGameManagerRoleDistribution(t *testing.T) {
 	for i, role := range roles {
 		player := models.NewPlayer(string(rune('a'+i)), nil)
 		player.Role = role
-		gm.AddPlayer(player)
+		_, _ = gm.AddPlayer(player)
 	}
 
 	dist := gm.GetRoleDistribution()
@@ -378,13 +378,13 @@ func TestGameManagerValidations(t *testing.T) {
 		// Add maximum players
 		for i := 0; i < constants.MaxPlayers; i++ {
 			player := models.NewPlayer(string(rune(i)), nil)
-			err := gm.AddPlayer(player)
+			_, err := gm.AddPlayer(player)
 			require.NoError(t, err)
 		}
 
 		// Try to add one more
 		extraPlayer := models.NewPlayer("extra", nil)
-		err := gm.AddPlayer(extraPlayer)
+		_, err := gm.AddPlayer(extraPlayer)
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "maximum")
 	})
@@ -400,7 +400,7 @@ func TestGameManagerValidations(t *testing.T) {
 			player := models.NewPlayer(string(rune(i)), nil)
 			player.IsReady = true
 			player.IsActive = true // Mark as active for test
-			gm.AddPlayer(player)
+			_, _ = gm.AddPlayer(player)
 		}
 
 		gm.GetGame().SetDifficulty(models.DifficultyMedium)
@@ -408,7 +408,7 @@ func TestGameManagerValidations(t *testing.T) {
 		// Need a host to start
 		host := models.NewHost("test-host", nil)
 		host.Connection = &websocket.Conn{} // Non-nil connection
-		gm.SetHost(host)
+		_, _ = gm.SetHost(host)
 
 		err := gm.StartGame()
 		assert.Error(t, err)
@@ -418,7 +418,7 @@ func TestGameManagerValidations(t *testing.T) {
 		player := models.NewPlayer("last", nil)
 		player.IsReady = true
 		player.IsActive = true // Mark as active for test
-		gm.AddPlayer(player)
+		_, _ = gm.AddPlayer(player)
 
 		err = gm.StartGame()
 		assert.NoError(t, err)
@@ -442,7 +442,7 @@ func TestGameManagerConcurrency(t *testing.T) {
 			defer wg.Done()
 			player := models.NewPlayer(string(rune('a'+index)), nil)
 			player.IsActive = true // Mark as active for testing
-			errors[index] = gm.AddPlayer(player)
+			_, errors[index] = gm.AddPlayer(player)
 		}(i)
 	}
 
@@ -465,7 +465,7 @@ func TestGameManagerPlayerConfiguration(t *testing.T) {
 
 	// Add a player
 	player := models.NewPlayer("player1", nil)
-	gm.AddPlayer(player)
+	_, _ = gm.AddPlayer(player)
 
 	t.Run("UpdateValidPlayerConfiguration", func(t *testing.T) {
 		err := gm.UpdatePlayerConfiguration("player1", "Updated Player", models.RoleArtEnthusiast, []string{"science"})
@@ -498,13 +498,13 @@ func TestGameManagerIsHostConnected(t *testing.T) {
 
 	t.Run("HostWithoutConnection", func(t *testing.T) {
 		host := models.NewHost("host1", nil)
-		gm.SetHost(host)
+		_, _ = gm.SetHost(host)
 		assert.False(t, gm.IsHostConnected())
 	})
 
 	t.Run("HostWithConnection", func(t *testing.T) {
 		host := models.NewHost("host2", &websocket.Conn{})
-		gm.SetHost(host)
+		_, _ = gm.SetHost(host)
 		assert.True(t, gm.IsHostConnected())
 	})
 }
@@ -522,7 +522,7 @@ func TestGameManagerCanStartGame(t *testing.T) {
 			player := models.NewPlayer(string(rune('a'+i)), nil)
 			player.IsReady = true
 			player.IsActive = true
-			gm.AddPlayer(player)
+			_, _ = gm.AddPlayer(player)
 		}
 
 		assert.False(t, gm.CanStartGame())
@@ -536,14 +536,14 @@ func TestGameManagerCanStartGame(t *testing.T) {
 
 		// Add host
 		host := models.NewHost("host", &websocket.Conn{})
-		gm.SetHost(host)
+		_, _ = gm.SetHost(host)
 
 		// Add fewer than minimum players
 		for i := 0; i < constants.MinPlayers-1; i++ {
 			player := models.NewPlayer(string(rune('a'+i)), nil)
 			player.IsReady = true
 			player.IsActive = true
-			gm.AddPlayer(player)
+			_, _ = gm.AddPlayer(player)
 		}
 
 		assert.False(t, gm.CanStartGame())
@@ -554,7 +554,7 @@ func TestGameManagerCanStartGame(t *testing.T) {
 		player := models.NewPlayer("last", nil)
 		player.IsReady = true
 		player.IsActive = true
-		gm.AddPlayer(player)
+		_, _ = gm.AddPlayer(player)
 
 		assert.True(t, gm.CanStartGame())
 	})
@@ -586,7 +586,7 @@ func TestGameManagerCompleteSegment(t *testing.T) {
 		StartTime:       time.Now().Add(-10 * time.Second),
 		IsCompleted:     false,
 	}
-	gm.AddPlayer(player)
+	_, _ = gm.AddPlayer(player)
 
 	t.Run("CompleteValidSegment", func(t *testing.T) {
 		// Initialize puzzle grid for the game
@@ -630,7 +630,7 @@ func TestGameManagerMoveFragment(t *testing.T) {
 		// Add a player
 		player := models.NewPlayer("player1", nil)
 		player.IsActive = true
-		gm.AddPlayer(player)
+		_, _ = gm.AddPlayer(player)
 
 		// Game is not in puzzle assembly phase
 		game := gm.GetGame()
@@ -654,7 +654,7 @@ func TestGameManagerMoveFragment(t *testing.T) {
 		player := models.NewPlayer("player1", nil)
 		player.IsActive = true
 		player.LastMoveTime = time.Now().Add(-time.Hour) // Set last move far in the past
-		gm.AddPlayer(player)
+		_, _ = gm.AddPlayer(player)
 
 		// Set game to puzzle assembly phase
 		game := gm.GetGame()
@@ -680,10 +680,10 @@ func TestGameManagerCleanup(t *testing.T) {
 
 	// Add some test data
 	player := models.NewPlayer("player1", nil)
-	gm.AddPlayer(player)
+	_, _ = gm.AddPlayer(player)
 
 	host := models.NewHost("host1", nil)
-	gm.SetHost(host)
+	_, _ = gm.SetHost(host)
 
 	t.Run("CleanupResources", func(t *testing.T) {
 		// This should not panic
@@ -739,12 +739,12 @@ func TestGameManagerRosterBroadcasting(t *testing.T) {
 
 		// Set up host with connection
 		host := models.NewHost("test-host", &websocket.Conn{})
-		gm.SetHost(host)
+		_, _ = gm.SetHost(host)
 
 		// Add a player - should not crash and should call broadcast logic
 		player := models.NewPlayer("player1", nil)
 		player.IsActive = true
-		err := gm.AddPlayer(player)
+		_, err := gm.AddPlayer(player)
 
 		assert.NoError(t, err)
 		assert.Equal(t, 1, gm.GetPlayerCount())
@@ -762,7 +762,7 @@ func TestGameManagerRosterBroadcasting(t *testing.T) {
 		// Add a player - should work without broadcasting
 		player := models.NewPlayer("player1", nil)
 		player.IsActive = true
-		err := gm.AddPlayer(player)
+		_, err := gm.AddPlayer(player)
 
 		assert.NoError(t, err)
 		assert.Equal(t, 1, gm.GetPlayerCount())
@@ -776,12 +776,12 @@ func TestGameManagerRosterBroadcasting(t *testing.T) {
 
 		// Set up host but no broadcast service
 		host := models.NewHost("test-host", &websocket.Conn{})
-		gm.SetHost(host)
+		_, _ = gm.SetHost(host)
 
 		// Add a player - should not crash without broadcast service
 		player := models.NewPlayer("player1", nil)
 		player.IsActive = true
-		err := gm.AddPlayer(player)
+		_, err := gm.AddPlayer(player)
 
 		assert.NoError(t, err)
 		assert.Equal(t, 1, gm.GetPlayerCount())
@@ -798,12 +798,12 @@ func TestGameManagerRosterBroadcasting(t *testing.T) {
 
 		// Set up host without connection
 		host := models.NewHost("test-host", nil)
-		gm.SetHost(host)
+		_, _ = gm.SetHost(host)
 
 		// Add a player - should work but not broadcast
 		player := models.NewPlayer("player1", nil)
 		player.IsActive = true
-		err := gm.AddPlayer(player)
+		_, err := gm.AddPlayer(player)
 
 		assert.NoError(t, err)
 		assert.Equal(t, 1, gm.GetPlayerCount())
@@ -820,12 +820,12 @@ func TestGameManagerRosterBroadcasting(t *testing.T) {
 
 		// Set up host with connection
 		host := models.NewHost("test-host", &websocket.Conn{})
-		gm.SetHost(host)
+		_, _ = gm.SetHost(host)
 
 		// Add a player first time
 		player := models.NewPlayer("player1", nil)
 		player.IsActive = true
-		err := gm.AddPlayer(player)
+		_, err := gm.AddPlayer(player)
 		assert.NoError(t, err)
 		assert.Equal(t, 1, gm.GetPlayerCount())
 
@@ -836,7 +836,7 @@ func TestGameManagerRosterBroadcasting(t *testing.T) {
 		// Reconnect the same player
 		reconnectPlayer := models.NewPlayer("player1", nil)
 		reconnectPlayer.IsActive = true
-		err = gm.AddPlayer(reconnectPlayer)
+		_, err = gm.AddPlayer(reconnectPlayer)
 
 		assert.NoError(t, err)
 		assert.Equal(t, 1, gm.GetPlayerCount())
@@ -858,12 +858,12 @@ func TestGameManagerRosterBroadcasting(t *testing.T) {
 
 		// Set up host with connection
 		host := models.NewHost("test-host", &websocket.Conn{})
-		gm.SetHost(host)
+		_, _ = gm.SetHost(host)
 
 		// Add a player first
 		player := models.NewPlayer("player1", nil)
 		player.IsActive = true
-		gm.AddPlayer(player)
+		_, _ = gm.AddPlayer(player)
 		assert.Equal(t, 1, gm.GetPlayerCount())
 
 		// Remove player (game is in setup phase by default)
@@ -887,12 +887,12 @@ func TestGameManagerRosterBroadcasting(t *testing.T) {
 
 		// Set up host with connection
 		host := models.NewHost("test-host", &websocket.Conn{})
-		gm.SetHost(host)
+		_, _ = gm.SetHost(host)
 
 		// Add a player first
 		player := models.NewPlayer("player1", nil)
 		player.IsActive = true
-		gm.AddPlayer(player)
+		_, _ = gm.AddPlayer(player)
 
 		// Change game phase to resource gathering
 		game := gm.GetGame()
@@ -920,7 +920,7 @@ func TestGameManagerRosterBroadcasting(t *testing.T) {
 		// Add a player first
 		player := models.NewPlayer("player1", nil)
 		player.IsActive = true
-		gm.AddPlayer(player)
+		_, _ = gm.AddPlayer(player)
 
 		// Remove player
 		gm.RemovePlayer("player1")
@@ -940,12 +940,12 @@ func TestGameManagerRosterBroadcasting(t *testing.T) {
 
 		// Set up host but no broadcast service
 		host := models.NewHost("test-host", &websocket.Conn{})
-		gm.SetHost(host)
+		_, _ = gm.SetHost(host)
 
 		// Add a player first
 		player := models.NewPlayer("player1", nil)
 		player.IsActive = true
-		gm.AddPlayer(player)
+		_, _ = gm.AddPlayer(player)
 
 		// Remove player - should not crash without broadcast service
 		gm.RemovePlayer("player1")
@@ -968,13 +968,13 @@ func TestGameManagerRosterBroadcasting(t *testing.T) {
 
 		// Set up host with connection
 		host := models.NewHost("test-host", &websocket.Conn{})
-		gm.SetHost(host)
+		_, _ = gm.SetHost(host)
 
 		// Add multiple players
 		for i := 0; i < 3; i++ {
 			player := models.NewPlayer(string(rune('a'+i)), nil)
 			player.IsActive = true
-			err := gm.AddPlayer(player)
+			_, err := gm.AddPlayer(player)
 			assert.NoError(t, err)
 		}
 
@@ -990,7 +990,7 @@ func TestGameManagerRosterBroadcasting(t *testing.T) {
 		// Reconnect removed player
 		reconnectPlayer := models.NewPlayer("a", nil)
 		reconnectPlayer.IsActive = true
-		err := gm.AddPlayer(reconnectPlayer)
+		_, err := gm.AddPlayer(reconnectPlayer)
 		assert.NoError(t, err)
 
 		// Should have 3 active players again
@@ -1006,7 +1006,7 @@ func TestGameManagerRosterBroadcasting(t *testing.T) {
 		// Test condition: no broadcast service
 		player1 := models.NewPlayer("player1", nil)
 		player1.IsActive = true
-		err := gm.AddPlayer(player1)
+		_, err := gm.AddPlayer(player1)
 		assert.NoError(t, err) // Should not crash
 
 		// Add broadcast service
@@ -1015,16 +1015,16 @@ func TestGameManagerRosterBroadcasting(t *testing.T) {
 		// Test condition: no host
 		player2 := models.NewPlayer("player2", nil)
 		player2.IsActive = true
-		err = gm.AddPlayer(player2)
+		_, err = gm.AddPlayer(player2)
 		assert.NoError(t, err) // Should not crash
 
 		// Add host without connection
 		host := models.NewHost("test-host", nil)
-		gm.SetHost(host)
+		_, _ = gm.SetHost(host)
 
 		player3 := models.NewPlayer("player3", nil)
 		player3.IsActive = true
-		err = gm.AddPlayer(player3)
+		_, err = gm.AddPlayer(player3)
 		assert.NoError(t, err) // Should not crash
 
 		// Add connection to host
@@ -1032,7 +1032,7 @@ func TestGameManagerRosterBroadcasting(t *testing.T) {
 
 		player4 := models.NewPlayer("player4", nil)
 		player4.IsActive = true
-		err = gm.AddPlayer(player4)
+		_, err = gm.AddPlayer(player4)
 		assert.NoError(t, err) // Should work and broadcast
 
 		// Verify all players were added correctly
@@ -1060,7 +1060,7 @@ func TestGameManagerRoleAvailabilityHelpers(t *testing.T) {
 			player := models.NewPlayer(fmt.Sprintf("player%d", i+1), nil)
 			player.IsActive = true
 			players[i] = player
-			gm.AddPlayer(player)
+			_, _ = gm.AddPlayer(player)
 		}
 
 		// With 4 players, max per role is (4+3)/4 = 1
@@ -1095,14 +1095,14 @@ func TestGameManagerRoleAvailabilityHelpers(t *testing.T) {
 			player := models.NewPlayer(fmt.Sprintf("active%d", i+1), nil)
 			player.IsActive = true
 			player.Role = models.RoleArtEnthusiast
-			gm.AddPlayer(player)
+			_, _ = gm.AddPlayer(player)
 		}
 
 		for i := 0; i < 2; i++ {
 			player := models.NewPlayer(fmt.Sprintf("inactive%d", i+1), nil)
 			player.IsActive = false
 			player.Role = models.RoleDetective
-			gm.AddPlayer(player)
+			_, _ = gm.AddPlayer(player)
 		}
 
 		// Total players = 6, but inactive players still count for capacity
@@ -1170,7 +1170,7 @@ func TestGameManagerRoleAvailabilityBroadcasting(t *testing.T) {
 		// Add host to enable broadcasting
 		host := test_helpers.CreateTestHost("test-host")
 		host.Connection = &websocket.Conn{} // Set non-nil connection for broadcasting check
-		gm.SetHost(host)
+		_, _ = gm.SetHost(host)
 
 		// Add first 4 players and have them select roles to fill capacity of 1
 		players := make([]*models.Player, 4)
@@ -1179,7 +1179,7 @@ func TestGameManagerRoleAvailabilityBroadcasting(t *testing.T) {
 			player.IsActive = true
 			player.Send = make(chan []byte, 100) // Add send channel for broadcasting
 			players[i] = player
-			gm.AddPlayer(player)
+			_, _ = gm.AddPlayer(player)
 
 			// Clear lobby status messages
 			select {
@@ -1204,7 +1204,7 @@ func TestGameManagerRoleAvailabilityBroadcasting(t *testing.T) {
 		player5 := models.NewPlayer("player5", nil)
 		player5.IsActive = true
 		player5.Send = make(chan []byte, 100) // Add send channel for broadcasting
-		err := gm.AddPlayer(player5)
+		_, err := gm.AddPlayer(player5)
 		assert.NoError(t, err)
 
 		// Should broadcast role availability to all players since roles that were full (1/1) are now available (1/2)
@@ -1243,7 +1243,7 @@ func TestGameManagerRoleAvailabilityBroadcasting(t *testing.T) {
 			player := models.NewPlayer(fmt.Sprintf("player%d", i+1), nil)
 			player.IsActive = true
 			players[i] = player
-			gm.AddPlayer(player)
+			_, _ = gm.AddPlayer(player)
 			// Clear the join broadcast message
 			select {
 			case <-player.Send:
@@ -1303,7 +1303,7 @@ func TestGameManagerRoleAvailabilityBroadcasting(t *testing.T) {
 		// Add host to enable broadcasting
 		host := test_helpers.CreateTestHost("test-host")
 		host.Connection = &websocket.Conn{} // Set non-nil connection for broadcasting check
-		gm.SetHost(host)
+		_, _ = gm.SetHost(host)
 
 		// Add 5 players (capacity = 2) and configure 2 players with art_enthusiast to fill capacity
 		players := make([]*models.Player, 5)
@@ -1312,7 +1312,7 @@ func TestGameManagerRoleAvailabilityBroadcasting(t *testing.T) {
 			player.IsActive = true
 			player.Send = make(chan []byte, 100) // Add send channel for broadcasting
 			players[i] = player
-			gm.AddPlayer(player)
+			_, _ = gm.AddPlayer(player)
 
 			// Clear any existing messages
 			select {

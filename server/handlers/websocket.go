@@ -25,6 +25,17 @@ var upgrader = websocket.Upgrader{
 
 // HandlePlayerWebSocket handles player WebSocket connections
 func HandlePlayerWebSocket(w http.ResponseWriter, r *http.Request) {
+	// Block ALL player connections during puzzle phase before WebSocket upgrade
+	gameManager := services.GetGameInstance()
+	game := gameManager.GetGame()
+
+	if game.CurrentPhase == "puzzle_assembly" {
+		// Return HTTP 403 for any player connection during puzzle phase
+		// No distinction between new players and reconnecting players
+		http.Error(w, "Player connections not allowed during puzzle assembly phase", http.StatusForbidden)
+		return
+	}
+
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		log.Printf("Failed to upgrade player connection: %v", err)
@@ -32,22 +43,41 @@ func HandlePlayerWebSocket(w http.ResponseWriter, r *http.Request) {
 	}
 	defer conn.Close()
 
-	// Generate player ID
-	playerID := utils.GeneratePlayerID()
+	// Check for reconnection token in query parameters
+	var playerID string
+	token := r.URL.Query().Get("token")
+	if token != "" {
+		// Validate token format (should be UUID)
+		if utils.IsValidUUID(token) {
+			playerID = token
+		} else {
+			log.Printf("Invalid token format provided: %s", token)
+			sendConnectionError(conn, "Invalid token format")
+			return
+		}
+	} else {
+		// Generate new player ID for new connections
+		playerID = utils.GeneratePlayerID()
+	}
 
 	// Create player instance
 	player := models.NewPlayer(playerID, conn)
 
 	// Add player to game
-	gameManager := services.GetGameInstance()
-	if err := gameManager.AddPlayer(player); err != nil {
+	isReconnection, err := gameManager.AddPlayer(player)
+	if err != nil {
 		log.Printf("Failed to add player: %v", err)
 		sendConnectionError(conn, err.Error())
 		return
 	}
 
 	// Send initial roles available message
-	sendRolesAvailable(player)
+	sendRolesAvailable(player, isReconnection)
+
+	// Send phase-specific restoration events if this is a reconnection
+	if isReconnection {
+		sendPlayerPhaseRestoration(player)
+	}
 
 	// Start connection handlers
 	go handlePlayerWrite(player)
@@ -86,14 +116,20 @@ func HandleHostWebSocket(w http.ResponseWriter, r *http.Request) {
 
 	// Set host in game manager
 	gameManager := services.GetGameInstance()
-	if err := gameManager.SetHost(host); err != nil {
+	isReconnection, err := gameManager.SetHost(host)
+	if err != nil {
 		log.Printf("Failed to set host: %v", err)
 		sendConnectionError(conn, err.Error())
 		return
 	}
 
 	// Send connection confirmed message
-	sendHostConnectionConfirmed(host)
+	sendHostConnectionConfirmed(host, isReconnection)
+
+	// Send phase-specific restoration events if this is a reconnection
+	if isReconnection {
+		sendHostPhaseRestoration(host)
+	}
 
 	// Start connection handlers
 	go handleHostWrite(host)
@@ -294,13 +330,15 @@ func sendConnectionError(conn *websocket.Conn, errorMsg string) {
 }
 
 // sendHostConnectionConfirmed sends connection confirmation to the host
-func sendHostConnectionConfirmed(host *models.Host) {
+func sendHostConnectionConfirmed(host *models.Host, isReconnection bool) {
 	gameManager := services.GetGameInstance()
 	game := gameManager.GetGame()
 
 	payload := map[string]interface{}{
-		"playerId": host.ID,
-		"message":  "Connected as game host",
+		"playerId":       host.ID,
+		"message":        "Connected as game host",
+		"currentPhase":   string(game.CurrentPhase),
+		"isReconnection": isReconnection,
 		"gameConfig": map[string]interface{}{
 			"minPlayers":                     constants.MinPlayers,
 			"maxPlayers":                     constants.MaxPlayers,
@@ -308,6 +346,11 @@ func sendHostConnectionConfirmed(host *models.Host) {
 			"resourceGatheringRoundDuration": constants.ResourceGatheringRoundDuration,
 			"puzzleBaseTime":                 constants.PuzzleBaseTime,
 			"difficultyMode":                 string(game.Difficulty),
+		},
+		"gameState": map[string]interface{}{
+			"totalPlayers": gameManager.GetPlayerCount(),
+			"readyPlayers": countReadyPlayers(gameManager),
+			"gameStarted":  game.CurrentPhase != "setup",
 		},
 	}
 
@@ -323,8 +366,9 @@ func sendHostConnectionConfirmed(host *models.Host) {
 }
 
 // sendRolesAvailable sends available roles to a new player
-func sendRolesAvailable(player *models.Player) {
+func sendRolesAvailable(player *models.Player, isReconnection bool) {
 	gameManager := services.GetGameInstance()
+	game := gameManager.GetGame()
 	roleDistribution := gameManager.GetRoleDistribution()
 
 	// Check role availability
@@ -368,19 +412,225 @@ func sendRolesAvailable(player *models.Player) {
 		},
 	}
 
+	// Get existing configuration for reconnecting players
+	var existingConfiguration interface{}
+	if isReconnection {
+		// Get player's current role and specialty
+		if player.Role != "" && len(player.Specialties) > 0 {
+			existingConfiguration = map[string]interface{}{
+				"selectedRole":        string(player.Role),
+				"selectedSpecialties": player.Specialties,
+				"playerName":          player.Name,
+			}
+		}
+	}
+
 	payload := map[string]interface{}{
-		"playerId": player.ID,
-		"roles":    roles,
+		"playerId":              player.ID,
+		"currentPhase":          string(game.CurrentPhase),
+		"isReconnection":        isReconnection,
+		"existingConfiguration": existingConfiguration,
+		"roles":                 roles,
 		"triviaCategories": []string{
 			"general", "geography", "history", "music", "science", "video_games",
 		},
 		"maxSpecialties": constants.MaxSpecialtiesPerPlayer,
+		"gameState": map[string]interface{}{
+			"totalPlayers": gameManager.GetPlayerCount(),
+			"readyPlayers": countReadyPlayers(gameManager),
+			"gameStarted":  game.CurrentPhase != "setup",
+		},
 	}
 
 	broadcastService := services.GetGameInstance().GetBroadcastService()
 	if broadcastService != nil {
 		broadcastService.SendToPlayer(player, constants.EventSetupToPlayerRolesAvailable, payload)
 	}
+}
+
+// sendPlayerPhaseRestoration sends phase-specific restoration events to reconnecting player
+func sendPlayerPhaseRestoration(player *models.Player) {
+	gameManager := services.GetGameInstance()
+	broadcastService := gameManager.GetBroadcastService()
+	game := gameManager.GetGame()
+
+	if broadcastService == nil {
+		return
+	}
+
+	switch game.CurrentPhase {
+	case "setup":
+		// If player was already configured and ready, mark them as ready again
+		if player.Role != "" && len(player.Specialties) > 0 && player.Name != "" {
+			player.IsReady = true
+			// Broadcast updated lobby status
+			broadcastService.BroadcastLobbyStatus()
+		}
+
+	case "resource_gathering":
+		// Send RESOURCE_TO_CLIENT_PHASE_START to player using existing infrastructure
+		resourcePayload := map[string]interface{}{
+			"currentRound":    game.CurrentRound,
+			"totalRounds":     constants.ResourceGatheringRounds,
+			"roundDuration":   constants.ResourceGatheringRoundDuration,
+			"playerStation":   player.CurrentStation,
+			"tokenMultiplier": constants.RoleResourceMultiplier,
+		}
+		broadcastService.SendToPlayer(player, constants.EventResourceToClientPhaseStart, resourcePayload)
+
+		// Send RESOURCE_TO_CLIENT_TEAM_PROGRESS using existing getTeamProgressPayload
+		broadcastService.SendToPlayer(player, constants.EventResourceToClientTeamProgress, getTeamProgressPayload())
+
+		// If there's an active trivia question for the current round, send it to the reconnecting player
+		triviaService := gameManager.GetTriviaService()
+		if triviaService != nil {
+			sendCurrentTriviaQuestionIfActive(player, triviaService, broadcastService)
+		}
+
+	case "analytics":
+		// Get analytics from the analytics service
+		analyticsService := gameManager.GetAnalyticsService()
+		if analyticsService != nil {
+			analytics := analyticsService.GetFullAnalytics()
+			if analytics != nil {
+				// Send personal report using existing analytics data
+				if playerAnalytics, exists := analytics.PlayerAnalytics[player.ID]; exists {
+					broadcastService.SendToPlayer(player, constants.EventAnalyticsToPlayerPersonalReport, playerAnalytics)
+				}
+
+				// Send team summary using existing analytics data
+				teamSummary := map[string]interface{}{
+					"gameSuccess":      analytics.TeamAnalytics.GameSuccess,
+					"totalPlayers":     analytics.TeamAnalytics.TotalPlayers,
+					"totalScore":       analytics.TeamAnalytics.TotalScore,
+					"gameTime":         analytics.TeamAnalytics.GameTime,
+					"overallAccuracy":  analytics.TeamAnalytics.OverallAccuracy,
+					"completionTime":   analytics.TeamAnalytics.PuzzleCompletionTime,
+					"teamAchievements": analytics.TeamAnalytics.TeamAchievements,
+					"fastestAnswerer":  analytics.TeamAnalytics.FastestAnswerer,
+					"mostTokens":       analytics.TeamAnalytics.MostTokens,
+					"bestCollaborator": analytics.TeamAnalytics.BestCollaborator,
+					"puzzleMVP":        analytics.TeamAnalytics.PuzzleMVP,
+					"recommendations":  analytics.RecommendationsForImprovement,
+				}
+				broadcastService.SendToPlayer(player, constants.EventAnalyticsToClientTeamSummary, teamSummary)
+			}
+		}
+
+	default:
+		// Puzzle phase should already be blocked, but just in case
+		log.Printf("Player %s attempted reconnection during unsupported phase: %s", player.ID, game.CurrentPhase)
+	}
+}
+
+// sendHostPhaseRestoration sends phase-specific restoration events to reconnecting host
+func sendHostPhaseRestoration(host *models.Host) {
+	gameManager := services.GetGameInstance()
+	broadcastService := gameManager.GetBroadcastService()
+	game := gameManager.GetGame()
+
+	if broadcastService == nil {
+		return
+	}
+
+	switch game.CurrentPhase {
+	case "setup":
+		// Send current player roster
+		broadcastService.BroadcastLobbyStatus()
+
+	case "resource_gathering":
+		// Send RESOURCE_TO_HOST_PHASE_START using existing resource phase infrastructure
+		hostResourcePayload := map[string]interface{}{
+			"currentRound":  game.CurrentRound,
+			"totalRounds":   constants.ResourceGatheringRounds,
+			"roundDuration": constants.ResourceGatheringRoundDuration,
+			"gamePhase":     string(game.CurrentPhase),
+		}
+		broadcastService.SendToHost(host, constants.EventResourceToHostPhaseStart, hostResourcePayload)
+
+		// Round analytics are sent by the existing round management system
+		// No need to send placeholder analytics during reconnection
+
+	case "puzzle_assembly":
+		// Send PUZZLE_TO_HOST_PHASE_LOAD using existing puzzle infrastructure
+		phaseLoadPayload := map[string]interface{}{
+			"puzzleImageUrl": "/api/puzzle/image",
+			"gridSize":       game.GetGridSize(),
+			"totalFragments": game.GetGridSize() * game.GetGridSize(),
+			"timeLimit":      constants.PuzzleBaseTime,
+		}
+		broadcastService.SendToHost(host, constants.EventPuzzleToHostPhaseLoad, phaseLoadPayload)
+
+		// Send current grid state using existing infrastructure
+		if game.PuzzleGrid != nil {
+			// Use the existing broadcastGridState functionality but send only to host
+			fragments := []map[string]interface{}{}
+			for _, fragment := range game.PuzzleGrid.Fragments {
+				fragments = append(fragments, map[string]interface{}{
+					"fragmentId":      fragment.ID,
+					"segmentId":       fragment.SegmentID,
+					"playerId":        fragment.PlayerID,
+					"position":        fragment.Position,
+					"correctPosition": fragment.CorrectPosition,
+					"visible":         fragment.Visible,
+					"lastMoved":       fragment.LastMoved,
+					"moveCount":       fragment.MoveCount,
+					"isCorrect":       fragment.IsCorrect(),
+				})
+			}
+
+			gridPayload := map[string]interface{}{
+				"gridSize":           game.PuzzleGrid.Size,
+				"fragments":          fragments,
+				"completedFragments": countCorrectFragments(game.PuzzleGrid),
+				"totalFragments":     len(game.PuzzleGrid.Fragments),
+				"timeRemaining":      game.GetPuzzleTimeRemaining(),
+				"updateType":         "reconnection",
+			}
+			broadcastService.SendToHost(host, constants.EventPuzzleToHostGridState, gridPayload)
+		}
+
+		// Timer events are handled by the existing timer system when active
+		// No need to send placeholder timer events during reconnection
+
+	case "analytics":
+		// Get complete analytics from analytics service
+		analyticsService := gameManager.GetAnalyticsService()
+		if analyticsService != nil {
+			analytics := analyticsService.GetFullAnalytics()
+			if analytics != nil {
+				// Send complete report using existing analytics data
+				hostReport := map[string]interface{}{
+					"gameAnalytics":    analytics,
+					"gameCompleted":    analytics.TeamAnalytics.GameSuccess,
+					"totalPlayers":     analytics.TeamAnalytics.TotalPlayers,
+					"gameTime":         analytics.TeamAnalytics.GameTime,
+					"completionTime":   analytics.TeamAnalytics.PuzzleCompletionTime,
+					"teamPerformance":  analytics.TeamAnalytics,
+					"playerStatistics": analytics.PlayerAnalytics,
+					"categoryStats":    analytics.CategoryPerformance,
+					"resourceMetrics":  analytics.ResourceGatheringMetrics,
+					"puzzleMetrics":    analytics.PuzzleAssemblyMetrics,
+					"recommendations":  analytics.RecommendationsForImprovement,
+				}
+				broadcastService.SendToHost(host, constants.EventAnalyticsToHostCompleteReport, hostReport)
+			}
+		}
+
+	default:
+		log.Printf("Host %s reconnected during unknown phase: %s", host.ID, game.CurrentPhase)
+	}
+}
+
+// countReadyPlayers counts ready players
+func countReadyPlayers(gameManager *services.GameManager) int {
+	count := 0
+	for _, player := range gameManager.GetAllPlayers() {
+		if player.IsReady && player.IsActive {
+			count++
+		}
+	}
+	return count
 }
 
 // sendAuthError sends authentication error to player
@@ -406,5 +656,56 @@ func sendHostAuthError(host *models.Host) {
 			constants.ErrorMessageInvalidToken,
 			"Authentication token mismatch",
 		)
+	}
+}
+
+// countCorrectFragments counts fragments in their correct positions
+func countCorrectFragments(grid *models.PuzzleGrid) int {
+	count := 0
+	for _, fragment := range grid.Fragments {
+		if fragment.IsCorrect() {
+			count++
+		}
+	}
+	return count
+}
+
+// sendCurrentTriviaQuestionIfActive sends current trivia question to reconnecting player if mid-round
+func sendCurrentTriviaQuestionIfActive(player *models.Player, triviaService *services.TriviaService, broadcastService *services.BroadcastService) {
+	gameManager := services.GetGameInstance()
+	game := gameManager.GetGame()
+
+	// For now, we'll generate a fresh question for the reconnecting player
+	// In a more sophisticated implementation, we would track the current active questions
+	// and send the exact same question that other players are currently answering
+
+	// Create a map with just this player to get a question
+	players := map[string]*models.Player{
+		player.ID: player,
+	}
+
+	// Get a question for the player
+	questions := triviaService.GetQuestionsForRound(players)
+	if question, exists := questions[player.ID]; exists && question != nil {
+		// Calculate remaining time for this round
+		// This is a simplified approach - in a real implementation you'd track round start time
+		timeRemaining := constants.TriviaAnswerTime
+
+		questionPayload := map[string]interface{}{
+			"questionId":     question.ID,
+			"questionText":   question.Question,
+			"category":       question.Category,
+			"difficulty":     question.Difficulty,
+			"isSpecialty":    question.IsSpecialty,
+			"specialtyBonus": question.SpecialtyBonus,
+			"timeLimit":      timeRemaining,
+			"options":        question.Options,
+			"roundNumber":    game.CurrentRound,
+			"totalRounds":    constants.ResourceGatheringRounds,
+			"answerDeadline": time.Now().Add(time.Duration(timeRemaining) * time.Second).Format(time.RFC3339),
+		}
+
+		broadcastService.SendToPlayer(player, constants.EventResourceToPlayerTriviaQuestion, questionPayload)
+		log.Printf("Sent current trivia question to reconnecting player %s", player.ID)
 	}
 }

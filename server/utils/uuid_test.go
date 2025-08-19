@@ -112,3 +112,19 @@ func TestGenerateMultipleUUIDs(t *testing.T) {
 
 	assert.Len(t, uuids, count)
 }
+
+func TestIsValidUUID(t *testing.T) {
+	// Test valid UUIDs
+	validUUID := GenerateUUID()
+	assert.True(t, IsValidUUID(validUUID))
+
+	// Test specific valid UUID format
+	assert.True(t, IsValidUUID("550e8400-e29b-41d4-a716-446655440000"))
+
+	// Test invalid UUIDs
+	assert.False(t, IsValidUUID(""))
+	assert.False(t, IsValidUUID("invalid"))
+	assert.False(t, IsValidUUID("not-a-uuid"))
+	assert.False(t, IsValidUUID("550e8400-e29b-41d4-a716"))                    // Too short
+	assert.False(t, IsValidUUID("550e8400-e29b-41d4-a716-446655440000-extra")) // Too long
+}

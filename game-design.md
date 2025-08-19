@@ -485,18 +485,43 @@ Individual Score =
 ## Advanced Features
 
 ### Reconnection System
-**Player Reconnection:**
-- Maintains game state across disconnections during setup and resource gathering
-- Restores current phase context (lobby, trivia progress)
-- Preserves analytics and progress data
-- **No reconnection permitted during puzzle assembly phase**
-- Seamless reintegration into active gameplay (when allowed)
 
-**Host Reconnection:**
-- Reconnect to same host endpoint with player ID
-- Full game state restoration for monitoring
-- Continued access to host-specific controls
-- No automatic host transfer system
+#### Authentication Requirements
+**Both host and players reconnect using their original authentication tokens:**
+- **Host**: Uses the same UUID provided at server startup
+- **Players**: Use the UUID generated when they first connected
+
+#### Player Reconnection
+**Permitted Phases:**
+- ✅ **Setup Phase**: Full reconnection with state restoration
+- ✅ **Resource Gathering Phase**: Rejoin current round with preserved progress
+- ❌ **Puzzle Assembly Phase**: Reconnection explicitly forbidden
+- ✅ **Analytics Phase**: View personal performance report
+
+**State Restoration Process:**
+1. **Authentication**: Player reconnects with original UUID token
+2. **Phase Detection**: Server identifies current game phase and includes it in connection response
+3. **Configuration Recovery**: Restore previously selected role and specialty
+4. **Context Restoration**: Receive phase-appropriate game state and progress
+5. **Ready State**: If previously ready in setup, automatically marked ready again
+
+#### Host Reconnection
+**Permitted Phases:**
+- ✅ **All Phases**: Host can reconnect during any phase
+
+**State Restoration Process:**
+1. **Authentication**: Host reconnects with original UUID
+2. **Phase Context**: Receive current phase and appropriate monitoring interface
+3. **Control Recovery**: Regain access to phase-specific host controls
+4. **State Synchronization**: Get complete game state for monitoring dashboard
+5. **Player Notification**: All players notified of host reconnection
+
+#### Technical Implementation
+- **Connection Events**: Both `SETUP_TO_HOST_CONNECTION_CONFIRMED` and `SETUP_TO_PLAYER_ROLES_AVAILABLE` include current phase and reconnection status
+- **Token Validation**: Strict authentication prevents unauthorized reconnections
+- **Phase Enforcement**: Puzzle phase reconnection block maintained for game integrity
+- **State Synchronization**: Complete context restoration ensures seamless experience
+- **Error Handling**: Clear feedback when reconnection is not permitted
 
 ### Question Management System
 **Automatic Cycling:**

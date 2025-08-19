@@ -31,13 +31,72 @@ All server-to-client messages use this format:
 
 ---
 
+## Reconnection Behavior
+
+### Host Reconnection
+When a host reconnects using the same UUID and token:
+
+1. **Connection Confirmation**: Always receives `SETUP_TO_HOST_CONNECTION_CONFIRMED` with:
+   - `isReconnection: true`
+   - `currentPhase`: Current game phase
+   - Current game state appropriate to the phase
+
+2. **Phase-Specific State Restoration Events**:
+   - **Setup Phase**:
+     - `SETUP_TO_HOST_PLAYER_ROSTER`
+   - **Resource Gathering Phase**:
+     - `RESOURCE_TO_HOST_PHASE_START`
+     - `RESOURCE_TO_HOST_ROUND_ANALYTICS` (if rounds are in progress)
+   - **Puzzle Assembly Phase**:
+     - `PUZZLE_TO_HOST_PHASE_LOAD`
+     - `PUZZLE_TO_HOST_GRID_STATE`
+     - `PUZZLE_TO_HOST_TIMER_START` (if timer is active)
+   - **Analytics Phase**:
+     - `ANALYTICS_TO_HOST_COMPLETE_REPORT`
+
+3. **Reconnection Notification**: All players receive `SYSTEM_TO_CLIENT_HOST_RECONNECTED`
+
+### Player Reconnection
+When a player reconnects using the same token:
+
+1. **Phase-Specific Behavior**:
+
+   **Setup Phase:**
+   - Receives `SETUP_TO_PLAYER_ROLES_AVAILABLE` with `isReconnection: true`
+   - If already configured, automatically marked as ready
+   - Host receives `SETUP_TO_HOST_PLAYER_ROSTER` update
+
+   **Resource Gathering Phase:**
+   - Receives `SETUP_TO_PLAYER_ROLES_AVAILABLE` with `isReconnection: true`
+   - Followed by `RESOURCE_TO_CLIENT_PHASE_START`
+   - Followed by `RESOURCE_TO_CLIENT_TEAM_PROGRESS`
+   - If mid-round, receives current `RESOURCE_TO_PLAYER_TRIVIA_QUESTION`
+
+   **Puzzle Assembly Phase:**
+   - **HTTP 403 Forbidden** returned during WebSocket upgrade for ALL player connections
+   - Connection refused at the HTTP level before WebSocket establishment
+   - No distinction between new players and reconnecting players - all blocked
+
+   **Analytics Phase:**
+   - Receives `SETUP_TO_PLAYER_ROLES_AVAILABLE` with `isReconnection: true`
+   - Followed by `ANALYTICS_TO_PLAYER_PERSONAL_REPORT`
+   - Followed by `ANALYTICS_TO_CLIENT_TEAM_SUMMARY`
+
+2. **Important Notes**:
+   - Player retains their authentication token and previous game state
+   - Host receives updated player roster showing reconnection (except during puzzle phase)
+   - All reconnection state restoration happens automatically after initial connection
+   - During puzzle assembly phase, NO player WebSocket connections are permitted regardless of reconnection status
+
+---
+
 ## Phase 0: Connection and Setup
 
 ### Initial Connection Events
 
 #### `SETUP_TO_HOST_CONNECTION_CONFIRMED`
 **Direction**: Server → Host
-**Trigger**: Host connects to `/ws/host/{uuid}`
+**Trigger**: Host connects to `/ws/host/{uuid}` (initial connection or reconnection)
 
 ```json
 {
@@ -45,6 +104,8 @@ All server-to-client messages use this format:
   "payload": {
     "playerId": "uuid-generated-by-server",
     "message": "Connected as game host",
+    "currentPhase": "setup",
+    "isReconnection": false,
     "gameConfig": {
       "minPlayers": 4,
       "maxPlayers": 64,
@@ -52,6 +113,11 @@ All server-to-client messages use this format:
       "resourceGatheringRoundDuration": 60,
       "puzzleBaseTime": 300,
       "difficultyMode": "medium"
+    },
+    "gameState": {
+      "totalPlayers": 5,
+      "readyPlayers": 3,
+      "gameStarted": false
     }
   },
   "timestamp": "2025-01-XX:XX:XX.XXXZ"
@@ -60,13 +126,16 @@ All server-to-client messages use this format:
 
 #### `SETUP_TO_PLAYER_ROLES_AVAILABLE`
 **Direction**: Server → Player
-**Trigger**: Player connects to `/ws` or when role availability changes due to more players joining
+**Trigger**: Player connects to `/ws` (initial connection or reconnection) or when role availability changes due to more players joining
 
 ```json
 {
   "event": "SETUP_TO_PLAYER_ROLES_AVAILABLE",
   "payload": {
     "playerId": "uuid-generated-by-server",
+    "currentPhase": "setup",
+    "isReconnection": false,
+    "existingConfiguration": null,
     "roles": [
       {
         "roleType": "art_enthusiast",
@@ -109,7 +178,12 @@ All server-to-client messages use this format:
       "science",
       "video_games"
     ],
-    "maxSpecialties": 1
+    "maxSpecialties": 1,
+    "gameState": {
+      "totalPlayers": 5,
+      "readyPlayers": 3,
+      "gameStarted": false
+    }
   },
   "timestamp": "2025-01-XX:XX:XX.XXXZ"
 }

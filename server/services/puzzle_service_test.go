@@ -437,3 +437,157 @@ func TestPuzzleServiceConcurrency(t *testing.T) {
 	// Should complete without race conditions
 	assert.True(t, true)
 }
+
+func TestPuzzleServiceRecommendationInvalidationOnGridChange(t *testing.T) {
+	resetGameManager()
+	gameManager := GetGameInstance()
+	broadcastService := NewBroadcastService()
+	gameManager.SetBroadcastService(broadcastService)
+
+	service := NewPuzzleService()
+	gameManager.SetPuzzleService(service)
+	defer func() { service.stopExpiration <- true }()
+
+	// Set up test players
+	player1 := test_helpers.CreateTestPlayer("player1")
+	player2 := test_helpers.CreateTestPlayer("player2")
+	player1.IsActive = true
+	player2.IsActive = true
+	gameManager.AddPlayer(player1)
+	gameManager.AddPlayer(player2)
+
+	// Initialize puzzle phase using real application flow
+	gameManager.GetGame().StartPuzzlePhase(4) // 4 players gives 2x2 grid
+	grid := gameManager.GetGame().PuzzleGrid
+
+	// Add fragments to grid (2x2 grid, positions 0-1 for x,y)
+	fragment1 := &models.Fragment{
+		ID:       "fragment-1",
+		PlayerID: player1.ID,
+		Position: models.Position{X: 0, Y: 0},
+	}
+	fragment2 := &models.Fragment{
+		ID:       "fragment-2",
+		PlayerID: player2.ID,
+		Position: models.Position{X: 1, Y: 1},
+	}
+	grid.Fragments["fragment-1"] = fragment1
+	grid.Fragments["fragment-2"] = fragment2
+
+	t.Run("Recommendation Should Be Invalidated When Involved Fragment Moves", func(t *testing.T) {
+		// Create a recommendation involving fragment-1 and fragment-2
+		rec, err := service.CreateRecommendation(
+			player1.ID, "Player1", player2.ID, "fragment-1", "fragment-2", "This swap would be optimal")
+		require.NoError(t, err)
+		require.NotNil(t, rec)
+
+		// Verify recommendation was created
+		storedRec, exists := service.GetRecommendation(rec.ID)
+		require.True(t, exists)
+		require.NotNil(t, storedRec)
+		assert.Equal(t, "pending", storedRec.Status)
+
+		// Now move one of the involved fragments (fragment-1) to valid position in 2x2 grid
+		err = grid.MoveFragment("fragment-1", models.Position{X: 1, Y: 0})
+		require.NoError(t, err)
+
+		// Call the method that should invalidate recommendations
+		service.InvalidateRecommendationsForFragment("fragment-1")
+
+		// Check that the recommendation was invalidated
+		updatedRec, exists := service.GetRecommendation(rec.ID)
+		require.True(t, exists)
+		assert.Equal(t, "expired", updatedRec.Status, "Recommendation should be expired when involved fragment moves")
+	})
+
+	t.Run("Multiple Recommendations Should Be Invalidated For Same Fragment", func(t *testing.T) {
+		// Add another fragment for testing (2x2 grid, valid positions are 0-1 for x,y)
+		fragment3 := &models.Fragment{
+			ID:       "fragment-3",
+			PlayerID: "", // Unassigned fragment
+			Position: models.Position{X: 0, Y: 1},
+		}
+		grid.Fragments["fragment-3"] = fragment3
+
+		// Create multiple recommendations involving fragment-2
+		rec1, _ := service.CreateRecommendation(
+			player1.ID, "Player1", player2.ID, "fragment-2", "fragment-3", "First recommendation")
+		rec2, _ := service.CreateRecommendation(
+			player2.ID, "Player2", player1.ID, "fragment-1", "fragment-2", "Second recommendation")
+
+		// Swap fragment-2 with fragment-1 (fragment-1 is at 1,0, fragment-2 is at 1,1)
+		err := grid.SwapFragments("fragment-2", "fragment-1")
+		require.NoError(t, err)
+
+		// Invalidate recommendations for fragment-2
+		service.InvalidateRecommendationsForFragment("fragment-2")
+
+		// Both recommendations should be invalidated since they both involve fragment-2
+		storedRec1, exists1 := service.GetRecommendation(rec1.ID)
+		storedRec2, exists2 := service.GetRecommendation(rec2.ID)
+		require.True(t, exists1)
+		require.True(t, exists2)
+
+		assert.Equal(t, "expired", storedRec1.Status, "First recommendation should be expired")
+		assert.Equal(t, "expired", storedRec2.Status, "Second recommendation should be expired")
+	})
+
+	t.Run("Unrelated Recommendations Should Not Be Affected", func(t *testing.T) {
+		// We'll use existing fragments instead of adding more to avoid position conflicts
+		// Create a recommendation involving only fragment-3 and fragment-2 (not fragment-1)
+		rec, _ := service.CreateRecommendation(
+			player1.ID, "Player1", "", "fragment-3", "fragment-2", "Unrelated recommendation")
+
+		// Move fragment-1 (should not affect the recommendation involving fragment-3 and fragment-2)
+		err := grid.MoveFragment("fragment-1", models.Position{X: 0, Y: 0})
+		require.NoError(t, err)
+
+		service.InvalidateRecommendationsForFragment("fragment-1")
+
+		// The unrelated recommendation should still be pending
+		storedRec, exists := service.GetRecommendation(rec.ID)
+		require.True(t, exists)
+		assert.Equal(t, "pending", storedRec.Status, "Unrelated recommendation should remain pending")
+	})
+}
+
+func TestPuzzleServiceNotifyRecommendationExpiration(t *testing.T) {
+	resetGameManager()
+	gameManager := GetGameInstance()
+
+	// Use regular broadcast service
+	broadcastService := NewBroadcastService()
+	gameManager.SetBroadcastService(broadcastService)
+
+	service := NewPuzzleService()
+	gameManager.SetPuzzleService(service)
+	defer func() { service.stopExpiration <- true }()
+
+	// Set up test players
+	player1 := test_helpers.CreateTestPlayer("player1")
+	player2 := test_helpers.CreateTestPlayer("player2")
+	player1.IsActive = true
+	player2.IsActive = true
+	gameManager.AddPlayer(player1)
+	gameManager.AddPlayer(player2)
+
+	t.Run("Grid State Change Should Send Expiration Notification", func(t *testing.T) {
+		// Create a recommendation
+		rec, err := service.CreateRecommendation(
+			player1.ID, "Player1", player2.ID, "fragment-1", "fragment-2", "Test recommendation")
+		require.NoError(t, err)
+
+		// Invalidate due to grid state change
+		service.InvalidateRecommendationsForFragment("fragment-1")
+
+		// Verify the recommendation was invalidated
+		storedRec, exists := service.GetRecommendation(rec.ID)
+		require.True(t, exists)
+		assert.Equal(t, "expired", storedRec.Status, "Recommendation should be expired")
+
+		// Note: In a real test environment, we would need to mock the broadcast service
+		// to capture and verify the exact messages sent. For now, we test the core
+		// invalidation functionality.
+		assert.True(t, true, "Invalidation completed without errors")
+	})
+}

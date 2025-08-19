@@ -49,6 +49,15 @@ func GetGameInstance() *GameManager {
 	return gameInstance
 }
 
+// ResetGameManagerInstance resets the singleton instance (for testing)
+func ResetGameManagerInstance() {
+	if gameInstance != nil {
+		gameInstance.Cleanup()
+	}
+	gameInstance = nil
+	once = sync.Once{}
+}
+
 // SetTriviaService sets the trivia service
 func (gm *GameManager) SetTriviaService(service *TriviaService) {
 	gm.mu.Lock()
@@ -644,18 +653,29 @@ func (gm *GameManager) StartResourceRound() {
 
 	log.Printf("Starting resource round %d/%d", gm.game.CurrentRound, constants.ResourceGatheringRounds)
 
+	// Store references for calls outside lock
+	players := gm.players
+	triviaSvc := gm.triviaSvc
+	broadcastSvc := gm.broadcastSvc
+
+	// Release lock before making external calls
+	gm.mu.Unlock()
+
 	// Deliver trivia questions
-	if gm.triviaSvc != nil && gm.broadcastSvc != nil {
-		questions := gm.triviaSvc.GetQuestionsForRound(gm.players)
-		gm.broadcastSvc.BroadcastTriviaQuestions(questions)
+	if triviaSvc != nil && broadcastSvc != nil {
+		questions := triviaSvc.GetQuestionsForRound(players)
+		broadcastSvc.BroadcastTriviaQuestions(questions)
 	}
+
+	// Reacquire lock for timer setup
+	gm.mu.Lock()
 
 	// Set timer for next round or complete phase
 	if gm.game.CurrentRound < constants.ResourceGatheringRounds {
 		gm.roundTimer = utils.NewTimer(
 			time.Duration(constants.ResourceGatheringRoundDuration)*time.Second,
 			func() {
-				gm.StartResourceRound()
+				go gm.StartResourceRound()
 			},
 		)
 		gm.roundTimer.Start()
@@ -756,7 +776,7 @@ func (gm *GameManager) StartPuzzleTimer() error {
 	gm.puzzleTimer = utils.NewTimer(
 		time.Duration(totalTime)*time.Second,
 		func() {
-			gm.PuzzleTimeout()
+			go gm.PuzzleTimeout()
 		},
 	)
 	gm.puzzleTimer.Start()
@@ -878,24 +898,36 @@ func (gm *GameManager) CompleteSegment(playerID string, segmentID string) error 
 // MoveFragment handles a fragment move request
 func (gm *GameManager) MoveFragment(playerID string, fragmentID string, targetPos models.Position) error {
 	gm.mu.Lock()
-	defer gm.mu.Unlock()
 
 	player, exists := gm.players[playerID]
 	if !exists {
+		gm.mu.Unlock()
 		return fmt.Errorf("player not found")
 	}
 
 	// Check cooldown
 	if !player.CanMoveFragment(constants.FragmentMoveCooldown) {
+		gm.mu.Unlock()
 		return fmt.Errorf("move on cooldown")
 	}
 
+	// Store references for validation outside lock
+	puzzleGrid := gm.game.PuzzleGrid
+	puzzleSvc := gm.puzzleSvc
+
+	// Release lock before validation to avoid deadlock
+	gm.mu.Unlock()
+
 	// Validate move using puzzle service
-	if gm.puzzleSvc != nil {
-		if err := gm.puzzleSvc.ValidateFragmentMove(gm.game.PuzzleGrid, playerID, fragmentID, targetPos); err != nil {
+	if puzzleSvc != nil {
+		if err := puzzleSvc.ValidateFragmentMove(puzzleGrid, playerID, fragmentID, targetPos); err != nil {
 			return err
 		}
 	}
+
+	// Reacquire lock for move execution
+	gm.mu.Lock()
+	defer gm.mu.Unlock()
 
 	// Check if position is occupied
 	targetFragment := gm.game.PuzzleGrid.GetFragmentAt(targetPos)
@@ -914,6 +946,15 @@ func (gm *GameManager) MoveFragment(playerID string, fragmentID string, targetPo
 	}
 
 	player.UpdateLastMove()
+
+	// Invalidate recommendations involving moved fragments
+	if gm.puzzleSvc != nil {
+		gm.puzzleSvc.InvalidateRecommendationsForFragment(fragmentID)
+		if targetFragment != nil {
+			// Also invalidate recommendations for the swapped fragment
+			gm.puzzleSvc.InvalidateRecommendationsForFragment(targetFragment.ID)
+		}
+	}
 
 	// Check for completion
 	if gm.game.PuzzleGrid.CheckCompletion() {
@@ -972,13 +1013,16 @@ func (gm *GameManager) PuzzleComplete(success bool) {
 
 // PuzzleTimeout handles puzzle timeout
 func (gm *GameManager) PuzzleTimeout() {
-	gm.mu.Lock()
-	defer gm.mu.Unlock()
+	// Check if already completed without holding the lock for too long
+	gm.mu.RLock()
+	completed := gm.game.PuzzleCompleted
+	gm.mu.RUnlock()
 
-	if gm.game.PuzzleCompleted {
+	if completed {
 		return
 	}
 
+	// Call PuzzleComplete which will acquire its own lock
 	gm.PuzzleComplete(false)
 }
 
@@ -990,9 +1034,11 @@ func (gm *GameManager) ResetGame() {
 	// Stop timers
 	if gm.roundTimer != nil {
 		gm.roundTimer.Stop()
+		gm.roundTimer = nil
 	}
 	if gm.puzzleTimer != nil {
 		gm.puzzleTimer.Stop()
+		gm.puzzleTimer = nil
 	}
 
 	// Reset game state

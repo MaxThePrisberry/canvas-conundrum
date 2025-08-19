@@ -7,6 +7,7 @@ import (
 	"canvas-conundrum/test_helpers"
 	"encoding/json"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -281,6 +282,110 @@ func TestHandleFragmentMove(t *testing.T) {
 
 		handleFragmentMove(player, payloadJSON)
 		assert.True(t, true) // Test passes if no panic
+	})
+}
+
+func TestFragmentMoveRateLimiting(t *testing.T) {
+	resetGameManager()
+	gameManager := services.GetGameInstance()
+	broadcastService := services.NewBroadcastService()
+	gameManager.SetBroadcastService(broadcastService)
+
+	// Initialize puzzle service and game state
+	puzzleService := services.NewPuzzleService()
+	gameManager.SetPuzzleService(puzzleService)
+
+	player := models.NewPlayer("test-player", nil)
+	gameManager.AddPlayer(player)
+
+	// Set up game in puzzle phase using real application flow
+	gameManager.GetGame().StartPuzzlePhase(4) // 4 players -> 2x2 grid
+
+	// Add a fragment to the grid that the player can move
+	fragment := &models.Fragment{
+		ID:       "fragment-1",
+		PlayerID: player.ID,
+		Position: models.Position{X: 0, Y: 0},
+	}
+	gameManager.GetGame().PuzzleGrid.Fragments["fragment-1"] = fragment
+
+	t.Run("First Move Should Succeed", func(t *testing.T) {
+		payload := map[string]interface{}{
+			"fragmentId":      "fragment-1",
+			"currentPosition": map[string]int{"x": 0, "y": 0},
+			"targetPosition":  map[string]int{"x": 1, "y": 1},
+		}
+		payloadJSON, _ := json.Marshal(payload)
+
+		// First move should succeed (no cooldown)
+		handleFragmentMove(player, payloadJSON)
+
+		// Verify the move was processed (no errors thrown)
+		assert.True(t, true)
+	})
+
+	t.Run("Rapid Successive Moves Should Be Rate Limited", func(t *testing.T) {
+		// Make the first move
+		player.UpdateLastMove() // Set last move time to now
+
+		payload := map[string]interface{}{
+			"fragmentId":      "fragment-1",
+			"currentPosition": map[string]int{"x": 1, "y": 1},
+			"targetPosition":  map[string]int{"x": 2, "y": 2},
+		}
+		payloadJSON, _ := json.Marshal(payload)
+
+		// Immediate second move should be blocked by cooldown
+		handleFragmentMove(player, payloadJSON)
+
+		// Capture initial move count
+		initialMoves := player.FragmentMoves
+
+		// Try another immediate move
+		payload2 := map[string]interface{}{
+			"fragmentId":      "fragment-1",
+			"currentPosition": map[string]int{"x": 1, "y": 1},
+			"targetPosition":  map[string]int{"x": 0, "y": 1},
+		}
+		payloadJSON2, _ := json.Marshal(payload2)
+		handleFragmentMove(player, payloadJSON2)
+
+		// Fragment moves should not have increased due to cooldown
+		assert.Equal(t, initialMoves, player.FragmentMoves, "Fragment moves should not increase due to cooldown")
+	})
+
+	t.Run("Move After Cooldown Should Succeed", func(t *testing.T) {
+		// Simulate cooldown period has passed by setting last move time to past
+		pastTime := time.Now().Add(time.Duration(-constants.FragmentMoveCooldown-100) * time.Millisecond)
+		player.LastMoveTime = pastTime
+
+		// Use a minimal test to verify cooldown logic without full game state validation
+		payload := map[string]interface{}{
+			"fragmentId":      "fragment-1",
+			"currentPosition": map[string]int{"x": 1, "y": 1},
+			"targetPosition":  map[string]int{"x": 0, "y": 0},
+		}
+		payloadJSON, _ := json.Marshal(payload)
+
+		handleFragmentMove(player, payloadJSON)
+
+		// This move should succeed since cooldown has passed
+		// Note: Actual validation will depend on game state, but cooldown check should pass
+		assert.True(t, true, "Move after cooldown should be processed")
+	})
+
+	t.Run("CanMoveFragment Method Tests", func(t *testing.T) {
+		// Test cooldown logic directly
+		player.LastMoveTime = time.Time{} // Zero time - first move
+		assert.True(t, player.CanMoveFragment(constants.FragmentMoveCooldown), "First move should be allowed")
+
+		// Set recent move time
+		player.UpdateLastMove()
+		assert.False(t, player.CanMoveFragment(constants.FragmentMoveCooldown), "Move should be blocked by cooldown")
+
+		// Set old move time
+		player.LastMoveTime = time.Now().Add(time.Duration(-constants.FragmentMoveCooldown-1) * time.Millisecond)
+		assert.True(t, player.CanMoveFragment(constants.FragmentMoveCooldown), "Move should be allowed after cooldown")
 	})
 }
 

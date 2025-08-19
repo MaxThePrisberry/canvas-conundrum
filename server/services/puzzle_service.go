@@ -327,3 +327,82 @@ func (ps *PuzzleService) ExecuteRecommendedSwap(grid *models.PuzzleGrid,
 
 	return nil
 }
+
+// InvalidateRecommendationsForFragment invalidates all pending recommendations
+// involving the specified fragment due to grid state changes
+func (ps *PuzzleService) InvalidateRecommendationsForFragment(fragmentID string) {
+	ps.mu.Lock()
+	expired := []string{}
+
+	// Find all recommendations involving this fragment
+	for id, rec := range ps.recommendations {
+		if rec.Status == "pending" &&
+			(rec.FromFragmentID == fragmentID || rec.ToFragmentID == fragmentID) {
+			rec.Status = "expired"
+			expired = append(expired, id)
+		}
+	}
+	ps.mu.Unlock()
+
+	// Send expiration notifications outside of lock
+	if len(expired) > 0 {
+		gameManager := GetGameInstance()
+		broadcastService := gameManager.GetBroadcastService()
+
+		for _, recID := range expired {
+			ps.mu.RLock()
+			rec := ps.recommendations[recID]
+			ps.mu.RUnlock()
+
+			if rec != nil && broadcastService != nil {
+				// Notify target player that recommendation expired due to grid change
+				if rec.ToPlayerID != "" {
+					targetPlayer, exists := gameManager.GetPlayer(rec.ToPlayerID)
+					if exists && targetPlayer.IsActive {
+						expiredPayload := map[string]interface{}{
+							"moveId":  rec.ID,
+							"reason":  "grid_state_changed",
+							"details": fmt.Sprintf("One or more fragments involved in recommendation have moved (fragment %s)", fragmentID),
+						}
+						broadcastService.SendToPlayer(targetPlayer,
+							constants.EventPuzzleToPlayerRecommendationExpired, expiredPayload)
+					}
+				}
+
+				// Also notify the recommender
+				fromPlayer, exists := gameManager.GetPlayer(rec.FromPlayerID)
+				if exists && fromPlayer.IsActive {
+					// Get target player name
+					targetPlayerName := ""
+					if rec.ToPlayerID != "" {
+						if targetPlayer, exists := gameManager.GetPlayer(rec.ToPlayerID); exists {
+							targetPlayerName = targetPlayer.Name
+						}
+					}
+
+					resultPayload := map[string]interface{}{
+						"moveId":           rec.ID,
+						"targetPlayerId":   rec.ToPlayerID,
+						"targetPlayerName": targetPlayerName,
+						"response":         "expired",
+						"responseReason":   "Grid state changed",
+						"executionStatus":  "failed",
+					}
+					broadcastService.SendToPlayer(fromPlayer,
+						constants.EventPuzzleToPlayerRecommendationResult, resultPayload)
+				}
+			}
+		}
+
+		log.Printf("Invalidated %d recommendations involving fragment %s due to grid state change", len(expired), fragmentID)
+	}
+}
+
+// Cleanup stops background processes and cleans up resources
+func (ps *PuzzleService) Cleanup() {
+	select {
+	case ps.stopExpiration <- true:
+	default:
+		// Channel might be full, that's OK
+	}
+}

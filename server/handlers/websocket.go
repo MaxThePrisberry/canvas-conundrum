@@ -347,11 +347,6 @@ func sendHostConnectionConfirmed(host *models.Host, isReconnection bool) {
 			"puzzleBaseTime":                 constants.PuzzleBaseTime,
 			"difficultyMode":                 string(game.Difficulty),
 		},
-		"gameState": map[string]interface{}{
-			"totalPlayers": gameManager.GetPlayerCount(),
-			"readyPlayers": countReadyPlayers(gameManager),
-			"gameStarted":  game.CurrentPhase != "setup",
-		},
 	}
 
 	broadcastService := gameManager.GetBroadcastService()
@@ -435,11 +430,6 @@ func sendRolesAvailable(player *models.Player, isReconnection bool) {
 			"general", "geography", "history", "music", "science", "video_games",
 		},
 		"maxSpecialties": constants.MaxSpecialtiesPerPlayer,
-		"gameState": map[string]interface{}{
-			"totalPlayers": gameManager.GetPlayerCount(),
-			"readyPlayers": countReadyPlayers(gameManager),
-			"gameStarted":  game.CurrentPhase != "setup",
-		},
 	}
 
 	broadcastService := services.GetGameInstance().GetBroadcastService()
@@ -463,7 +453,7 @@ func sendPlayerPhaseRestoration(player *models.Player) {
 		// If player was already configured and ready, mark them as ready again
 		if player.Role != "" && len(player.Specialties) > 0 && player.Name != "" {
 			player.IsReady = true
-			// Broadcast updated lobby status
+			// Broadcast updated lobby status since a configured player is back
 			broadcastService.BroadcastLobbyStatus()
 		}
 
@@ -620,17 +610,6 @@ func sendHostPhaseRestoration(host *models.Host) {
 	default:
 		log.Printf("Host %s reconnected during unknown phase: %s", host.ID, game.CurrentPhase)
 	}
-}
-
-// countReadyPlayers counts ready players
-func countReadyPlayers(gameManager *services.GameManager) int {
-	count := 0
-	for _, player := range gameManager.GetAllPlayers() {
-		if player.IsReady && player.IsActive {
-			count++
-		}
-	}
-	return count
 }
 
 // sendAuthError sends authentication error to player

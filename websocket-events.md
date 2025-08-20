@@ -64,6 +64,7 @@ When a player reconnects using the same token:
    **Setup Phase:**
    - Receives `SETUP_TO_PLAYER_ROLES_AVAILABLE` with `isReconnection: true`
    - If already configured, automatically marked as ready
+   - If already configured, all players receive `SETUP_TO_CLIENT_LOBBY_STATUS` with updated lobby state
    - Host receives `SETUP_TO_HOST_PLAYER_ROSTER` update
 
    **Resource Gathering Phase:**
@@ -113,11 +114,6 @@ When a player reconnects using the same token:
       "resourceGatheringRoundDuration": 60,
       "puzzleBaseTime": 300,
       "difficultyMode": "medium"
-    },
-    "gameState": {
-      "totalPlayers": 5,
-      "readyPlayers": 3,
-      "gameStarted": false
     }
   },
   "timestamp": "2025-01-XX:XX:XX.XXXZ"
@@ -178,12 +174,7 @@ When a player reconnects using the same token:
       "science",
       "video_games"
     ],
-    "maxSpecialties": 1,
-    "gameState": {
-      "totalPlayers": 5,
-      "readyPlayers": 3,
-      "gameStarted": false
-    }
+    "maxSpecialties": 1
   },
   "timestamp": "2025-01-XX:XX:XX.XXXZ"
 }

@@ -768,7 +768,12 @@ func (gm *GameManager) StartResourceRound() {
 	log.Printf("Starting resource round %d/%d", gm.game.CurrentRound, config.ResourceGatheringRounds)
 
 	// Store references for calls outside lock
-	players := gm.players
+	// CRITICAL: Create a defensive copy of the players map to avoid race conditions
+	// when BroadcastTriviaQuestions iterates over it without mutex protection
+	players := make(map[string]*models.Player)
+	for id, player := range gm.players {
+		players[id] = player
+	}
 	triviaSvc := gm.triviaSvc
 	broadcastSvc := gm.broadcastSvc
 

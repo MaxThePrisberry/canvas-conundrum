@@ -62,6 +62,7 @@ func (c *TestWebSocketClient) Connect() error {
 	time.Sleep(100 * time.Millisecond)
 
 	// Extract player ID and token from first message
+	c.mu.Lock()
 	if len(c.messages) > 0 {
 		if payload, ok := c.messages[0].Payload.(map[string]interface{}); ok {
 			if id, ok := payload["playerId"].(string); ok {
@@ -70,6 +71,7 @@ func (c *TestWebSocketClient) Connect() error {
 			}
 		}
 	}
+	c.mu.Unlock()
 
 	return nil
 }

@@ -2,10 +2,10 @@ package config
 
 // QR Code Station Hashes - These should match the QR codes at physical stations
 const (
-	HashAnchorStation  = "ANCHOR_STATION_QR_HASH_2024"
-	HashChronosStation = "CHRONOS_STATION_QR_HASH_2024"
-	HashGuideStation   = "GUIDE_STATION_QR_HASH_2024"
-	HashClarityStation = "CLARITY_STATION_QR_HASH_2024"
+	HashAnchorStation  = "anchor"
+	HashChronosStation = "chronos"
+	HashGuideStation   = "guide"
+	HashClarityStation = "clarity"
 )
 
 // Station represents a resource gathering station

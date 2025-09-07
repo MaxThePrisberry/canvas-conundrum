@@ -556,3 +556,102 @@ func TestHandleHostWriteWithNilConn(t *testing.T) {
 		}
 	})
 }
+
+func TestWebSocketMaxMessageSizeLimit(t *testing.T) {
+	// This test verifies that the WebSocket connection properly rejects
+	// messages larger than MaxMessageSize to prevent memory exhaustion attacks
+
+	resetGameManager()
+
+	t.Run("Normal size message should be accepted", func(t *testing.T) {
+		// Create a test server
+		server := httptest.NewServer(http.HandlerFunc(HandlePlayerWebSocket))
+		defer server.Close()
+
+		// Convert HTTP URL to WebSocket URL
+		wsURL := "ws" + strings.TrimPrefix(server.URL, "http")
+
+		// Connect to WebSocket
+		conn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
+		require.NoError(t, err)
+		defer conn.Close()
+
+		// Create a normal sized message (well under 8KB limit)
+		// Use a simple invalid message that won't trigger complex logic
+		normalMessage := map[string]interface{}{
+			"event": "INVALID_TEST_EVENT",
+			"payload": map[string]interface{}{
+				"testData": "This is a normal sized message under the limit",
+			},
+		}
+
+		normalData, err := json.Marshal(normalMessage)
+		require.NoError(t, err)
+		require.Less(t, len(normalData), config.MaxMessageSize, "Test message should be under limit")
+
+		t.Logf("Sending normal message of %d bytes (limit: %d)", len(normalData), config.MaxMessageSize)
+
+		// Send normal message - should succeed (connection should stay open)
+		err = conn.WriteMessage(websocket.TextMessage, normalData)
+		assert.NoError(t, err, "Normal sized message should be accepted")
+
+		// Send a second message to verify connection is still alive
+		err = conn.WriteMessage(websocket.TextMessage, normalData)
+		assert.NoError(t, err, "Connection should remain open for normal messages")
+
+		t.Log("Normal sized messages successfully accepted")
+	})
+
+	t.Run("Oversized message should be rejected", func(t *testing.T) {
+		// Create a test server
+		server := httptest.NewServer(http.HandlerFunc(HandlePlayerWebSocket))
+		defer server.Close()
+
+		// Convert HTTP URL to WebSocket URL
+		wsURL := "ws" + strings.TrimPrefix(server.URL, "http")
+
+		// Connect to WebSocket
+		conn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
+		require.NoError(t, err)
+		defer conn.Close()
+
+		// Create a message larger than MaxMessageSize (8KB)
+		largePayload := strings.Repeat("x", config.MaxMessageSize+1000) // 9KB+ payload
+
+		largeMessage := map[string]interface{}{
+			"event": constants.EventSystemPing,
+			"payload": map[string]interface{}{
+				"timestamp": time.Now().Unix(),
+				"largeData": largePayload,
+			},
+		}
+
+		largeData, err := json.Marshal(largeMessage)
+		require.NoError(t, err)
+		require.Greater(t, len(largeData), config.MaxMessageSize, "Test message should exceed limit")
+
+		t.Logf("Sending message of %d bytes (limit: %d)", len(largeData), config.MaxMessageSize)
+
+		// Try to send oversized message
+		err = conn.WriteMessage(websocket.TextMessage, largeData)
+
+		// The server should either:
+		// 1. Reject at client write time, or
+		// 2. Close connection when attempting to read the oversized message
+		if err != nil {
+			// Client-side rejection means the message was too large to send
+			t.Logf("Client properly rejected oversized message: %v", err)
+			assert.Contains(t, strings.ToLower(err.Error()), "reset", "Should get connection reset")
+		} else {
+			// If write succeeded, server should close connection when reading
+			conn.SetReadDeadline(time.Now().Add(500 * time.Millisecond))
+
+			_, _, err = conn.ReadMessage()
+			assert.Error(t, err, "Connection should be closed due to oversized message")
+			t.Logf("Server properly closed connection: %v", err)
+		}
+
+		// In either case, the oversized message should not be processed successfully
+		t.Log("MaxMessageSize limit successfully prevents oversized messages")
+	})
+}

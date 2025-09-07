@@ -161,6 +161,7 @@ func handlePlayerRead(player *models.Player) {
 		player.Connection.SetReadDeadline(time.Now().Add(time.Duration(config.PongWait) * time.Second))
 		return nil
 	})
+	player.Connection.SetReadLimit(int64(config.MaxMessageSize))
 
 	for {
 		_, message, err := player.Connection.ReadMessage()
@@ -246,6 +247,7 @@ func handleHostRead(host *models.Host) {
 		host.Connection.SetReadDeadline(time.Now().Add(time.Duration(config.PongWait) * time.Second))
 		return nil
 	})
+	host.Connection.SetReadLimit(int64(config.MaxMessageSize))
 
 	for {
 		_, message, err := host.Connection.ReadMessage()

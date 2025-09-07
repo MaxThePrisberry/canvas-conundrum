@@ -1,6 +1,7 @@
 package models
 
 import (
+	"canvas-conundrum/config"
 	"canvas-conundrum/constants"
 	"time"
 )
@@ -179,7 +180,7 @@ func NewGame() *Game {
 		MinPlayers:   constants.MinPlayers,
 		MaxPlayers:   constants.MaxPlayers,
 		TeamTokens:   NewTeamTokens(),
-		ImageID:      "nature_image", // Default puzzle image
+		ImageID:      config.DefaultPuzzleImage,
 		PlayerCount:  0,
 	}
 }

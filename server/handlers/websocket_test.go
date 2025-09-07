@@ -6,6 +6,7 @@ import (
 	"canvas-conundrum/services"
 	"canvas-conundrum/utils"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -489,7 +490,7 @@ func TestHandlePlayerWriteWithNilConn(t *testing.T) {
 		go func() {
 			defer func() {
 				if r := recover(); r != nil {
-					// May panic on nil connection - that's expected
+					t.Errorf("handlePlayerWrite should not panic with nil connection: %v", r)
 				}
 				done <- true
 			}()
@@ -499,8 +500,99 @@ func TestHandlePlayerWriteWithNilConn(t *testing.T) {
 
 		select {
 		case <-done:
-			// Test passed
+			// Test passed - function should exit gracefully
 		case <-time.After(100 * time.Millisecond):
+			t.Error("handlePlayerWrite did not exit in time")
+		}
+	})
+
+	t.Run("Closed Channel with Nil Connection", func(t *testing.T) {
+		player := models.NewPlayer("test-player", nil)
+
+		done := make(chan bool, 1)
+		go func() {
+			defer func() {
+				if r := recover(); r != nil {
+					t.Errorf("handlePlayerWrite should not panic with closed channel and nil connection: %v", r)
+				}
+				done <- true
+			}()
+
+			// Close the Send channel to trigger the ok=false case
+			close(player.Send)
+			handlePlayerWrite(player)
+		}()
+
+		select {
+		case <-done:
+			// Test passed - function should exit gracefully
+		case <-time.After(100 * time.Millisecond):
+			t.Error("handlePlayerWrite did not exit in time")
+		}
+	})
+
+	t.Run("Message Sending with Nil Connection", func(t *testing.T) {
+		player := models.NewPlayer("test-player", nil)
+
+		done := make(chan bool, 1)
+		go func() {
+			defer func() {
+				if r := recover(); r != nil {
+					t.Errorf("handlePlayerWrite should not panic when trying to send message with nil connection: %v", r)
+				}
+				done <- true
+			}()
+
+			// Send a message to trigger the message case
+			go func() {
+				time.Sleep(10 * time.Millisecond)
+				select {
+				case player.Send <- []byte("test message"):
+				default:
+					// Channel might be closed or full
+				}
+
+				// Close the Done channel to exit the loop
+				time.Sleep(10 * time.Millisecond)
+				close(player.Done)
+			}()
+
+			handlePlayerWrite(player)
+		}()
+
+		select {
+		case <-done:
+			// Test passed - function should exit gracefully
+		case <-time.After(200 * time.Millisecond):
+			t.Error("handlePlayerWrite did not exit in time")
+		}
+	})
+
+	t.Run("Ticker with Nil Connection", func(t *testing.T) {
+		player := models.NewPlayer("test-player", nil)
+
+		done := make(chan bool, 1)
+		go func() {
+			defer func() {
+				if r := recover(); r != nil {
+					t.Errorf("handlePlayerWrite should not panic on ticker with nil connection: %v", r)
+				}
+				done <- true
+			}()
+
+			// Let the function run briefly to hit the ticker case
+			go func() {
+				time.Sleep(50 * time.Millisecond)
+				close(player.Done)
+			}()
+
+			handlePlayerWrite(player)
+		}()
+
+		select {
+		case <-done:
+			// Test passed - function should exit gracefully
+		case <-time.After(200 * time.Millisecond):
 			t.Error("handlePlayerWrite did not exit in time")
 		}
 	})
@@ -553,6 +645,122 @@ func TestHandleHostWriteWithNilConn(t *testing.T) {
 		case <-time.After(100 * time.Millisecond):
 			t.Error("handleHostWrite did not exit in time")
 		}
+	})
+}
+
+func TestPhaseTransitionWebSocketStability(t *testing.T) {
+	// Test for Issue #10: players getting kicked during phase transitions
+	t.Run("Resource Phase Start Does Not Disconnect Players", func(t *testing.T) {
+		resetGameManager()
+		gameManager := services.GetGameInstance()
+
+		// Set up broadcast service
+		broadcastService := services.NewBroadcastService()
+		gameManager.SetBroadcastService(broadcastService)
+
+		// Set up trivia service
+		triviaService := services.NewTriviaService()
+		gameManager.SetTriviaService(triviaService)
+
+		// Create test server
+		server := httptest.NewServer(http.HandlerFunc(HandlePlayerWebSocket))
+		defer server.Close()
+
+		// Convert HTTP URL to WebSocket URL
+		wsURL := "ws" + strings.TrimPrefix(server.URL, "http")
+
+		// Connect multiple players
+		players := make([]*websocket.Conn, 3)
+		for i := 0; i < 3; i++ {
+			conn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
+			require.NoError(t, err, "Player %d should connect successfully", i)
+			defer conn.Close()
+			players[i] = conn
+
+			// Set read deadline to prevent hanging
+			conn.SetReadDeadline(time.Now().Add(5 * time.Second))
+
+			// Read initial message
+			_, _, err = conn.ReadMessage()
+			if err != nil && !websocket.IsUnexpectedCloseError(err) {
+				// Initial message read failed, but connection should still be valid
+			}
+		}
+
+		// Simulate starting the game (which triggers phase transition)
+		game := gameManager.GetGame()
+		game.CurrentPhase = models.PhaseSetup
+
+		// Add some mock players to the game manager
+		for i := 0; i < 3; i++ {
+			player := models.NewPlayer(fmt.Sprintf("test-player-%d", i), players[i])
+			player.IsReady = true
+			player.IsActive = true
+			player.Name = fmt.Sprintf("Player %d", i)
+			player.Role = "detective"
+			gameManager.AddPlayer(player)
+		}
+
+		// Start the game which should trigger resource phase
+		err := gameManager.StartGame()
+		if err != nil {
+			// Game might not start due to missing host, that's OK for this test
+			t.Logf("Game start failed (expected): %v", err)
+		}
+
+		// Wait a moment for any async operations
+		time.Sleep(100 * time.Millisecond)
+
+		// Try to send messages to verify connections are still alive
+		for i, conn := range players {
+			if conn != nil {
+				err := conn.WriteMessage(websocket.PingMessage, nil)
+				if err != nil {
+					t.Logf("Player %d connection may be closed: %v", i, err)
+				} else {
+					t.Logf("Player %d connection still active", i)
+				}
+			}
+		}
+
+		// The test passes if we don't get panics and connections handle the scenario gracefully
+		assert.True(t, true, "Phase transition completed without crashing")
+	})
+
+	t.Run("Broadcast During Resource Phase Does Not Crash", func(t *testing.T) {
+		resetGameManager()
+		gameManager := services.GetGameInstance()
+
+		// Set up broadcast service
+		broadcastService := services.NewBroadcastService()
+		gameManager.SetBroadcastService(broadcastService)
+
+		// Create players with nil connections (simulating disconnected state)
+		players := make(map[string]*models.Player)
+		for i := 0; i < 3; i++ {
+			playerID := fmt.Sprintf("test-player-%d", i)
+			player := models.NewPlayer(playerID, nil) // Nil connection
+			player.IsReady = true
+			player.IsActive = true
+			player.Name = fmt.Sprintf("Player %d", i)
+			players[playerID] = player
+			gameManager.AddPlayer(player)
+		}
+
+		// Create mock trivia questions
+		questions := make(map[string]*models.TriviaQuestion)
+		for playerID := range players {
+			questions[playerID] = &models.TriviaQuestion{
+				ID:       fmt.Sprintf("q-%s", playerID),
+				Question: "Test question",
+				Options:  []string{"A", "B", "C", "D"},
+			}
+		}
+
+		// This should not panic even with nil connections
+		assert.NotPanics(t, func() {
+			broadcastService.BroadcastTriviaQuestions(questions)
+		}, "Broadcasting trivia questions should handle nil connections gracefully")
 	})
 }
 

@@ -204,17 +204,30 @@ func handlePlayerWrite(player *models.Player) {
 	for {
 		select {
 		case message, ok := <-player.Send:
-			player.Connection.SetWriteDeadline(time.Now().Add(time.Duration(config.WriteWait) * time.Second))
 			if !ok {
-				player.Connection.WriteMessage(websocket.CloseMessage, []byte{})
+				// Channel closed, send close message if connection is still valid
+				if player.Connection != nil {
+					player.Connection.SetWriteDeadline(time.Now().Add(time.Duration(config.WriteWait) * time.Second))
+					player.Connection.WriteMessage(websocket.CloseMessage, []byte{})
+				}
 				return
 			}
+
+			// Connection check before setting deadline
+			if player.Connection == nil {
+				return
+			}
+			player.Connection.SetWriteDeadline(time.Now().Add(time.Duration(config.WriteWait) * time.Second))
 
 			if err := player.Connection.WriteMessage(websocket.TextMessage, message); err != nil {
 				return
 			}
 
 		case <-ticker.C:
+			// Connection check before setting deadline
+			if player.Connection == nil {
+				return
+			}
 			player.Connection.SetWriteDeadline(time.Now().Add(time.Duration(config.WriteWait) * time.Second))
 			if err := player.Connection.WriteMessage(websocket.PingMessage, nil); err != nil {
 				return

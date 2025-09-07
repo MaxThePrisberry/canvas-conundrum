@@ -178,7 +178,7 @@ func handleHostPing(host *models.Host, payload json.RawMessage) {
 			"serverHealth": map[string]interface{}{
 				"activeConnections": gameManager.GetPlayerCount() + 1,
 				"serverLoad":        0.15, // Placeholder
-				"gamePhase":         gameManager.GetCurrentPhase(),
+				"gamePhase":         string(gameManager.GetCurrentPhase()),
 			},
 		}
 

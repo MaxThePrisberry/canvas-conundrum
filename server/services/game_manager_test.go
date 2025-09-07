@@ -214,7 +214,7 @@ func TestGameManagerGameFlow(t *testing.T) {
 		err := gm.StartGame()
 		assert.NoError(t, err)
 		assert.True(t, gm.GetGame().GameStarted)
-		assert.Equal(t, string(models.PhaseResourceGathering), gm.GetCurrentPhase())
+		assert.Equal(t, models.PhaseResourceGathering, gm.GetCurrentPhase())
 
 		// Can't start again
 		err = gm.StartGame()
@@ -877,13 +877,13 @@ func TestResourceRoundTimerBehavior(t *testing.T) {
 		gm.StartResourceRound()
 
 		// Verify timer is set (note: timer is private, so we test indirectly)
-		assert.Equal(t, string(models.PhaseResourceGathering), gm.GetCurrentPhase())
+		assert.Equal(t, models.PhaseResourceGathering, gm.GetCurrentPhase())
 
 		// Reset game
 		gm.ResetGame()
 
 		// Verify game state is clean
-		assert.Equal(t, string(models.PhaseSetup), gm.GetCurrentPhase())
+		assert.Equal(t, models.PhaseSetup, gm.GetCurrentPhase())
 	})
 }
 

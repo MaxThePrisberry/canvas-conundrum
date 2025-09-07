@@ -293,33 +293,35 @@ func handleHostWrite(host *models.Host) {
 	ticker := time.NewTicker(time.Duration(config.PingPeriod) * time.Second)
 	defer func() {
 		ticker.Stop()
-		if host.Connection != nil {
-			host.Connection.Close()
+		if conn := host.GetConnection(); conn != nil {
+			conn.Close()
 		}
 	}()
 
 	for {
 		select {
 		case message, ok := <-host.Send:
-			if host.Connection == nil {
+			conn := host.GetConnection()
+			if conn == nil {
 				return
 			}
-			host.Connection.SetWriteDeadline(time.Now().Add(time.Duration(config.WriteWait) * time.Second))
+			conn.SetWriteDeadline(time.Now().Add(time.Duration(config.WriteWait) * time.Second))
 			if !ok {
-				host.Connection.WriteMessage(websocket.CloseMessage, []byte{})
+				conn.WriteMessage(websocket.CloseMessage, []byte{})
 				return
 			}
 
-			if err := host.Connection.WriteMessage(websocket.TextMessage, message); err != nil {
+			if err := conn.WriteMessage(websocket.TextMessage, message); err != nil {
 				return
 			}
 
 		case <-ticker.C:
-			if host.Connection == nil {
+			conn := host.GetConnection()
+			if conn == nil {
 				return
 			}
-			host.Connection.SetWriteDeadline(time.Now().Add(time.Duration(config.WriteWait) * time.Second))
-			if err := host.Connection.WriteMessage(websocket.PingMessage, nil); err != nil {
+			conn.SetWriteDeadline(time.Now().Add(time.Duration(config.WriteWait) * time.Second))
+			if err := conn.WriteMessage(websocket.PingMessage, nil); err != nil {
 				return
 			}
 

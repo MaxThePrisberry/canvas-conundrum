@@ -44,8 +44,29 @@ func (bs *BroadcastService) SendToPlayer(player *models.Player, event string, pa
 
 // SendToHost sends a message to the host
 func (bs *BroadcastService) SendToHost(host *models.Host, event string, payload interface{}) {
-	if host == nil || host.Connection == nil {
-		log.Printf("SendToHost: Cannot send - host=%v, connection=%v", host != nil, host != nil && host.Connection != nil)
+	if host == nil {
+		log.Printf("SendToHost: Cannot send - host=false, connection=false")
+		return
+	}
+
+	// Check connection status without nested locking
+	// We use a defer/recover approach to handle potential race conditions gracefully
+	var hasConnection bool
+	var sendChan chan []byte
+
+	func() {
+		defer func() {
+			if r := recover(); r != nil {
+				// If we panic due to race condition, treat as no connection
+				hasConnection = false
+			}
+		}()
+		hasConnection = host.HasConnection()
+		sendChan = host.Send
+	}()
+
+	if !hasConnection {
+		log.Printf("SendToHost: Cannot send - host=true, connection=false")
 		return
 	}
 
@@ -56,18 +77,36 @@ func (bs *BroadcastService) SendToHost(host *models.Host, event string, payload 
 		return
 	}
 
-	select {
-	case host.Send <- data:
-		log.Printf("SendToHost: Successfully sent event %s to host", event)
-	default:
-		log.Printf("Host send channel full, dropping message for event %s", event)
-	}
+	// Use another defer/recover to handle channel send race conditions
+	func() {
+		defer func() {
+			if r := recover(); r != nil {
+				log.Printf("Host channel closed during send for event %s", event)
+			}
+		}()
+
+		select {
+		case sendChan <- data:
+			log.Printf("SendToHost: Successfully sent event %s to host", event)
+		default:
+			log.Printf("Host send channel full, dropping message for event %s", event)
+		}
+	}()
 }
 
 // BroadcastToAllPlayers sends a message to all connected players
 func (bs *BroadcastService) BroadcastToAllPlayers(event string, payload interface{}) {
 	gameManager := GetGameInstance()
-	players := gameManager.GetAllPlayers()
+
+	// Get players with their active status snapshot to avoid race conditions
+	gameManager.mu.RLock()
+	activePlayers := make([]*models.Player, 0, len(gameManager.players))
+	for _, player := range gameManager.players {
+		if player.IsActive {
+			activePlayers = append(activePlayers, player)
+		}
+	}
+	gameManager.mu.RUnlock()
 
 	msg := utils.NewServerMessage(event, payload)
 	data, err := msg.Marshal()
@@ -76,13 +115,11 @@ func (bs *BroadcastService) BroadcastToAllPlayers(event string, payload interfac
 		return
 	}
 
-	for _, player := range players {
-		if player.IsActive {
-			select {
-			case player.Send <- data:
-			default:
-				log.Printf("Player %s send channel full, dropping broadcast", player.ID)
-			}
+	for _, player := range activePlayers {
+		select {
+		case player.Send <- data:
+		default:
+			log.Printf("Player %s send channel full, dropping broadcast", player.ID)
 		}
 	}
 }
@@ -233,7 +270,7 @@ func (bs *BroadcastService) sendHostPlayerRoster() {
 	}
 
 	payload := map[string]interface{}{
-		"phase":             gameManager.GetCurrentPhase(),
+		"phase":             string(gameManager.GetCurrentPhase()),
 		"connectedPlayers":  gameManager.GetPlayerCount(),
 		"readyPlayers":      bs.countReadyPlayers(),
 		"gameStartEligible": gameManager.CanStartGame(),
@@ -1458,7 +1495,7 @@ func (bs *BroadcastService) BroadcastPlayerDisconnected(playerID, playerName str
 			"playerId":          playerID,
 			"playerName":        playerName,
 			"disconnectionTime": time.Now().Format(time.RFC3339),
-			"currentPhase":      gameManager.GetCurrentPhase(),
+			"currentPhase":      string(gameManager.GetCurrentPhase()),
 			"fragmentHandling": map[string]interface{}{
 				"fragmentId":    fragment.ID,
 				"newPosition":   fragment.Position,
@@ -1473,14 +1510,14 @@ func (bs *BroadcastService) BroadcastPlayerDisconnected(playerID, playerName str
 // BroadcastHostDisconnected notifies all players when host disconnects
 func (bs *BroadcastService) BroadcastHostDisconnected() {
 	gameManager := GetGameInstance()
-	game := gameManager.GetGame()
+	currentPhase := gameManager.GetCurrentPhase()
 
 	payload := map[string]interface{}{
 		"hostStatus":   "disconnected",
-		"currentPhase": game.CurrentPhase,
+		"currentPhase": string(currentPhase),
 		"gameImpact": map[string]interface{}{
-			"gamePaused":       game.CurrentPhase == models.PhaseSetup || game.CurrentPhase == models.PhaseResourceGathering,
-			"canContinue":      game.CurrentPhase == models.PhasePuzzleAssembly || game.CurrentPhase == models.PhaseAnalytics,
+			"gamePaused":       currentPhase == models.PhaseSetup || currentPhase == models.PhaseResourceGathering,
+			"canContinue":      currentPhase == models.PhasePuzzleAssembly || currentPhase == models.PhaseAnalytics,
 			"affectedFeatures": []string{"host_monitoring", "phase_transitions"},
 		},
 		"message": "Host disconnected. Game continuing without host monitoring.",

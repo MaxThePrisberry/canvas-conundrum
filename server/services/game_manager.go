@@ -87,10 +87,10 @@ func (gm *GameManager) SetAnalyticsService(service *AnalyticsService) {
 }
 
 // GetCurrentPhase returns the current game phase
-func (gm *GameManager) GetCurrentPhase() string {
+func (gm *GameManager) GetCurrentPhase() models.GamePhase {
 	gm.mu.RLock()
 	defer gm.mu.RUnlock()
-	return string(gm.game.CurrentPhase)
+	return gm.game.CurrentPhase
 }
 
 // GetPlayerCount returns the number of connected players
@@ -455,7 +455,7 @@ func (gm *GameManager) RemoveHost() {
 
 	gm.mu.Lock()
 	if gm.host != nil {
-		gm.host.Connection = nil
+		gm.host.SetConnection(nil)
 		hostID = gm.host.ID
 		broadcastSvc = gm.broadcastSvc
 	}

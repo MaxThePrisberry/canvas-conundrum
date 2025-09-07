@@ -1,6 +1,7 @@
 package models
 
 import (
+	"sync"
 	"time"
 
 	"github.com/gorilla/websocket"
@@ -115,6 +116,7 @@ type Host struct {
 	ConnectedAt time.Time       `json:"connectedAt"`
 	Send        chan []byte     `json:"-"`
 	Done        chan struct{}   `json:"-"`
+	mu          sync.RWMutex    `json:"-"` // Protects Connection field
 }
 
 // NewHost creates a new host instance
@@ -126,4 +128,25 @@ func NewHost(id string, conn *websocket.Conn) *Host {
 		Send:        make(chan []byte, 256),
 		Done:        make(chan struct{}),
 	}
+}
+
+// GetConnection safely returns the connection
+func (h *Host) GetConnection() *websocket.Conn {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	return h.Connection
+}
+
+// SetConnection safely sets the connection
+func (h *Host) SetConnection(conn *websocket.Conn) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.Connection = conn
+}
+
+// HasConnection safely checks if connection exists
+func (h *Host) HasConnection() bool {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	return h.Connection != nil
 }

@@ -211,7 +211,7 @@ func TestHealthEndpointPlayerCount(t *testing.T) {
 		health := map[string]interface{}{
 			"status":        "healthy",
 			"timestamp":     time.Now().Unix(),
-			"gamePhase":     gameManager.GetCurrentPhase(),
+			"gamePhase":     string(gameManager.GetCurrentPhase()),
 			"playerCount":   gameManager.GetPlayerCount(),
 			"hostConnected": gameManager.IsHostConnected(),
 		}

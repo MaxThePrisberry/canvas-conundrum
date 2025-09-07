@@ -167,7 +167,7 @@ func TestCompleteGameFlow(t *testing.T) {
 
 		// Verify game state
 		assert.True(t, game.GameStarted)
-		assert.Equal(t, string(models.PhaseResourceGathering), gm.GetCurrentPhase())
+		assert.Equal(t, models.PhaseResourceGathering, gm.GetCurrentPhase())
 	})
 
 	// Phase 2: Resource Gathering
@@ -240,7 +240,7 @@ func TestCompleteGameFlow(t *testing.T) {
 
 		// Move to next phase - properly initialize puzzle phase
 		game.StartPuzzlePhase(gm.GetPlayerCount())
-		assert.Equal(t, string(models.PhasePuzzleAssembly), gm.GetCurrentPhase())
+		assert.Equal(t, models.PhasePuzzleAssembly, gm.GetCurrentPhase())
 	})
 
 	// Phase 3: Puzzle Assembly
@@ -304,7 +304,7 @@ func TestCompleteGameFlow(t *testing.T) {
 		game = gm.GetGame()
 		game.CurrentPhase = models.PhaseAnalytics
 		game.PhaseStartTime = time.Now()
-		assert.Equal(t, string(models.PhaseAnalytics), gm.GetCurrentPhase())
+		assert.Equal(t, models.PhaseAnalytics, gm.GetCurrentPhase())
 	})
 
 	// Phase 4: Analytics
@@ -497,7 +497,7 @@ func TestGameReset(t *testing.T) {
 	// Verify reset
 	game = gm.GetGame()
 	assert.False(t, game.GameStarted)
-	assert.Equal(t, string(models.PhaseSetup), gm.GetCurrentPhase())
+	assert.Equal(t, models.PhaseSetup, gm.GetCurrentPhase())
 	assert.Equal(t, 0, gm.GetPlayerCount())
 	assert.Equal(t, 0, game.CurrentRound)
 

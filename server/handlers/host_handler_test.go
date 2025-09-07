@@ -244,7 +244,7 @@ func TestHandleHostResetGame(t *testing.T) {
 		handleHostResetGame(host, payloadJSON)
 
 		// Verify game was reset
-		assert.Equal(t, string(models.PhaseSetup), gameManager.GetCurrentPhase())
+		assert.Equal(t, models.PhaseSetup, gameManager.GetCurrentPhase())
 	})
 
 	t.Run("Reset Not Confirmed", func(t *testing.T) {
@@ -362,11 +362,11 @@ func TestHostHandlerIntegration(t *testing.T) {
 
 		// Test the game state
 		game := gameManager.GetGame()
-		assert.Equal(t, string(models.PhaseSetup), gameManager.GetCurrentPhase())
+		assert.Equal(t, models.PhaseSetup, gameManager.GetCurrentPhase())
 
 		// Test phase transitions manually
 		game.CurrentPhase = models.PhaseResourceGathering
-		assert.Equal(t, string(models.PhaseResourceGathering), gameManager.GetCurrentPhase())
+		assert.Equal(t, models.PhaseResourceGathering, gameManager.GetCurrentPhase())
 
 		game.CurrentPhase = models.PhasePuzzleAssembly
 		game.PuzzleGrid = models.NewPuzzleGrid(3)
@@ -378,6 +378,6 @@ func TestHostHandlerIntegration(t *testing.T) {
 
 		// Test reset functionality (simple version)
 		gameManager.ResetGame()
-		assert.Equal(t, string(models.PhaseSetup), gameManager.GetCurrentPhase())
+		assert.Equal(t, models.PhaseSetup, gameManager.GetCurrentPhase())
 	})
 }

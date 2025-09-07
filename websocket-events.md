@@ -62,12 +62,16 @@ When a player reconnects using the same token:
 1. **Phase-Specific Behavior**:
 
    **Setup Phase:**
+   - **Player Count Impact**: Player was removed from all counts during disconnection, now re-added
    - Receives `SETUP_TO_PLAYER_ROLES_AVAILABLE` with `isReconnection: true`
-   - If already configured, automatically marked as ready
-   - If already configured, all players receive `SETUP_TO_CLIENT_LOBBY_STATUS` with updated lobby state
+   - **Role Revalidation**: If previously selected role has filled up during disconnection, forced to reselect role
+   - **State Restoration**: If role still available, all previous selections restored (role, specialty, name)
+   - **Automatic Ready**: If previously ready and have role, automatically marked ready again
+   - All players receive `SETUP_TO_CLIENT_LOBBY_STATUS` with updated lobby state
    - Host receives `SETUP_TO_HOST_PLAYER_ROSTER` update
 
    **Resource Gathering Phase:**
+   - **Player Count Impact**: Player remained in game counts during disconnection
    - Receives `SETUP_TO_PLAYER_ROLES_AVAILABLE` with `isReconnection: true`
    - Followed by `RESOURCE_TO_CLIENT_PHASE_START`
    - Followed by `RESOURCE_TO_CLIENT_TEAM_PROGRESS`
@@ -79,12 +83,18 @@ When a player reconnects using the same token:
    - No distinction between new players and reconnecting players - all blocked
 
    **Analytics Phase:**
+   - **Player Count Impact**: Player remained in game counts during disconnection
    - Receives `SETUP_TO_PLAYER_ROLES_AVAILABLE` with `isReconnection: true`
    - Followed by `ANALYTICS_TO_PLAYER_PERSONAL_REPORT`
    - Followed by `ANALYTICS_TO_CLIENT_TEAM_SUMMARY`
 
-2. **Important Notes**:
-   - Player retains their authentication token and previous game state
+2. **Disconnection Impact by Phase**:
+   - **Setup Phase**: Player removed from connected count, ready count, role distribution during disconnection
+   - **Post-Setup Phases**: Player contributions remain active, tokens preserved, analytics maintained
+   - **Puzzle Phase Disconnection**: Individual puzzle auto-solved, fragment becomes unassigned for team use
+
+3. **Important Notes**:
+   - Player retains their authentication token and previous game state across all phases
    - Host receives updated player roster showing reconnection (except during puzzle phase)
    - All reconnection state restoration happens automatically after initial connection
    - During puzzle assembly phase, NO player WebSocket connections are permitted regardless of reconnection status
@@ -1728,6 +1738,31 @@ When a player reconnects using the same token:
 **Direction**: Server → Host
 **Trigger**: Player disconnects
 
+**Setup Phase Example:**
+```json
+{
+  "event": "SYSTEM_TO_HOST_PLAYER_DISCONNECTED",
+  "payload": {
+    "playerId": "player3-uuid",
+    "playerName": "Charlie",
+    "disconnectionTime": "2025-01-XX:XX:XX.XXXZ",
+    "currentPhase": "setup",
+    "updatedCounts": {
+      "connectedPlayers": 3,
+      "readyPlayers": 2,
+      "roleDistribution": {
+        "art_enthusiast": 1,
+        "detective": 0,
+        "tourist": 1,
+        "janitor": 1
+      }
+    }
+  },
+  "timestamp": "2025-01-XX:XX:XX.XXXZ"
+}
+```
+
+**Puzzle Assembly Phase Example:**
 ```json
 {
   "event": "SYSTEM_TO_HOST_PLAYER_DISCONNECTED",
@@ -1736,23 +1771,26 @@ When a player reconnects using the same token:
     "playerName": "Charlie",
     "disconnectionTime": "2025-01-XX:XX:XX.XXXZ",
     "currentPhase": "puzzle_assembly",
-    "gameImpact": {
-      "fragmentHandling": {
-        "fragmentId": "fragment_player3-uuid",
-        "action": "auto_solved_and_unassigned",
-        "newPosition": {"x": 1, "y": 2},
-        "ownershipTransfer": "unassigned"
-      },
-      "phaseImpact": {
-        "individualPuzzle": "auto_completed",
-        "collaborativeAccess": "revoked"
-      }
+    "fragmentHandling": {
+      "fragmentId": "fragment_player3-uuid",
+      "newPosition": {"x": 1, "y": 2},
+      "nowUnassigned": true
     },
-    "reconnectionPolicy": {
-      "canReconnectInCurrentPhase": false,
-      "canReconnectInNextPhase": true,
-      "statePreservation": "analytics_only"
-    },
+    "updatedPlayerCount": 4
+  },
+  "timestamp": "2025-01-XX:XX:XX.XXXZ"
+}
+```
+
+**Resource Gathering/Analytics Phase Example:**
+```json
+{
+  "event": "SYSTEM_TO_HOST_PLAYER_DISCONNECTED",
+  "payload": {
+    "playerId": "player3-uuid",
+    "playerName": "Charlie",
+    "disconnectionTime": "2025-01-XX:XX:XX.XXXZ",
+    "currentPhase": "resource_gathering",
     "updatedPlayerCount": 4
   },
   "timestamp": "2025-01-XX:XX:XX.XXXZ"

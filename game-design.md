@@ -381,6 +381,43 @@ Player Count → Grid Size → Total Fragments
 - **Success Analytics**: Comprehensive performance tracking for successful completion
 - **Failure Handling**: Time-based failure if puzzle timer expires before completion
 
+## Phase-Specific Disconnection Rules
+
+Canvas Conundrum handles disconnections differently based on the game phase to balance game integrity with player experience.
+
+### Setup Phase (Phase 0) Disconnections
+
+**Player Disconnection:**
+- **Immediate Removal**: Player removed from all counts (connected, ready, role distribution)
+- **State Preservation**: Player's selection data (role, specialty, name) preserved for potential reconnection
+- **No Game Impact**: Disconnection does not affect other players or game progression
+- **Reconnection Behavior**:
+  - Player can reconnect and restore previous selections if role still available
+  - If selected role has filled up since disconnection, player must reselect role
+  - All other selections (specialty, name) restored automatically
+  - Player automatically marked ready if role available and they were ready before disconnection
+
+**Host Disconnection:**
+- **Game Pause**: Game cannot progress until host reconnects
+- **State Preservation**: Complete setup state maintained
+- **Player Notification**: All players notified of host disconnection
+- **Automatic Recovery**: Host can reconnect to resume control
+
+### Post-Setup Phases (Phases 1-3) Disconnections
+
+**Player Disconnection:**
+- **Maintained Presence**: Player remains in game counts and their contributions continue to matter
+- **Resource Phase**: Collected tokens remain in team totals
+- **Puzzle Phase**: Individual puzzle auto-solved, fragment becomes unassigned for team use
+- **Analytics Phase**: Personal analytics preserved for viewing upon reconnection
+- **Limited Reconnection**: Cannot reconnect during puzzle assembly phase; can reconnect during resource gathering and analytics phases
+
+**Host Disconnection:**
+- **Game Continuation**: Game continues without interruption during puzzle phase
+- **Monitoring Loss**: Real-time host monitoring temporarily unavailable
+- **State Preservation**: Complete game state maintained for host reconnection
+- **Automatic Recovery**: Host can reconnect to resume monitoring at any time
+
 #### Disconnection and Error Handling
 
 **Player Disconnection During Individual Solving:**
@@ -395,13 +432,6 @@ Player Count → Grid Size → Total Fragments
 - **Movement Permission**: Any player can now move the disconnected player's fragment
 - **State Broadcasting**: Disconnection status broadcast to all remaining players
 - **No Reconnection**: No reconnection permitted during puzzle assembly phase
-
-**Host Disconnection:**
-- **During Setup/Resource Phases**: Game pauses until host reconnects
-- **During Puzzle Phase**: Game continues without interruption
-- **Player Notification**: All players notified of host disconnection
-- **State Preservation**: Complete game state maintained for host reconnection
-- **Automatic Recovery**: Host can reconnect to resume monitoring
 
 ### Phase 3: Post-Game Analytics
 **Duration**: Game result and all analytics display until the host manually resets the game
@@ -493,17 +523,29 @@ Individual Score =
 
 #### Player Reconnection
 **Permitted Phases:**
-- ✅ **Setup Phase**: Full reconnection with state restoration
+- ✅ **Setup Phase**: Full reconnection with state restoration and role revalidation
 - ✅ **Resource Gathering Phase**: Rejoin current round with preserved progress
 - ❌ **Puzzle Assembly Phase**: Reconnection explicitly forbidden
 - ✅ **Analytics Phase**: View personal performance report
 
-**State Restoration Process:**
+**Phase-Specific Reconnection Behavior:**
+
+**Setup Phase Reconnection:**
 1. **Authentication**: Player reconnects with original UUID token
-2. **Phase Detection**: Server identifies current game phase and includes it in connection response
-3. **Configuration Recovery**: Restore previously selected role and specialty
+2. **Phase Detection**: Server identifies current phase as setup
+3. **State Restoration**: Player removed from all counts during disconnection, now re-added
+4. **Role Revalidation**: Check if previously selected role is still available
+   - If role available: Restore all previous selections (role, specialty, name)
+   - If role full: Force new role selection, preserve specialty and name
+5. **Ready State**: Automatically marked ready if they were ready before disconnection
+6. **Count Updates**: Player re-added to connected count, ready count, and role distribution
+
+**Post-Setup Phase Reconnection:**
+1. **Authentication**: Player reconnects with original UUID token
+2. **Phase Detection**: Server identifies current game phase
+3. **Configuration Recovery**: Restore previously selected role and specialty (no revalidation needed)
 4. **Context Restoration**: Receive phase-appropriate game state and progress
-5. **Ready State**: If previously ready in setup, automatically marked ready again
+5. **Maintained Presence**: Player was never removed from game counts during disconnection
 
 #### Host Reconnection
 **Permitted Phases:**

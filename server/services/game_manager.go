@@ -141,6 +141,26 @@ func (gm *GameManager) AddPlayer(player *models.Player) (bool, error) {
 		isReconnection = true
 		log.Printf("Player %s reconnected", player.ID)
 
+		// Phase-specific reconnection handling
+		if gm.game.CurrentPhase == models.PhaseSetup {
+			// Setup Phase: Check role revalidation
+			if existingPlayer.Role != "" {
+				// Check if previously selected role is still available
+				if !gm.isRoleAvailable(existingPlayer.Role, existingPlayer.ID) {
+					log.Printf("Player %s role %s no longer available, will need to reselect",
+						player.ID, existingPlayer.Role)
+					// Clear role selection - player will need to select a new role
+					existingPlayer.Role = ""
+					existingPlayer.IsReady = false
+				} else {
+					log.Printf("Player %s role %s still available, restoring ready state",
+						player.ID, existingPlayer.Role)
+					// Role is available, player can be ready if they were ready before
+					// Note: Player.IsReady is preserved from before disconnection
+				}
+			}
+		}
+
 		// Set up broadcast for reconnection
 		if gm.broadcastSvc != nil && gm.host != nil && gm.host.Connection != nil {
 			shouldBroadcast = true
@@ -224,14 +244,50 @@ func (gm *GameManager) RemovePlayer(playerID string) {
 	}
 
 	log.Printf("RemovePlayer: Removing player %s (name: %s)", playerID, player.Name)
-	player.IsActive = false
 
-	// Calculate updated player count while holding lock (player.IsActive is already set to false)
-	updatedPlayerCount := 0
-	for _, p := range gm.players {
-		if p.IsActive {
-			updatedPlayerCount++
+	// Phase-specific disconnection handling
+	var updatedPlayerCount int
+	var updatedCounts map[string]interface{}
+
+	if gm.game.CurrentPhase == models.PhaseSetup {
+		// Setup Phase: Remove from all counts, preserve data for reconnection
+		player.IsActive = false
+
+		// Calculate updated counts for setup phase
+		connectedCount := 0
+		readyCount := 0
+		roleDistribution := make(map[string]int)
+
+		for _, p := range gm.players {
+			if p.IsActive {
+				connectedCount++
+				if p.IsReady {
+					readyCount++
+				}
+				if p.Role != "" {
+					roleDistribution[string(p.Role)]++
+				}
+			}
 		}
+
+		updatedPlayerCount = connectedCount
+		updatedCounts = map[string]interface{}{
+			"connectedPlayers": connectedCount,
+			"readyPlayers":     readyCount,
+			"roleDistribution": roleDistribution,
+		}
+
+		log.Printf("RemovePlayer: Setup phase - player removed from counts. Connected: %d, Ready: %d",
+			connectedCount, readyCount)
+	} else {
+		// Post-Setup Phases: Keep in counts, mark as inactive
+		player.IsActive = false
+
+		// For post-setup phases, player count includes all players that joined the game
+		// They remain "in the game" even when disconnected
+		updatedPlayerCount = len(gm.players)
+
+		log.Printf("RemovePlayer: Post-setup phase - player maintained in game. Total players: %d", updatedPlayerCount)
 	}
 
 	// Notify host of disconnection (in all phases)
@@ -246,24 +302,32 @@ func (gm *GameManager) RemovePlayer(playerID string) {
 				}
 			}()
 
-			// Send disconnection notification to host
+			// Send disconnection notification to host with phase-appropriate payload
 			hostPayload := map[string]interface{}{
-				"playerId":           playerID,
-				"playerName":         player.Name,
-				"disconnectionTime":  time.Now().Format(time.RFC3339),
-				"currentPhase":       string(gm.game.CurrentPhase),
-				"updatedPlayerCount": updatedPlayerCount,
+				"playerId":          playerID,
+				"playerName":        player.Name,
+				"disconnectionTime": time.Now().Format(time.RFC3339),
+				"currentPhase":      string(gm.game.CurrentPhase),
 			}
 
-			// Add phase-specific impact info for puzzle phase
-			if gm.game.CurrentPhase == models.PhasePuzzleAssembly && player.FragmentID != "" {
-				hostPayload["gameImpact"] = map[string]interface{}{
-					"fragmentHandling": map[string]interface{}{
-						"fragmentId":        player.FragmentID,
-						"action":            "auto_solved_and_unassigned",
-						"ownershipTransfer": "unassigned",
-					},
+			// Add phase-specific information
+			switch gm.game.CurrentPhase {
+			case models.PhaseSetup:
+				if updatedCounts != nil {
+					hostPayload["updatedCounts"] = updatedCounts
 				}
+			case models.PhasePuzzleAssembly:
+				if player.FragmentID != "" {
+					hostPayload["fragmentHandling"] = map[string]interface{}{
+						"fragmentId":    player.FragmentID,
+						"newPosition":   map[string]interface{}{"x": 0, "y": 0}, // Would be set by grid logic
+						"nowUnassigned": true,
+					}
+				}
+				hostPayload["updatedPlayerCount"] = updatedPlayerCount
+			default:
+				// Resource gathering, Analytics phases
+				hostPayload["updatedPlayerCount"] = updatedPlayerCount
 			}
 
 			gm.broadcastSvc.SendToHost(gm.host, config.EventSystemToHostPlayerDisconnected, hostPayload)

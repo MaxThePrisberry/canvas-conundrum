@@ -1578,4 +1578,216 @@ func TestGameManagerRoleAvailabilityBroadcasting(t *testing.T) {
 			t.Error("Should NOT broadcast role availability when inactive players still hold role slots")
 		}
 	})
+
+	// Phase-specific disconnection behavior tests
+	t.Run("SetupPhase_Disconnection_RemovesFromCounts", func(t *testing.T) {
+		// Reset singleton
+		gameInstance = nil
+		once = sync.Once{}
+		gm := GetGameInstance()
+
+		// Set up broadcast service and host
+		gm.SetBroadcastService(NewBroadcastService())
+		host := models.NewHost("test-host", &websocket.Conn{})
+		_, _ = gm.SetHost(host)
+
+		// Add players with roles
+		player1 := models.NewPlayer("player1", nil)
+		player1.IsActive = true
+		player1.Role = models.RoleDetective
+		player1.IsReady = true
+		_, _ = gm.AddPlayer(player1)
+
+		player2 := models.NewPlayer("player2", nil)
+		player2.IsActive = true
+		player2.Role = models.RoleArtEnthusiast
+		player2.IsReady = false
+		_, _ = gm.AddPlayer(player2)
+
+		// Verify initial counts
+		assert.Equal(t, 2, gm.GetPlayerCount())
+
+		// Count ready players manually
+		readyCount := 0
+		for _, p := range gm.GetAllPlayers() {
+			if p.IsActive && p.IsReady {
+				readyCount++
+			}
+		}
+		assert.Equal(t, 1, readyCount)
+
+		// Disconnect player1 during setup phase (default phase)
+		gm.RemovePlayer("player1")
+
+		// Verify counts updated (player removed from counts)
+		assert.Equal(t, 1, gm.GetPlayerCount())
+
+		// Count ready players again - player1 was ready, now removed from count
+		readyCount = 0
+		for _, p := range gm.GetAllPlayers() {
+			if p.IsActive && p.IsReady {
+				readyCount++
+			}
+		}
+		assert.Equal(t, 0, readyCount)
+
+		// Verify player still exists but is inactive
+		retrievedPlayer, exists := gm.GetPlayer("player1")
+		assert.True(t, exists)
+		assert.False(t, retrievedPlayer.IsActive)
+		assert.Equal(t, models.RoleDetective, retrievedPlayer.Role) // Role preserved for reconnection
+	})
+
+	t.Run("PostSetupPhase_Disconnection_MaintainsInCounts", func(t *testing.T) {
+		// Reset singleton
+		gameInstance = nil
+		once = sync.Once{}
+		gm := GetGameInstance()
+
+		// Set up broadcast service and host
+		gm.SetBroadcastService(NewBroadcastService())
+		host := models.NewHost("test-host", &websocket.Conn{})
+		_, _ = gm.SetHost(host)
+
+		// Add players
+		player1 := models.NewPlayer("player1", nil)
+		player1.IsActive = true
+		player1.Role = models.RoleDetective
+		_, _ = gm.AddPlayer(player1)
+
+		player2 := models.NewPlayer("player2", nil)
+		player2.IsActive = true
+		player2.Role = models.RoleArtEnthusiast
+		_, _ = gm.AddPlayer(player2)
+
+		// Change to resource gathering phase
+		game := gm.GetGame()
+		game.CurrentPhase = models.PhaseResourceGathering
+
+		// Verify initial player count (all players in game)
+		totalPlayers := len(gm.GetAllPlayers())
+		assert.Equal(t, 2, totalPlayers)
+
+		// Disconnect player1 during resource phase
+		gm.RemovePlayer("player1")
+
+		// Verify total players maintained (player remains "in game")
+		newTotalPlayers := len(gm.GetAllPlayers())
+		assert.Equal(t, 2, newTotalPlayers) // Still 2 players in the game
+
+		// Verify player is inactive but preserved
+		retrievedPlayer, exists := gm.GetPlayer("player1")
+		assert.True(t, exists)
+		assert.False(t, retrievedPlayer.IsActive)
+	})
+
+	t.Run("SetupPhase_Reconnection_RoleAvailable_RestoresState", func(t *testing.T) {
+		// Reset singleton
+		gameInstance = nil
+		once = sync.Once{}
+		gm := GetGameInstance()
+
+		// Add player with role
+		player := models.NewPlayer("player1", nil)
+		player.IsActive = true
+		player.Role = models.RoleDetective
+		player.IsReady = true
+		_, _ = gm.AddPlayer(player)
+
+		// Disconnect player
+		gm.RemovePlayer("player1")
+		assert.Equal(t, 0, gm.GetPlayerCount())
+
+		// Reconnect same player
+		reconnectPlayer := models.NewPlayer("player1", nil)
+		isReconnection, err := gm.AddPlayer(reconnectPlayer)
+
+		assert.NoError(t, err)
+		assert.True(t, isReconnection)
+		assert.Equal(t, 1, gm.GetPlayerCount())
+
+		// Verify role and ready state restored
+		retrievedPlayer, exists := gm.GetPlayer("player1")
+		assert.True(t, exists)
+		assert.True(t, retrievedPlayer.IsActive)
+		assert.Equal(t, models.RoleDetective, retrievedPlayer.Role)
+		assert.True(t, retrievedPlayer.IsReady) // Ready state preserved
+	})
+
+	t.Run("SetupPhase_Reconnection_RoleNotAvailable_ForcesReselection", func(t *testing.T) {
+		// Reset singleton
+		gameInstance = nil
+		once = sync.Once{}
+		gm := GetGameInstance()
+
+		// Add original player with detective role
+		player1 := models.NewPlayer("player1", nil)
+		player1.IsActive = true
+		player1.Role = models.RoleDetective
+		player1.IsReady = true
+		_, _ = gm.AddPlayer(player1)
+
+		// Disconnect player1
+		gm.RemovePlayer("player1")
+
+		// Add another player with same role while player1 is disconnected
+		// This fills the detective role slot (with 1 player, capacity is 1 per role)
+		player2 := models.NewPlayer("player2", nil)
+		player2.IsActive = true
+		player2.Role = models.RoleDetective
+		_, _ = gm.AddPlayer(player2)
+
+		// Now try to reconnect player1 - detective role should be full
+		reconnectPlayer := models.NewPlayer("player1", nil)
+		isReconnection, err := gm.AddPlayer(reconnectPlayer)
+
+		assert.NoError(t, err)
+		assert.True(t, isReconnection)
+
+		// Verify role was cleared and ready state reset
+		retrievedPlayer, exists := gm.GetPlayer("player1")
+		assert.True(t, exists)
+		assert.True(t, retrievedPlayer.IsActive)
+		assert.Equal(t, models.Role(""), retrievedPlayer.Role) // Role cleared
+		assert.False(t, retrievedPlayer.IsReady)               // Ready state reset
+	})
+
+	t.Run("PostSetupPhase_Reconnection_NoRoleRevalidation", func(t *testing.T) {
+		// Reset singleton
+		gameInstance = nil
+		once = sync.Once{}
+		gm := GetGameInstance()
+
+		// Add player
+		player := models.NewPlayer("player1", nil)
+		player.IsActive = true
+		player.Role = models.RoleDetective
+		_, _ = gm.AddPlayer(player)
+
+		// Change to resource gathering phase
+		game := gm.GetGame()
+		game.CurrentPhase = models.PhaseResourceGathering
+
+		// Disconnect player
+		gm.RemovePlayer("player1")
+
+		// Add another player with same role while player1 is disconnected
+		player2 := models.NewPlayer("player2", nil)
+		player2.IsActive = true
+		player2.Role = models.RoleDetective
+		_, _ = gm.AddPlayer(player2)
+
+		// Reconnect original player during resource phase
+		reconnectPlayer := models.NewPlayer("player1", nil)
+		isReconnection, err := gm.AddPlayer(reconnectPlayer)
+
+		assert.NoError(t, err)
+		assert.True(t, isReconnection)
+
+		// Verify role preserved (no revalidation in post-setup phases)
+		retrievedPlayer, exists := gm.GetPlayer("player1")
+		assert.True(t, exists)
+		assert.True(t, retrievedPlayer.IsActive)
+		assert.Equal(t, models.RoleDetective, retrievedPlayer.Role) // Role preserved
+	})
 }

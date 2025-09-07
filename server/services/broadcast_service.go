@@ -1459,13 +1459,10 @@ func (bs *BroadcastService) BroadcastPlayerDisconnected(playerID, playerName str
 			"playerName":        playerName,
 			"disconnectionTime": time.Now().Format(time.RFC3339),
 			"currentPhase":      gameManager.GetCurrentPhase(),
-			"gameImpact": map[string]interface{}{
-				"fragmentHandling": map[string]interface{}{
-					"fragmentId":        fragment.ID,
-					"action":            "auto_solved_and_unassigned",
-					"newPosition":       fragment.Position,
-					"ownershipTransfer": "unassigned",
-				},
+			"fragmentHandling": map[string]interface{}{
+				"fragmentId":    fragment.ID,
+				"newPosition":   fragment.Position,
+				"nowUnassigned": true,
 			},
 			"updatedPlayerCount": gameManager.GetPlayerCount(),
 		}

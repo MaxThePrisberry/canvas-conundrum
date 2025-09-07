@@ -1,6 +1,7 @@
 package services
 
 import (
+	"canvas-conundrum/config"
 	"canvas-conundrum/constants"
 	"canvas-conundrum/models"
 	"canvas-conundrum/utils"
@@ -336,10 +337,10 @@ func (bs *BroadcastService) BroadcastResourcePhaseStart() {
 		"answerTime":    constants.TriviaAnswerTime,
 		"graceTime":     constants.TriviaGraceTime,
 		"resourceStationHashes": map[string]string{
-			"anchor":  constants.HashAnchorStation,
-			"chronos": constants.HashChronosStation,
-			"guide":   constants.HashGuideStation,
-			"clarity": constants.HashClarityStation,
+			"anchor":  config.HashAnchorStation,
+			"chronos": config.HashChronosStation,
+			"guide":   config.HashGuideStation,
+			"clarity": config.HashClarityStation,
 		},
 		"tokenThresholds": map[string]int{
 			"anchor":  constants.AnchorTokenThreshold,

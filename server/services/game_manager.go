@@ -532,7 +532,20 @@ func (gm *GameManager) UpdatePlayerConfiguration(playerID string, name string, r
 
 // isRoleAvailable checks if a role is available for selection
 func (gm *GameManager) isRoleAvailable(role models.Role, excludePlayerID string) bool {
-	maxPerRole := (len(gm.players) + 3) / 4
+	// Calculate maxPerRole based on active players during setup, all players otherwise
+	var playerCount int
+	if gm.game.CurrentPhase == models.PhaseSetup {
+		playerCount = 0
+		for _, player := range gm.players {
+			if player.IsActive {
+				playerCount++
+			}
+		}
+	} else {
+		playerCount = len(gm.players)
+	}
+
+	maxPerRole := (playerCount + 3) / 4
 	if maxPerRole < 1 {
 		maxPerRole = 1 // Ensure at least 1 player can select each role
 	}
@@ -540,7 +553,15 @@ func (gm *GameManager) isRoleAvailable(role models.Role, excludePlayerID string)
 	count := 0
 	for id, player := range gm.players {
 		if id != excludePlayerID && player.Role == role {
-			count++
+			// During setup phase, only count active players
+			// During other phases, count all players (including disconnected ones)
+			if gm.game.CurrentPhase == models.PhaseSetup {
+				if player.IsActive {
+					count++
+				}
+			} else {
+				count++
+			}
 		}
 	}
 
@@ -561,7 +582,15 @@ func (gm *GameManager) GetRoleDistribution() map[models.Role]int {
 
 	for _, player := range gm.players {
 		if player.Role != models.RoleNone {
-			distribution[player.Role]++
+			// During setup phase, only count active players
+			// During other phases, count all players (including disconnected ones)
+			if gm.game.CurrentPhase == models.PhaseSetup {
+				if player.IsActive {
+					distribution[player.Role]++
+				}
+			} else {
+				distribution[player.Role]++
+			}
 		}
 	}
 
@@ -583,11 +612,32 @@ func (gm *GameManager) GetRoleAvailabilityMap() map[models.Role]bool {
 
 	for _, player := range gm.players {
 		if player.Role != models.RoleNone {
-			distribution[player.Role]++
+			// During setup phase, only count active players
+			// During other phases, count all players (including disconnected ones)
+			if gm.game.CurrentPhase == models.PhaseSetup {
+				if player.IsActive {
+					distribution[player.Role]++
+				}
+			} else {
+				distribution[player.Role]++
+			}
 		}
 	}
 
-	maxPerRole := (len(gm.players) + 3) / 4
+	// Calculate maxPerRole based on active players during setup, all players otherwise
+	var playerCount int
+	if gm.game.CurrentPhase == models.PhaseSetup {
+		playerCount = 0
+		for _, player := range gm.players {
+			if player.IsActive {
+				playerCount++
+			}
+		}
+	} else {
+		playerCount = len(gm.players)
+	}
+
+	maxPerRole := (playerCount + 3) / 4
 	if maxPerRole < 1 {
 		maxPerRole = 1 // Ensure at least 1 player can select each role
 	}

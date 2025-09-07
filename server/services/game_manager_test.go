@@ -309,6 +309,7 @@ func TestGameManagerRoleDistribution(t *testing.T) {
 	for i, role := range roles {
 		player := models.NewPlayer(string(rune('a'+i)), nil)
 		player.Role = role
+		player.IsActive = true // Set active for testing role distribution
 		_, _ = gm.AddPlayer(player)
 	}
 
@@ -1314,14 +1315,14 @@ func TestGameManagerRoleAvailabilityHelpers(t *testing.T) {
 			_, _ = gm.AddPlayer(player)
 		}
 
-		// Total players = 6, but inactive players still count for capacity
-		// Max per role = (6+3)/4 = 2
-		// Art enthusiast has 4 players (exceeds capacity), detective has 2 (at capacity)
+		// During setup phase, only active players count for capacity and distribution
+		// Max per role = (4 active+3)/4 = 1
+		// Art enthusiast has 4 active players (exceeds capacity), detective has 0 active players
 		availability := gm.GetRoleAvailabilityMap()
-		assert.False(t, availability[models.RoleArtEnthusiast]) // 4 > 2
-		assert.False(t, availability[models.RoleDetective])     // 2 = 2
-		assert.True(t, availability[models.RoleTourist])        // 0 < 2
-		assert.True(t, availability[models.RoleJanitor])        // 0 < 2
+		assert.False(t, availability[models.RoleArtEnthusiast]) // 4 active > 1
+		assert.True(t, availability[models.RoleDetective])      // 0 active < 1
+		assert.True(t, availability[models.RoleTourist])        // 0 active < 1
+		assert.True(t, availability[models.RoleJanitor])        // 0 active < 1
 	})
 
 	t.Run("CheckRoleAvailabilityChanged Detection", func(t *testing.T) {

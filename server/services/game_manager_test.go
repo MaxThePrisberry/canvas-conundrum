@@ -886,6 +886,55 @@ func TestResourceRoundTimerBehavior(t *testing.T) {
 	})
 }
 
+func TestResourceRoundNumbering(t *testing.T) {
+	// Reset singleton
+	gameInstance = nil
+	once = sync.Once{}
+	gm := GetGameInstance()
+
+	t.Run("ResourceGatheringStartsAtRound1", func(t *testing.T) {
+		// Start resource gathering
+		gm.GetGame().StartResourceGathering()
+
+		// Verify round is initialized to 0 before first StartResourceRound
+		assert.Equal(t, 0, gm.GetGame().CurrentRound)
+
+		// Start first resource round
+		gm.StartResourceRound()
+
+		// Verify it's now round 1
+		assert.Equal(t, 1, gm.GetGame().CurrentRound)
+
+		// Start second resource round
+		gm.StartResourceRound()
+
+		// Verify it's now round 2
+		assert.Equal(t, 2, gm.GetGame().CurrentRound)
+	})
+
+	t.Run("RoundNumberingAfterGameReset", func(t *testing.T) {
+		// Start resource gathering and advance rounds
+		gm.GetGame().StartResourceGathering()
+		gm.StartResourceRound() // Round 1
+		gm.StartResourceRound() // Round 2
+
+		// Reset game
+		gm.ResetGame()
+
+		// Start resource gathering again
+		gm.GetGame().StartResourceGathering()
+
+		// Verify round is back to 0
+		assert.Equal(t, 0, gm.GetGame().CurrentRound)
+
+		// Start first resource round after reset
+		gm.StartResourceRound()
+
+		// Verify it starts at 1 again
+		assert.Equal(t, 1, gm.GetGame().CurrentRound)
+	})
+}
+
 // TestGameManagerRosterBroadcasting tests the roster update broadcasting functionality
 func TestGameManagerRosterBroadcasting(t *testing.T) {
 	t.Run("AddPlayer_WithHostAndBroadcastService_ShouldNotCrash", func(t *testing.T) {

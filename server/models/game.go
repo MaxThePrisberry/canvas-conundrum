@@ -219,7 +219,7 @@ func (g *Game) StartResourceGathering() {
 	g.PhaseStartTime = time.Now()
 	g.GameStarted = true
 	g.StartTime = time.Now()
-	g.CurrentRound = 1 // Start at round 1
+	g.CurrentRound = 0 // Initialize to 0, will be incremented to 1 on first round
 }
 
 // StartNextRound advances to the next resource gathering round

@@ -7,6 +7,7 @@ import (
 	"canvas-conundrum/services"
 	"canvas-conundrum/test_helpers"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -329,6 +330,76 @@ func TestPingPong(t *testing.T) {
 	}
 	require.NoError(t, err)
 	assert.NotNil(t, msg)
+}
+
+func TestPingResponseDuringPhaseTransition(t *testing.T) {
+	server, cleanup := setupTestServer(t)
+	defer cleanup()
+
+	// Connect as host
+	host := test_helpers.NewTestHostClient(t, server, config.HostUUID)
+	err := host.Connect()
+	require.NoError(t, err)
+	defer host.Close()
+
+	// Connect minimum required players and configure them
+	players := make([]*test_helpers.TestPlayerClient, constants.MinPlayers)
+	roles := []string{"detective", "art_enthusiast", "tourist", "janitor"}
+
+	for i := 0; i < constants.MinPlayers; i++ {
+		players[i] = test_helpers.NewTestPlayerClient(t, server)
+		err := players[i].Connect()
+		require.NoError(t, err)
+		defer players[i].Close()
+
+		// Configure each player to make them ready (using actual game flow)
+		// Use different roles to avoid role conflicts
+		role := roles[i%len(roles)]
+		err = players[i].ConfigurePlayer(
+			fmt.Sprintf("TestPlayer%d", i+1),
+			role,
+			[]string{}, // No specialties for simplicity
+		)
+		require.NoError(t, err)
+		time.Sleep(100 * time.Millisecond) // Allow processing time
+	}
+
+	// Verify ping works during setup phase
+	pingPayload := map[string]interface{}{
+		"clientTimestamp": time.Now().Format(time.RFC3339),
+		"sequenceNumber":  1,
+	}
+
+	err = host.SendMessage(constants.EventSystemPing, pingPayload)
+	require.NoError(t, err)
+
+	pongMessage, err := host.WaitForEvent(constants.EventSystemPong, 2*time.Second)
+	require.NoError(t, err, "Server should respond to ping during setup phase")
+	require.NotNil(t, pongMessage)
+
+	// Start the game (this should now work since players are ready)
+	err = host.SendMessage(constants.EventSetupToServerStartGame, nil)
+	require.NoError(t, err)
+
+	// Wait for the game to transition to resource gathering phase
+	time.Sleep(2 * time.Second)
+
+	// Test ping response during resource gathering phase
+	// This is the critical test - the original issue was that pings failed
+	// during resource gathering due to the deadlock in StartResourceRound
+	pingPayload2 := map[string]interface{}{
+		"clientTimestamp": time.Now().Format(time.RFC3339),
+		"sequenceNumber":  2,
+	}
+
+	err = host.SendMessage(constants.EventSystemPing, pingPayload2)
+	require.NoError(t, err)
+
+	pongMessage2, err := host.WaitForEvent(constants.EventSystemPong, 3*time.Second)
+	require.NoError(t, err, "Server should respond to ping during resource gathering phase - this was the original bug!")
+	require.NotNil(t, pongMessage2)
+
+	t.Log("Ping response test passed - server remains responsive during resource gathering phase")
 }
 
 func TestInvalidAuthentication(t *testing.T) {

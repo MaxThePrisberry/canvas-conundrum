@@ -465,7 +465,7 @@ func TestGameStartResourceGathering(t *testing.T) {
 
 	assert.Equal(t, PhaseResourceGathering, game.CurrentPhase)
 	assert.True(t, game.GameStarted)
-	assert.Equal(t, 1, game.CurrentRound)
+	assert.Equal(t, 0, game.CurrentRound)
 }
 
 func TestGameStartNextRound(t *testing.T) {

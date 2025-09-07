@@ -643,9 +643,9 @@ func (gm *GameManager) StartGame() error {
 // StartResourceRound starts a new resource gathering round
 func (gm *GameManager) StartResourceRound() {
 	gm.mu.Lock()
-	defer gm.mu.Unlock()
 
 	if gm.game.CurrentPhase != models.PhaseResourceGathering {
+		gm.mu.Unlock()
 		return
 	}
 
@@ -686,6 +686,8 @@ func (gm *GameManager) StartResourceRound() {
 			gm.CompleteResourceGathering()
 		}()
 	}
+
+	gm.mu.Unlock()
 }
 
 // CompleteResourceGathering completes the resource gathering phase

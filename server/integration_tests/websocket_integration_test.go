@@ -2,7 +2,6 @@ package integration_tests
 
 import (
 	"canvas-conundrum/config"
-	"canvas-conundrum/constants"
 	"canvas-conundrum/handlers"
 	"canvas-conundrum/services"
 	"canvas-conundrum/test_helpers"
@@ -72,7 +71,7 @@ func TestPlayerWebSocketConnection(t *testing.T) {
 	err = json.Unmarshal(message, &msg)
 	require.NoError(t, err)
 
-	assert.Equal(t, constants.EventSetupToPlayerRolesAvailable, msg["event"])
+	assert.Equal(t, config.EventSetupToPlayerRolesAvailable, msg["event"])
 
 	// Check payload
 	payload := msg["payload"].(map[string]interface{})
@@ -120,7 +119,7 @@ func TestHostWebSocketConnection(t *testing.T) {
 		err = json.Unmarshal(message, &msg)
 		require.NoError(t, err)
 
-		assert.Equal(t, constants.EventSetupToHostConnectionConfirmed, msg["event"])
+		assert.Equal(t, config.EventSetupToHostConnectionConfirmed, msg["event"])
 
 		payload := msg["payload"].(map[string]interface{})
 		assert.NotEmpty(t, payload["playerId"])
@@ -128,8 +127,8 @@ func TestHostWebSocketConnection(t *testing.T) {
 
 		// Check game config
 		gameConfig := payload["gameConfig"].(map[string]interface{})
-		assert.Equal(t, float64(constants.MinPlayers), gameConfig["minPlayers"])
-		assert.Equal(t, float64(constants.MaxPlayers), gameConfig["maxPlayers"])
+		assert.Equal(t, float64(config.MinPlayers), gameConfig["minPlayers"])
+		assert.Equal(t, float64(config.MaxPlayers), gameConfig["maxPlayers"])
 	})
 
 	t.Run("InvalidUUID", func(t *testing.T) {
@@ -162,7 +161,7 @@ func TestPlayerConfiguration(t *testing.T) {
 	require.NoError(t, err)
 
 	// Wait for lobby status update
-	msg, err := client.WaitForEvent(constants.EventSetupToClientLobbyStatus, 2*time.Second)
+	msg, err := client.WaitForEvent(config.EventSetupToClientLobbyStatus, 2*time.Second)
 	require.NoError(t, err)
 
 	var payload map[string]interface{}
@@ -228,7 +227,7 @@ func TestMultiplePlayersJoining(t *testing.T) {
 	var lastRosterPayload map[string]interface{}
 
 	for _, msg := range messages {
-		if msg.Event == constants.EventSetupToHostPlayerRoster {
+		if msg.Event == config.EventSetupToHostPlayerRoster {
 			foundRoster = true
 
 			var payload map[string]interface{}
@@ -299,7 +298,7 @@ func TestPingPong(t *testing.T) {
 	// Log what we're sending
 	t.Logf("Sending ping with payload: %+v", pingPayload)
 
-	err = client.SendMessage(constants.EventSystemPing, pingPayload)
+	err = client.SendMessage(config.EventSystemPing, pingPayload)
 	require.NoError(t, err)
 
 	// Wait a bit more
@@ -320,7 +319,7 @@ func TestPingPong(t *testing.T) {
 	}
 
 	// Should receive pong
-	msg, err := client.WaitForEvent(constants.EventSystemPong, 3*time.Second)
+	msg, err := client.WaitForEvent(config.EventSystemPong, 3*time.Second)
 	if err != nil {
 		t.Logf("Error waiting for pong: %v", err)
 		// Check what the last message was
@@ -343,10 +342,10 @@ func TestPingResponseDuringPhaseTransition(t *testing.T) {
 	defer host.Close()
 
 	// Connect minimum required players and configure them
-	players := make([]*test_helpers.TestPlayerClient, constants.MinPlayers)
+	players := make([]*test_helpers.TestPlayerClient, config.MinPlayers)
 	roles := []string{"detective", "art_enthusiast", "tourist", "janitor"}
 
-	for i := 0; i < constants.MinPlayers; i++ {
+	for i := 0; i < config.MinPlayers; i++ {
 		players[i] = test_helpers.NewTestPlayerClient(t, server)
 		err := players[i].Connect()
 		require.NoError(t, err)
@@ -370,15 +369,15 @@ func TestPingResponseDuringPhaseTransition(t *testing.T) {
 		"sequenceNumber":  1,
 	}
 
-	err = host.SendMessage(constants.EventSystemPing, pingPayload)
+	err = host.SendMessage(config.EventSystemPing, pingPayload)
 	require.NoError(t, err)
 
-	pongMessage, err := host.WaitForEvent(constants.EventSystemPong, 2*time.Second)
+	pongMessage, err := host.WaitForEvent(config.EventSystemPong, 2*time.Second)
 	require.NoError(t, err, "Server should respond to ping during setup phase")
 	require.NotNil(t, pongMessage)
 
 	// Start the game (this should now work since players are ready)
-	err = host.SendMessage(constants.EventSetupToServerStartGame, nil)
+	err = host.SendMessage(config.EventSetupToServerStartGame, nil)
 	require.NoError(t, err)
 
 	// Wait for the game to transition to resource gathering phase
@@ -392,10 +391,10 @@ func TestPingResponseDuringPhaseTransition(t *testing.T) {
 		"sequenceNumber":  2,
 	}
 
-	err = host.SendMessage(constants.EventSystemPing, pingPayload2)
+	err = host.SendMessage(config.EventSystemPing, pingPayload2)
 	require.NoError(t, err)
 
-	pongMessage2, err := host.WaitForEvent(constants.EventSystemPong, 3*time.Second)
+	pongMessage2, err := host.WaitForEvent(config.EventSystemPong, 3*time.Second)
 	require.NoError(t, err, "Server should respond to ping during resource gathering phase - this was the original bug!")
 	require.NotNil(t, pongMessage2)
 
@@ -419,7 +418,7 @@ func TestInvalidAuthentication(t *testing.T) {
 
 	// Send message with invalid token
 	invalidMsg := map[string]interface{}{
-		"event": constants.EventResourceToServerLocationVerified,
+		"event": config.EventResourceToServerLocationVerified,
 		"auth": map[string]interface{}{
 			"token": "invalid-token",
 		},
@@ -444,7 +443,7 @@ func TestInvalidAuthentication(t *testing.T) {
 	err = json.Unmarshal(message, &response)
 	require.NoError(t, err)
 
-	assert.Equal(t, constants.EventSystemToClientError, response["event"])
+	assert.Equal(t, config.EventSystemToClientError, response["event"])
 }
 
 func TestConcurrentConnections(t *testing.T) {
@@ -541,7 +540,7 @@ func TestDisconnectionHandling(t *testing.T) {
 	}
 
 	for _, msg := range messages {
-		if msg.Event == constants.EventSystemToHostPlayerDisconnected {
+		if msg.Event == config.EventSystemToHostPlayerDisconnected {
 			var payload map[string]interface{}
 			payloadBytes, ok := msg.Payload.([]byte)
 			if !ok {

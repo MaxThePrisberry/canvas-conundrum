@@ -1,25 +1,11 @@
 package config
 
+// QR Code Station Hashes - These should match the QR codes at physical stations
 const (
-	// Host UUID - Static identifier for host connections
-	HostUUID = "550e8400-e29b-41d4-a716-446655440000"
-
-	// QR Code Station Hashes - These should match the QR codes at physical stations
 	HashAnchorStation  = "ANCHOR_STATION_QR_HASH_2024"
 	HashChronosStation = "CHRONOS_STATION_QR_HASH_2024"
 	HashGuideStation   = "GUIDE_STATION_QR_HASH_2024"
 	HashClarityStation = "CLARITY_STATION_QR_HASH_2024"
-
-	// Puzzle Image Settings
-	DefaultPuzzleImage = "nature_image"
-
-	// Server Settings
-	DefaultPort         = "8080"
-	WebSocketBufferSize = 1024
-	MaxMessageSize      = 8192 // 8KB limit for WebSocket messages
-	PingPeriod          = 30   // seconds
-	PongWait            = 60   // seconds
-	WriteWait           = 10   // seconds
 )
 
 // Station represents a resource gathering station

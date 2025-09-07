@@ -1,7 +1,7 @@
 package services
 
 import (
-	"canvas-conundrum/constants"
+	"canvas-conundrum/config"
 	"canvas-conundrum/models"
 	"canvas-conundrum/utils"
 	"fmt"
@@ -266,7 +266,7 @@ func (gm *GameManager) RemovePlayer(playerID string) {
 				}
 			}
 
-			gm.broadcastSvc.SendToHost(gm.host, constants.EventSystemToHostPlayerDisconnected, hostPayload)
+			gm.broadcastSvc.SendToHost(gm.host, config.EventSystemToHostPlayerDisconnected, hostPayload)
 			log.Printf("RemovePlayer: Disconnection notification sent")
 		}()
 	} else {
@@ -433,7 +433,7 @@ func (gm *GameManager) UpdatePlayerConfiguration(playerID string, name string, r
 	}
 
 	// Validate specialties
-	if len(specialties) > constants.MaxSpecialtiesPerPlayer {
+	if len(specialties) > config.MaxSpecialtiesPerPlayer {
 		gm.mu.Unlock()
 		return fmt.Errorf("too many specialties selected")
 	}
@@ -651,7 +651,7 @@ func (gm *GameManager) StartResourceRound() {
 
 	gm.game.StartNextRound()
 
-	log.Printf("Starting resource round %d/%d", gm.game.CurrentRound, constants.ResourceGatheringRounds)
+	log.Printf("Starting resource round %d/%d", gm.game.CurrentRound, config.ResourceGatheringRounds)
 
 	// Store references for calls outside lock
 	players := gm.players
@@ -671,9 +671,9 @@ func (gm *GameManager) StartResourceRound() {
 	gm.mu.Lock()
 
 	// Set timer for next round or complete phase
-	if gm.game.CurrentRound < constants.ResourceGatheringRounds {
+	if gm.game.CurrentRound < config.ResourceGatheringRounds {
 		gm.roundTimer = utils.NewTimer(
-			time.Duration(constants.ResourceGatheringRoundDuration)*time.Second,
+			time.Duration(config.ResourceGatheringRoundDuration)*time.Second,
 			func() {
 				go gm.StartResourceRound()
 			},
@@ -682,7 +682,7 @@ func (gm *GameManager) StartResourceRound() {
 	} else {
 		// Resource gathering complete
 		go func() {
-			time.Sleep(time.Duration(constants.ResourceGatheringRoundDuration) * time.Second)
+			time.Sleep(time.Duration(config.ResourceGatheringRoundDuration) * time.Second)
 			gm.CompleteResourceGathering()
 		}()
 	}
@@ -908,7 +908,7 @@ func (gm *GameManager) MoveFragment(playerID string, fragmentID string, targetPo
 	}
 
 	// Check cooldown
-	if !player.CanMoveFragment(constants.FragmentMoveCooldown) {
+	if !player.CanMoveFragment(config.FragmentMoveCooldown) {
 		gm.mu.Unlock()
 		return fmt.Errorf("move on cooldown")
 	}

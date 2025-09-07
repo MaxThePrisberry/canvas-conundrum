@@ -2,7 +2,6 @@ package e2e_tests
 
 import (
 	"canvas-conundrum/config"
-	"canvas-conundrum/constants"
 	"canvas-conundrum/handlers"
 	"canvas-conundrum/models"
 	"canvas-conundrum/services"
@@ -384,12 +383,12 @@ func TestGameWithHighTokens(t *testing.T) {
 	// Check pre-solved pieces (only anchor affects this)
 	game = gm.GetGame()
 	preSolved := game.GetPreSolvedPieces()
-	expectedPreSolved := 3 * constants.PiecesPreSolvedPerThreshold // Only anchor thresholds count
+	expectedPreSolved := 3 * config.PiecesPreSolvedPerThreshold // Only anchor thresholds count
 	assert.Equal(t, expectedPreSolved, preSolved)
 
 	// Check puzzle time bonus
 	totalTime := gm.GetGame().GetTotalPuzzleTime()
-	expectedTime := constants.PuzzleBaseTime + (2 * constants.TimeExtensionPerThreshold) // Chronos threshold 2
+	expectedTime := config.PuzzleBaseTime + (2 * config.TimeExtensionPerThreshold) // Chronos threshold 2
 	assert.Equal(t, expectedTime, totalTime)
 }
 

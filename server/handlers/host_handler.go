@@ -1,7 +1,7 @@
 package handlers
 
 import (
-	"canvas-conundrum/constants"
+	"canvas-conundrum/config"
 	"canvas-conundrum/models"
 	"canvas-conundrum/services"
 	"canvas-conundrum/utils"
@@ -19,16 +19,16 @@ func HandleHostMessage(host *models.Host, msg *utils.Message) {
 	log.Printf("Host sent event: %s", msg.Event)
 
 	switch msg.Event {
-	case constants.EventSetupToServerStartGame:
+	case config.EventSetupToServerStartGame:
 		handleHostStartGame(host)
 
-	case constants.EventPuzzleToServerStartTimer:
+	case config.EventPuzzleToServerStartTimer:
 		handleHostStartPuzzleTimer(host)
 
-	case constants.EventAnalyticsToServerResetGame:
+	case config.EventAnalyticsToServerResetGame:
 		handleHostResetGame(host, msg.Payload)
 
-	case constants.EventSystemPing:
+	case config.EventSystemPing:
 		handleHostPing(host, msg.Payload)
 
 	default:
@@ -55,9 +55,9 @@ func handleHostStartGame(host *models.Host) {
 		if broadcastService != nil {
 			broadcastService.SendError(
 				host,
-				constants.ErrorCodeInsufficientPlayers,
-				constants.ErrorMessageInsufficientPlayers,
-				fmt.Sprintf("Need at least %d ready players to start", constants.MinPlayers),
+				config.ErrorCodeInsufficientPlayers,
+				config.ErrorMessageInsufficientPlayers,
+				fmt.Sprintf("Need at least %d ready players to start", config.MinPlayers),
 			)
 		}
 		return
@@ -70,7 +70,7 @@ func handleHostStartGame(host *models.Host) {
 		if broadcastService != nil {
 			broadcastService.SendError(
 				host,
-				constants.ErrorCodeGameInProgress,
+				config.ErrorCodeGameInProgress,
 				"Failed to start game",
 				err.Error(),
 			)
@@ -145,7 +145,7 @@ func handleHostResetGame(host *models.Host, payload json.RawMessage) {
 			"gracePeriod":           30,
 			"newGameAvailable":      true,
 		}
-		broadcastService.BroadcastToAll(constants.EventAnalyticsToClientGameReset, resetPayload)
+		broadcastService.BroadcastToAll(config.EventAnalyticsToClientGameReset, resetPayload)
 	}
 
 	// Reset the game
@@ -182,6 +182,6 @@ func handleHostPing(host *models.Host, payload json.RawMessage) {
 			},
 		}
 
-		broadcastService.SendToHost(host, constants.EventSystemPong, pongPayload)
+		broadcastService.SendToHost(host, config.EventSystemPong, pongPayload)
 	}
 }

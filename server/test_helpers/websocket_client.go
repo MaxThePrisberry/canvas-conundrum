@@ -1,7 +1,7 @@
 package test_helpers
 
 import (
-	"canvas-conundrum/constants"
+	"canvas-conundrum/config"
 	"canvas-conundrum/utils"
 	"encoding/json"
 	"net/http"
@@ -242,17 +242,17 @@ func (c *TestHostClient) StartGame(difficulty string) error {
 	payload := map[string]interface{}{
 		"difficulty": difficulty,
 	}
-	return c.SendMessage(constants.EventSetupToServerStartGame, payload)
+	return c.SendMessage(config.EventSetupToServerStartGame, payload)
 }
 
 // StartPuzzleTimer sends the start puzzle timer command
 func (c *TestHostClient) StartPuzzleTimer() error {
-	return c.SendMessage(constants.EventPuzzleToServerStartTimer, nil)
+	return c.SendMessage(config.EventPuzzleToServerStartTimer, nil)
 }
 
 // ResetGame sends the reset game command
 func (c *TestHostClient) ResetGame() error {
-	return c.SendMessage(constants.EventAnalyticsToServerResetGame, nil)
+	return c.SendMessage(config.EventAnalyticsToServerResetGame, nil)
 }
 
 // TestPlayerClient represents a test player WebSocket client
@@ -281,7 +281,7 @@ func (c *TestPlayerClient) ConfigurePlayer(name, role string, specialties []stri
 		"selectedRole": role,
 		"specialties":  specialties,
 	}
-	return c.SendMessage(constants.EventSetupToServerPlayerConfiguration, payload)
+	return c.SendMessage(config.EventSetupToServerPlayerConfiguration, payload)
 }
 
 // VerifyLocation sends location verification (QR scan)
@@ -290,7 +290,7 @@ func (c *TestPlayerClient) VerifyLocation(stationID, qrHash string) error {
 		"stationId": stationID,
 		"qrHash":    qrHash,
 	}
-	return c.SendMessage(constants.EventResourceToServerLocationVerified, payload)
+	return c.SendMessage(config.EventResourceToServerLocationVerified, payload)
 }
 
 // AnswerTrivia sends a trivia answer
@@ -300,7 +300,7 @@ func (c *TestPlayerClient) AnswerTrivia(questionID string, answerIndex int, time
 		"answerIndex": answerIndex,
 		"timeElapsed": timeElapsed,
 	}
-	return c.SendMessage(constants.EventResourceToServerTriviaAnswer, payload)
+	return c.SendMessage(config.EventResourceToServerTriviaAnswer, payload)
 }
 
 // CompleteSegment sends segment completion
@@ -309,7 +309,7 @@ func (c *TestPlayerClient) CompleteSegment(segmentID string, solveTime float64) 
 		"segmentId": segmentID,
 		"solveTime": solveTime,
 	}
-	return c.SendMessage(constants.EventPuzzleToServerSegmentCompleted, payload)
+	return c.SendMessage(config.EventPuzzleToServerSegmentCompleted, payload)
 }
 
 // MoveFragment sends a fragment move
@@ -319,7 +319,7 @@ func (c *TestPlayerClient) MoveFragment(fragmentID, fromPosition, toPosition str
 		"fromPosition": fromPosition,
 		"toPosition":   toPosition,
 	}
-	return c.SendMessage(constants.EventPuzzleToServerFragmentMove, payload)
+	return c.SendMessage(config.EventPuzzleToServerFragmentMove, payload)
 }
 
 // RecommendMove sends a move recommendation
@@ -329,7 +329,7 @@ func (c *TestPlayerClient) RecommendMove(targetPlayerID, fragmentID, suggestedPo
 		"fragmentId":        fragmentID,
 		"suggestedPosition": suggestedPosition,
 	}
-	return c.SendMessage(constants.EventPuzzleToServerRecommendMove, payload)
+	return c.SendMessage(config.EventPuzzleToServerRecommendMove, payload)
 }
 
 // RespondToRecommendation responds to a move recommendation
@@ -338,7 +338,7 @@ func (c *TestPlayerClient) RespondToRecommendation(recommendationID string, acce
 		"recommendationId": recommendationID,
 		"accepted":         accepted,
 	}
-	return c.SendMessage(constants.EventPuzzleToServerRecommendationResponse, payload)
+	return c.SendMessage(config.EventPuzzleToServerRecommendationResponse, payload)
 }
 
 // CreateTestServer creates a test HTTP server with WebSocket support

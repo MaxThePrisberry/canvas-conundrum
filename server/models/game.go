@@ -2,7 +2,6 @@ package models
 
 import (
 	"canvas-conundrum/config"
-	"canvas-conundrum/constants"
 	"time"
 )
 
@@ -85,13 +84,13 @@ func (tt *TeamTokens) GetThresholdWithDifficulty(tokenType TokenType, difficulty
 	var baseThreshold int
 	switch tokenType {
 	case TokenAnchor:
-		baseThreshold = constants.AnchorTokenThreshold
+		baseThreshold = config.AnchorTokenThreshold
 	case TokenChronos:
-		baseThreshold = constants.ChronosTokenThreshold
+		baseThreshold = config.ChronosTokenThreshold
 	case TokenGuide:
-		baseThreshold = constants.GuideTokenThreshold
+		baseThreshold = config.GuideTokenThreshold
 	case TokenClarity:
-		baseThreshold = constants.ClarityTokenThreshold
+		baseThreshold = config.ClarityTokenThreshold
 	default:
 		return 0
 	}
@@ -100,11 +99,11 @@ func (tt *TeamTokens) GetThresholdWithDifficulty(tokenType TokenType, difficulty
 	var multiplier float64
 	switch difficulty {
 	case DifficultyEasy:
-		multiplier = constants.EasyThresholdMultiplier // 0.8 - easier to achieve
+		multiplier = config.EasyThresholdMultiplier // 0.8 - easier to achieve
 	case DifficultyHard:
-		multiplier = constants.HardThresholdMultiplier // 1.2 - harder to achieve
+		multiplier = config.HardThresholdMultiplier // 1.2 - harder to achieve
 	default:
-		multiplier = constants.MediumThresholdMultiplier // 1.0
+		multiplier = config.MediumThresholdMultiplier // 1.0
 	}
 
 	adjustedThreshold := int(float64(baseThreshold) * multiplier)
@@ -114,8 +113,8 @@ func (tt *TeamTokens) GetThresholdWithDifficulty(tokenType TokenType, difficulty
 
 	// Calculate threshold level (0-6)
 	level := count / adjustedThreshold
-	if level > constants.MaxThresholds {
-		level = constants.MaxThresholds
+	if level > config.MaxThresholds {
+		level = config.MaxThresholds
 	}
 
 	return level
@@ -177,8 +176,8 @@ func NewGame() *Game {
 		CurrentPhase: PhaseSetup,
 		Difficulty:   DifficultyMedium,
 		GameStarted:  false,
-		MinPlayers:   constants.MinPlayers,
-		MaxPlayers:   constants.MaxPlayers,
+		MinPlayers:   config.MinPlayers,
+		MaxPlayers:   config.MaxPlayers,
 		TeamTokens:   NewTeamTokens(),
 		ImageID:      config.DefaultPuzzleImage,
 		PlayerCount:  0,
@@ -211,7 +210,7 @@ func (g *Game) SetDifficulty(difficulty DifficultyMode) {
 
 // GetGridSize returns the grid size based on player count
 func (g *Game) GetGridSize() int {
-	return constants.GetGridSizeForPlayerCount(g.PlayerCount)
+	return config.GetGridSizeForPlayerCount(g.PlayerCount)
 }
 
 // StartResourceGathering transitions to resource gathering phase
@@ -235,7 +234,7 @@ func (g *Game) StartPuzzlePhase(playerCount int) {
 	g.PhaseStartTime = time.Now()
 
 	// Initialize puzzle grid based on player count
-	gridSize := constants.GetGridSizeForPlayerCount(playerCount)
+	gridSize := config.GetGridSizeForPlayerCount(playerCount)
 	g.PuzzleGrid = NewPuzzleGrid(gridSize)
 }
 
@@ -263,18 +262,18 @@ func (g *Game) GetPuzzleTimeRemaining() int {
 
 // GetTotalPuzzleTime returns total puzzle time including bonuses
 func (g *Game) GetTotalPuzzleTime() int {
-	baseTime := constants.PuzzleBaseTime
-	chronosBonus := g.TeamTokens.GetThresholdWithDifficulty(TokenChronos, g.Difficulty) * constants.TimeExtensionPerThreshold
+	baseTime := config.PuzzleBaseTime
+	chronosBonus := g.TeamTokens.GetThresholdWithDifficulty(TokenChronos, g.Difficulty) * config.TimeExtensionPerThreshold
 
 	// Apply difficulty modifier to base time
 	var modifier float64
 	switch g.Difficulty {
 	case DifficultyEasy:
-		modifier = constants.EasyTimeMultiplier
+		modifier = config.EasyTimeMultiplier
 	case DifficultyHard:
-		modifier = constants.HardTimeMultiplier
+		modifier = config.HardTimeMultiplier
 	default:
-		modifier = constants.MediumTimeMultiplier
+		modifier = config.MediumTimeMultiplier
 	}
 
 	return int(float64(baseTime+chronosBonus) * modifier)
@@ -283,18 +282,18 @@ func (g *Game) GetTotalPuzzleTime() int {
 // GetPreSolvedPieces returns number of pieces to pre-solve based on anchor tokens
 func (g *Game) GetPreSolvedPieces() int {
 	threshold := g.TeamTokens.GetThresholdWithDifficulty(TokenAnchor, g.Difficulty)
-	pieces := threshold * constants.PiecesPreSolvedPerThreshold
-	if pieces > constants.MaxPreSolvedPieces {
-		pieces = constants.MaxPreSolvedPieces
+	pieces := threshold * config.PiecesPreSolvedPerThreshold
+	if pieces > config.MaxPreSolvedPieces {
+		pieces = config.MaxPreSolvedPieces
 	}
 	return pieces
 }
 
 // GetClarityPreviewTime returns clarity preview duration in seconds
 func (g *Game) GetClarityPreviewTime() int {
-	baseTime := constants.ClarityBasePreviewTime
+	baseTime := config.ClarityBasePreviewTime
 	threshold := g.TeamTokens.GetThresholdWithDifficulty(TokenClarity, g.Difficulty)
-	return baseTime + (threshold * constants.PreviewTimePerThreshold)
+	return baseTime + (threshold * config.PreviewTimePerThreshold)
 }
 
 // CompleteGame marks the game as complete

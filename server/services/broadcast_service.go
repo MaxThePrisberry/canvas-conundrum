@@ -2,7 +2,6 @@ package services
 
 import (
 	"canvas-conundrum/config"
-	"canvas-conundrum/constants"
 	"canvas-conundrum/models"
 	"canvas-conundrum/utils"
 	"fmt"
@@ -121,8 +120,8 @@ func (bs *BroadcastService) BroadcastLobbyStatus() {
 	// Create lobby status payload
 	payload := map[string]interface{}{
 		"currentPlayers": connectedCount, // Only count actual players, not host
-		"minPlayers":     constants.MinPlayers,
-		"maxPlayers":     constants.MaxPlayers,
+		"minPlayers":     config.MinPlayers,
+		"maxPlayers":     config.MaxPlayers,
 		"playerRoles": map[string]int{
 			"art_enthusiast": roleDistribution[models.RoleArtEnthusiast],
 			"detective":      roleDistribution[models.RoleDetective],
@@ -130,13 +129,13 @@ func (bs *BroadcastService) BroadcastLobbyStatus() {
 			"janitor":        roleDistribution[models.RoleJanitor],
 		},
 		"hasHost":           gameManager.IsHostConnected(),
-		"allPlayersReady":   readyCount >= constants.MinPlayers,
+		"allPlayersReady":   readyCount >= config.MinPlayers,
 		"readyPlayers":      readyCount,
 		"gameStartEligible": gameManager.CanStartGame(),
 		"waitingMessage":    bs.getWaitingMessage(readyCount, connectedCount),
 	}
 
-	bs.BroadcastToAllPlayers(constants.EventSetupToClientLobbyStatus, payload)
+	bs.BroadcastToAllPlayers(config.EventSetupToClientLobbyStatus, payload)
 
 	// Send detailed roster to host
 	bs.sendHostPlayerRoster()
@@ -157,7 +156,7 @@ func (bs *BroadcastService) BroadcastRoleAvailability() {
 		{
 			"roleType":       "art_enthusiast",
 			"displayName":    "Art Enthusiast",
-			"resourceBonus":  constants.RoleResourceMultiplier,
+			"resourceBonus":  config.RoleResourceMultiplier,
 			"bonusTokenType": "clarity",
 			"description":    "Excels at clarity token collection",
 			"available":      roleDistribution[models.RoleArtEnthusiast] < maxPerRole,
@@ -165,7 +164,7 @@ func (bs *BroadcastService) BroadcastRoleAvailability() {
 		{
 			"roleType":       "detective",
 			"displayName":    "Detective",
-			"resourceBonus":  constants.RoleResourceMultiplier,
+			"resourceBonus":  config.RoleResourceMultiplier,
 			"bonusTokenType": "guide",
 			"description":    "Excels at guide token collection",
 			"available":      roleDistribution[models.RoleDetective] < maxPerRole,
@@ -173,7 +172,7 @@ func (bs *BroadcastService) BroadcastRoleAvailability() {
 		{
 			"roleType":       "tourist",
 			"displayName":    "Tourist",
-			"resourceBonus":  constants.RoleResourceMultiplier,
+			"resourceBonus":  config.RoleResourceMultiplier,
 			"bonusTokenType": "chronos",
 			"description":    "Excels at chronos token collection",
 			"available":      roleDistribution[models.RoleTourist] < maxPerRole,
@@ -181,7 +180,7 @@ func (bs *BroadcastService) BroadcastRoleAvailability() {
 		{
 			"roleType":       "janitor",
 			"displayName":    "Janitor",
-			"resourceBonus":  constants.RoleResourceMultiplier,
+			"resourceBonus":  config.RoleResourceMultiplier,
 			"bonusTokenType": "anchor",
 			"description":    "Excels at anchor token collection",
 			"available":      roleDistribution[models.RoleJanitor] < maxPerRole,
@@ -193,15 +192,15 @@ func (bs *BroadcastService) BroadcastRoleAvailability() {
 		"triviaCategories": []string{
 			"general", "geography", "history", "music", "science", "video_games",
 		},
-		"maxSpecialties": constants.MaxSpecialtiesPerPlayer,
+		"maxSpecialties": config.MaxSpecialtiesPerPlayer,
 	}
 
-	bs.BroadcastToAllPlayers(constants.EventSetupToPlayerRolesAvailable, payload)
+	bs.BroadcastToAllPlayers(config.EventSetupToPlayerRolesAvailable, payload)
 }
 
 // getWaitingMessage generates appropriate waiting message
 func (bs *BroadcastService) getWaitingMessage(readyCount, connectedCount int) string {
-	needed := constants.MinPlayers - readyCount
+	needed := config.MinPlayers - readyCount
 	if needed > 0 {
 		return fmt.Sprintf("Waiting for %d more player(s) to be ready", needed)
 	}
@@ -242,7 +241,7 @@ func (bs *BroadcastService) sendHostPlayerRoster() {
 		"roleDistribution":  gameManager.GetRoleDistribution(),
 	}
 
-	bs.SendToHost(host, constants.EventSetupToHostPlayerRoster, payload)
+	bs.SendToHost(host, config.EventSetupToHostPlayerRoster, payload)
 }
 
 // countReadyPlayers counts ready players
@@ -265,7 +264,7 @@ func (bs *BroadcastService) BroadcastGameStart() {
 		"message":             "Game starting! Prepare for resource gathering phase.",
 		"instructions":        "Make your way to the resource gathering stations.",
 	}
-	bs.BroadcastToAllPlayers(constants.EventSetupToClientGameStarted, playerPayload)
+	bs.BroadcastToAllPlayers(config.EventSetupToClientGameStarted, playerPayload)
 
 	// To host
 	gameManager := GetGameInstance()
@@ -284,7 +283,7 @@ func (bs *BroadcastService) BroadcastGameStart() {
 	}
 
 	if host := gameManager.GetHost(); host != nil {
-		bs.SendToHost(host, constants.EventSetupToHostGameStarted, hostPayload)
+		bs.SendToHost(host, config.EventSetupToHostGameStarted, hostPayload)
 	}
 }
 
@@ -313,7 +312,7 @@ func (bs *BroadcastService) BroadcastPhaseTransition(fromPhase, toPhase models.G
 		}
 	}
 
-	bs.BroadcastToAll(constants.EventSystemToClientPhaseTransition, payload)
+	bs.BroadcastToAll(config.EventSystemToClientPhaseTransition, payload)
 
 	// Send host-specific transition info
 	bs.sendHostPhaseTransition(fromPhase, toPhase)
@@ -332,10 +331,10 @@ func (bs *BroadcastService) BroadcastResourcePhaseStart() {
 	// Send phase start to all players
 	playerPayload := map[string]interface{}{
 		"phase":         "resource_gathering",
-		"totalRounds":   constants.ResourceGatheringRounds,
-		"roundDuration": constants.ResourceGatheringRoundDuration,
-		"answerTime":    constants.TriviaAnswerTime,
-		"graceTime":     constants.TriviaGraceTime,
+		"totalRounds":   config.ResourceGatheringRounds,
+		"roundDuration": config.ResourceGatheringRoundDuration,
+		"answerTime":    config.TriviaAnswerTime,
+		"graceTime":     config.TriviaGraceTime,
 		"resourceStationHashes": map[string]string{
 			"anchor":  config.HashAnchorStation,
 			"chronos": config.HashChronosStation,
@@ -343,10 +342,10 @@ func (bs *BroadcastService) BroadcastResourcePhaseStart() {
 			"clarity": config.HashClarityStation,
 		},
 		"tokenThresholds": map[string]int{
-			"anchor":  constants.AnchorTokenThreshold,
-			"chronos": constants.ChronosTokenThreshold,
-			"guide":   constants.GuideTokenThreshold,
-			"clarity": constants.ClarityTokenThreshold,
+			"anchor":  config.AnchorTokenThreshold,
+			"chronos": config.ChronosTokenThreshold,
+			"guide":   config.GuideTokenThreshold,
+			"clarity": config.ClarityTokenThreshold,
 		},
 		"difficultySettings": map[string]interface{}{
 			"mode":                 game.Difficulty,
@@ -356,7 +355,7 @@ func (bs *BroadcastService) BroadcastResourcePhaseStart() {
 		},
 	}
 
-	bs.BroadcastToAllPlayers(constants.EventResourceToClientPhaseStart, playerPayload)
+	bs.BroadcastToAllPlayers(config.EventResourceToClientPhaseStart, playerPayload)
 
 	// Send phase start to host
 	host := gameManager.GetHost()
@@ -364,9 +363,9 @@ func (bs *BroadcastService) BroadcastResourcePhaseStart() {
 		hostPayload := map[string]interface{}{
 			"phase": "resource_gathering",
 			"monitoringDashboard": map[string]interface{}{
-				"totalRounds":   constants.ResourceGatheringRounds,
+				"totalRounds":   config.ResourceGatheringRounds,
 				"currentRound":  0,
-				"roundDuration": constants.ResourceGatheringRoundDuration,
+				"roundDuration": config.ResourceGatheringRoundDuration,
 				"playerDistribution": map[string]int{
 					"anchor":  0,
 					"chronos": 0,
@@ -383,7 +382,7 @@ func (bs *BroadcastService) BroadcastResourcePhaseStart() {
 			},
 		}
 
-		bs.SendToHost(host, constants.EventResourceToHostPhaseStart, hostPayload)
+		bs.SendToHost(host, config.EventResourceToHostPhaseStart, hostPayload)
 	}
 }
 
@@ -391,33 +390,33 @@ func (bs *BroadcastService) BroadcastResourcePhaseStart() {
 func (bs *BroadcastService) getSpecialtyProbability(difficulty models.DifficultyMode) float64 {
 	switch difficulty {
 	case models.DifficultyEasy:
-		return constants.SpecialtyQFreqEasy
+		return config.SpecialtyQFreqEasy
 	case models.DifficultyHard:
-		return constants.SpecialtyQFreqHard
+		return config.SpecialtyQFreqHard
 	default:
-		return constants.SpecialtyQFreqMedium
+		return config.SpecialtyQFreqMedium
 	}
 }
 
 func (bs *BroadcastService) getTimeMultiplier(difficulty models.DifficultyMode) float64 {
 	switch difficulty {
 	case models.DifficultyEasy:
-		return constants.EasyTimeMultiplier
+		return config.EasyTimeMultiplier
 	case models.DifficultyHard:
-		return constants.HardTimeMultiplier
+		return config.HardTimeMultiplier
 	default:
-		return constants.MediumTimeMultiplier
+		return config.MediumTimeMultiplier
 	}
 }
 
 func (bs *BroadcastService) getThresholdMultiplier(difficulty models.DifficultyMode) float64 {
 	switch difficulty {
 	case models.DifficultyEasy:
-		return constants.EasyThresholdMultiplier
+		return config.EasyThresholdMultiplier
 	case models.DifficultyHard:
-		return constants.HardThresholdMultiplier
+		return config.HardThresholdMultiplier
 	default:
-		return constants.MediumThresholdMultiplier
+		return config.MediumThresholdMultiplier
 	}
 }
 
@@ -474,7 +473,7 @@ func (bs *BroadcastService) sendHostPhaseTransition(fromPhase, toPhase models.Ga
 		},
 	}
 
-	bs.SendToHost(host, constants.EventSystemToHostPhaseTransition, payload)
+	bs.SendToHost(host, config.EventSystemToHostPhaseTransition, payload)
 }
 
 // getHostActions returns available host actions for a phase
@@ -535,14 +534,14 @@ func (bs *BroadcastService) BroadcastTriviaQuestions(questions map[string]*model
 			"difficulty":     question.Difficulty,
 			"isSpecialty":    question.IsSpecialty,
 			"specialtyBonus": question.SpecialtyBonus,
-			"timeLimit":      constants.TriviaAnswerTime,
+			"timeLimit":      config.TriviaAnswerTime,
 			"options":        question.Options,
 			"roundNumber":    game.CurrentRound,
-			"totalRounds":    constants.ResourceGatheringRounds,
-			"answerDeadline": time.Now().Add(time.Duration(constants.TriviaAnswerTime) * time.Second).Format(time.RFC3339),
+			"totalRounds":    config.ResourceGatheringRounds,
+			"answerDeadline": time.Now().Add(time.Duration(config.TriviaAnswerTime) * time.Second).Format(time.RFC3339),
 		}
 
-		bs.SendToPlayer(player, constants.EventResourceToPlayerTriviaQuestion, payload)
+		bs.SendToPlayer(player, config.EventResourceToPlayerTriviaQuestion, payload)
 	}
 
 	// Update host with round analytics
@@ -571,7 +570,7 @@ func (bs *BroadcastService) sendHostRoundAnalytics() {
 
 	payload := map[string]interface{}{
 		"currentRound":      game.CurrentRound,
-		"totalRounds":       constants.ResourceGatheringRounds,
+		"totalRounds":       config.ResourceGatheringRounds,
 		"playerPerformance": playerPerformance,
 		"teamTokens": map[string]int{
 			"anchorTokens":  game.TeamTokens.AnchorTokens,
@@ -581,7 +580,7 @@ func (bs *BroadcastService) sendHostRoundAnalytics() {
 		},
 	}
 
-	bs.SendToHost(host, constants.EventResourceToHostRoundAnalytics, payload)
+	bs.SendToHost(host, config.EventResourceToHostRoundAnalytics, payload)
 }
 
 // BroadcastPuzzlePhaseStart broadcasts puzzle assembly phase start
@@ -625,17 +624,17 @@ func (bs *BroadcastService) BroadcastPuzzlePhaseStart() {
 				"phase":                  "puzzle_assembly",
 				"imageId":                "masterpiece_001",
 				"assignedSegmentId":      player.AssignedSegment,
-				"individualPuzzleSize":   constants.IndividualPuzzlePieces,
+				"individualPuzzleSize":   config.IndividualPuzzlePieces,
 				"anchorPreSolvedPieces":  game.TeamTokens.GetThreshold(models.TokenAnchor) * 2,
 				"centralGridSize":        gridSize,
 				"totalCentralFragments":  gridSize * gridSize,
-				"clarityPreviewDuration": constants.ClarityBasePreviewTime + game.TeamTokens.GetThreshold(models.TokenClarity),
+				"clarityPreviewDuration": config.ClarityBasePreviewTime + game.TeamTokens.GetThreshold(models.TokenClarity),
 				"guideHighlightCount":    bs.calculateGuideHighlights(gridSize, game.TeamTokens.GetThreshold(models.TokenGuide)),
 				"allSegmentIds":          allSegmentIds,
 				"loadInstructions":       "Load your assigned segment and prepare individual puzzle",
 				"waitingForHost":         true,
 			}
-			bs.SendToPlayer(player, constants.EventPuzzleToClientPhaseLoad, playerPayload)
+			bs.SendToPlayer(player, config.EventPuzzleToClientPhaseLoad, playerPayload)
 		}
 	}
 
@@ -666,14 +665,14 @@ func (bs *BroadcastService) BroadcastPuzzlePhaseStart() {
 			"anchorPreSolved":  game.TeamTokens.GetThreshold(models.TokenAnchor) * 2,
 			"chronosTimeBonus": game.TeamTokens.GetThreshold(models.TokenChronos) * 20,
 			"guideHighlights":  bs.calculateGuideHighlights(gridSize, game.TeamTokens.GetThreshold(models.TokenGuide)),
-			"clarityPreview":   constants.ClarityBasePreviewTime + game.TeamTokens.GetThreshold(models.TokenClarity),
+			"clarityPreview":   config.ClarityBasePreviewTime + game.TeamTokens.GetThreshold(models.TokenClarity),
 		},
 		"monitoringActive": true,
 		"canStartTimer":    true,
 	}
 
 	if host := gameManager.GetHost(); host != nil {
-		bs.SendToHost(host, constants.EventPuzzleToHostPhaseLoad, hostPayload)
+		bs.SendToHost(host, config.EventPuzzleToHostPhaseLoad, hostPayload)
 	}
 }
 
@@ -695,27 +694,27 @@ func (bs *BroadcastService) BroadcastPuzzleTimerStart(totalTime int, previewTime
 	playerPayload := map[string]interface{}{
 		"startTimestamp":       time.Now().Unix(),
 		"totalTime":            totalTime,
-		"baseTime":             constants.PuzzleBaseTime,
-		"chronosBonus":         totalTime - constants.PuzzleBaseTime,
+		"baseTime":             config.PuzzleBaseTime,
+		"chronosBonus":         totalTime - config.PuzzleBaseTime,
 		"clarityPreviewActive": true,
 		"previewDuration":      previewTime,
 		"instructions":         "Begin solving your individual puzzle segments",
 	}
-	bs.BroadcastToAllPlayers(constants.EventPuzzleToClientTimerStart, playerPayload)
+	bs.BroadcastToAllPlayers(config.EventPuzzleToClientTimerStart, playerPayload)
 
 	// To host
 	hostPayload := map[string]interface{}{
 		"timerActive":     true,
 		"startTimestamp":  time.Now().Unix(),
 		"totalTime":       totalTime,
-		"baseTime":        constants.PuzzleBaseTime,
-		"bonusTime":       totalTime - constants.PuzzleBaseTime,
+		"baseTime":        config.PuzzleBaseTime,
+		"bonusTime":       totalTime - config.PuzzleBaseTime,
 		"playersInPhase2": gameManager.GetPlayerCount(),
 		"playersInPhase3": 0,
 	}
 
 	if host := gameManager.GetHost(); host != nil {
-		bs.SendToHost(host, constants.EventPuzzleToHostTimerStart, hostPayload)
+		bs.SendToHost(host, config.EventPuzzleToHostTimerStart, hostPayload)
 	}
 
 	// Start periodic grid updates for players
@@ -733,13 +732,13 @@ func (bs *BroadcastService) startPeriodicGridUpdates() {
 	}
 
 	// Create new timer
-	bs.gridUpdateTimer = time.NewTimer(constants.GridUpdateIntervalDuration)
+	bs.gridUpdateTimer = time.NewTimer(config.GridUpdateIntervalDuration)
 
 	go func() {
 		for {
 			<-bs.gridUpdateTimer.C
 			bs.broadcastGridState()
-			bs.gridUpdateTimer.Reset(constants.GridUpdateIntervalDuration)
+			bs.gridUpdateTimer.Reset(config.GridUpdateIntervalDuration)
 		}
 	}()
 }
@@ -774,7 +773,7 @@ func (bs *BroadcastService) broadcastGridState() {
 	}
 
 	// Send to players
-	bs.BroadcastToAllPlayers(constants.EventPuzzleToClientGridState, payload)
+	bs.BroadcastToAllPlayers(config.EventPuzzleToClientGridState, payload)
 
 	// Send immediate update to host with more details
 	bs.sendHostGridState()
@@ -837,7 +836,7 @@ func (bs *BroadcastService) sendHostGridState() {
 		"timeRemaining": game.GetPuzzleTimeRemaining(),
 	}
 
-	bs.SendToHost(host, constants.EventPuzzleToHostGridState, payload)
+	bs.SendToHost(host, config.EventPuzzleToHostGridState, payload)
 }
 
 // BroadcastResourcePhaseComplete broadcasts resource gathering phase completion
@@ -871,12 +870,12 @@ func (bs *BroadcastService) BroadcastResourcePhaseComplete() {
 			"preSolvedPieces": anchorThreshold * 2,
 			"extraTime":       chronosThreshold * 20,
 			"guideHighlights": guideThreshold,
-			"previewTime":     constants.ClarityBasePreviewTime + clarityThreshold,
+			"previewTime":     config.ClarityBasePreviewTime + clarityThreshold,
 		},
 		"transitionInstructions": "Return to the main room for puzzle assembly",
 		"transitionCountdown":    30,
 	}
-	bs.BroadcastToAllPlayers(constants.EventResourceToClientPhaseComplete, playerPayload)
+	bs.BroadcastToAllPlayers(config.EventResourceToClientPhaseComplete, playerPayload)
 
 	// To host with analytics
 	if host := gameManager.GetHost(); host != nil {
@@ -900,7 +899,7 @@ func (bs *BroadcastService) BroadcastResourcePhaseComplete() {
 			"playerAnalytics":     playerAnalytics,
 			"readyForPuzzlePhase": true,
 		}
-		bs.SendToHost(host, constants.EventResourceToHostPhaseComplete, hostPayload)
+		bs.SendToHost(host, config.EventResourceToHostPhaseComplete, hostPayload)
 	}
 }
 
@@ -940,7 +939,7 @@ func (bs *BroadcastService) BroadcastSegmentCompleted(player *models.Player, fra
 		"centralGridPosition": fragment.Position,
 		"fragmentId":          fragment.ID,
 	}
-	bs.SendToPlayer(player, constants.EventPuzzleToPlayerSegmentAcknowledged, playerPayload)
+	bs.SendToPlayer(player, config.EventPuzzleToPlayerSegmentAcknowledged, playerPayload)
 
 	// Send personal puzzle state with guide highlights
 	gameManager := GetGameInstance()
@@ -961,7 +960,7 @@ func (bs *BroadcastService) BroadcastSegmentCompleted(player *models.Player, fra
 				},
 			},
 		}
-		bs.SendToPlayer(player, constants.EventPuzzleToPlayerPersonalState, personalState)
+		bs.SendToPlayer(player, config.EventPuzzleToPlayerPersonalState, personalState)
 	}
 
 	// To host
@@ -974,7 +973,7 @@ func (bs *BroadcastService) BroadcastSegmentCompleted(player *models.Player, fra
 			"centralGridPosition": fragment.Position,
 			"fragmentId":          fragment.ID,
 		}
-		bs.SendToHost(host, constants.EventPuzzleToHostSegmentCompleted, hostPayload)
+		bs.SendToHost(host, config.EventPuzzleToHostSegmentCompleted, hostPayload)
 	}
 
 	// Update grid state immediately
@@ -1041,7 +1040,7 @@ func (bs *BroadcastService) BroadcastAnalytics(analytics *models.GameAnalytics) 
 					"totalScore":         playerAnalytics.TotalScore,
 				},
 			}
-			bs.SendToPlayer(player, constants.EventAnalyticsToPlayerPersonalReport, personalReport)
+			bs.SendToPlayer(player, config.EventAnalyticsToPlayerPersonalReport, personalReport)
 		}
 	}
 
@@ -1068,7 +1067,7 @@ func (bs *BroadcastService) BroadcastAnalytics(analytics *models.GameAnalytics) 
 		"teamAchievements":  analytics.TeamAnalytics.TeamAchievements,
 		"notableStats":      bs.getNotableStats(analytics),
 	}
-	bs.BroadcastToAllPlayers(constants.EventAnalyticsToClientTeamSummary, teamSummary)
+	bs.BroadcastToAllPlayers(config.EventAnalyticsToClientTeamSummary, teamSummary)
 
 	// 3. Send complete report to host (ANALYTICS_TO_HOST_COMPLETE_REPORT)
 	if host := gameManager.GetHost(); host != nil {
@@ -1091,7 +1090,7 @@ func (bs *BroadcastService) BroadcastAnalytics(analytics *models.GameAnalytics) 
 			"timelineAnalysis":              bs.getTimelineAnalysis(analytics),
 			"recommendationsForImprovement": bs.getRecommendations(analytics),
 		}
-		bs.SendToHost(host, constants.EventAnalyticsToHostCompleteReport, hostReport)
+		bs.SendToHost(host, config.EventAnalyticsToHostCompleteReport, hostReport)
 	}
 }
 
@@ -1252,7 +1251,7 @@ func (bs *BroadcastService) getResourceAnalytics(analytics *models.GameAnalytics
 	game := gameManager.GetGame()
 
 	return map[string]interface{}{
-		"totalRounds":       constants.ResourceGatheringRounds,
+		"totalRounds":       config.ResourceGatheringRounds,
 		"questionsAnswered": totalQuestions,
 		"overallAccuracy":   analytics.TeamAnalytics.OverallAccuracy,
 		"tokenDistribution": map[string]interface{}{
@@ -1349,7 +1348,7 @@ func (bs *BroadcastService) getCollaborationAnalysis(analytics *models.GameAnaly
 func (bs *BroadcastService) getTimelineAnalysis(analytics *models.GameAnalytics) map[string]interface{} {
 	return map[string]interface{}{
 		"setupPhase":     120, // Placeholder - would need to track actual phase times
-		"resourcePhase":  constants.ResourceGatheringRounds * constants.ResourceGatheringRoundDuration,
+		"resourcePhase":  config.ResourceGatheringRounds * config.ResourceGatheringRoundDuration,
 		"puzzlePhase":    analytics.PuzzleAssemblyMetrics.CompletionTime,
 		"analyticsPhase": 0,
 		"phaseTransitions": []map[string]interface{}{
@@ -1427,7 +1426,7 @@ func (bs *BroadcastService) BroadcastPuzzleComplete(success bool, completionTime
 			"celebrationDuration": 5,
 			"nextPhase":           "analytics",
 		}
-		bs.BroadcastToAll(constants.EventPuzzleToClientCompletedSuccess, payload)
+		bs.BroadcastToAll(config.EventPuzzleToClientCompletedSuccess, payload)
 	} else {
 		// Timeout payload
 		payload := map[string]interface{}{
@@ -1438,7 +1437,7 @@ func (bs *BroadcastService) BroadcastPuzzleComplete(success bool, completionTime
 			"message":     "Time's up! The masterpiece remains incomplete.",
 			"nextPhase":   "analytics",
 		}
-		bs.BroadcastToAll(constants.EventPuzzleToClientCompletedTimeout, payload)
+		bs.BroadcastToAll(config.EventPuzzleToClientCompletedTimeout, payload)
 	}
 }
 
@@ -1450,7 +1449,7 @@ func (bs *BroadcastService) BroadcastPlayerDisconnected(playerID, playerName str
 		"playerName": playerName,
 		"message":    playerName + " has disconnected",
 	}
-	bs.BroadcastToAllPlayers(constants.EventSystemToClientDisconnectionWarning, playerPayload)
+	bs.BroadcastToAllPlayers(config.EventSystemToClientDisconnectionWarning, playerPayload)
 
 	// To host with more details
 	gameManager := GetGameInstance()
@@ -1470,7 +1469,7 @@ func (bs *BroadcastService) BroadcastPlayerDisconnected(playerID, playerName str
 			},
 			"updatedPlayerCount": gameManager.GetPlayerCount(),
 		}
-		bs.SendToHost(host, constants.EventSystemToHostPlayerDisconnected, hostPayload)
+		bs.SendToHost(host, config.EventSystemToHostPlayerDisconnected, hostPayload)
 	}
 }
 
@@ -1495,7 +1494,7 @@ func (bs *BroadcastService) BroadcastHostDisconnected() {
 		},
 	}
 
-	bs.BroadcastToAllPlayers(constants.EventSystemToClientHostDisconnected, payload)
+	bs.BroadcastToAllPlayers(config.EventSystemToClientHostDisconnected, payload)
 }
 
 // BroadcastHostReconnected notifies all players when host reconnects
@@ -1515,7 +1514,7 @@ func (bs *BroadcastService) BroadcastHostReconnected() {
 		},
 	}
 
-	bs.BroadcastToAllPlayers(constants.EventSystemToClientHostReconnected, payload)
+	bs.BroadcastToAllPlayers(config.EventSystemToClientHostReconnected, payload)
 }
 
 // SendError sends an error message
@@ -1524,8 +1523,8 @@ func (bs *BroadcastService) SendError(recipient interface{}, errorCode, message,
 
 	switch r := recipient.(type) {
 	case *models.Player:
-		bs.SendToPlayer(r, constants.EventSystemToClientError, payload)
+		bs.SendToPlayer(r, config.EventSystemToClientError, payload)
 	case *models.Host:
-		bs.SendToHost(r, constants.EventSystemToHostError, payload)
+		bs.SendToHost(r, config.EventSystemToHostError, payload)
 	}
 }

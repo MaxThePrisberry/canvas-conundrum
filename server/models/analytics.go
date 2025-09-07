@@ -1,7 +1,7 @@
 package models
 
 import (
-	"canvas-conundrum/constants"
+	"canvas-conundrum/config"
 	"time"
 )
 
@@ -57,30 +57,30 @@ type PlayerAnalytics struct {
 // CalculateScore calculates the player's total score
 func (pa *PlayerAnalytics) CalculateScore(gameSuccess bool, puzzleTime float64) {
 	// Trivia points
-	pa.TriviaPoints = pa.CorrectAnswers * constants.PointsPerCorrectAnswer
+	pa.TriviaPoints = pa.CorrectAnswers * config.PointsPerCorrectAnswer
 
 	// Specialty bonus
-	pa.SpecialtyBonus = pa.SpecialtyCorrect * constants.SpecialtyBonusPoints * constants.PointsPerCorrectAnswer
+	pa.SpecialtyBonus = pa.SpecialtyCorrect * config.SpecialtyBonusPoints * config.PointsPerCorrectAnswer
 
 	// Puzzle points
 	if gameSuccess {
-		pa.PuzzlePoints = constants.CompletionBonus
+		pa.PuzzlePoints = config.CompletionBonus
 
 		// Speed bonus (faster solve time = more points)
 		if pa.IndividualSolveTime > 0 {
 			speedRatio := 1.0 - (pa.IndividualSolveTime / puzzleTime)
 			if speedRatio > 0 {
-				pa.SpeedBonus = int(float64(constants.MaxSpeedBonus) * speedRatio)
+				pa.SpeedBonus = int(float64(config.MaxSpeedBonus) * speedRatio)
 			}
 		}
 	}
 
 	// Movement points
-	pa.PuzzlePoints += pa.SuccessfulMoves * constants.PointsPerSuccessfulMove
+	pa.PuzzlePoints += pa.SuccessfulMoves * config.PointsPerSuccessfulMove
 
 	// Collaboration bonus
-	pa.CollaborationBonus = pa.RecommendationsSent * constants.PointsPerRecommendationSent
-	pa.CollaborationBonus += pa.RecommendationsAccepted * constants.PointsPerRecommendationAccepted
+	pa.CollaborationBonus = pa.RecommendationsSent * config.PointsPerRecommendationSent
+	pa.CollaborationBonus += pa.RecommendationsAccepted * config.PointsPerRecommendationAccepted
 
 	// Total score
 	pa.TotalScore = pa.TriviaPoints + pa.SpecialtyBonus + pa.PuzzlePoints +

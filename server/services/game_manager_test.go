@@ -1,7 +1,7 @@
 package services
 
 import (
-	"canvas-conundrum/constants"
+	"canvas-conundrum/config"
 	"canvas-conundrum/models"
 	"canvas-conundrum/test_helpers"
 	"fmt"
@@ -353,7 +353,7 @@ func TestGameManagerRecommendations(t *testing.T) {
 
 		// Add expired recommendation
 		rec2 := models.NewMoveRecommendation("rec2", "p1", "p3", "f2", "B1")
-		rec2.Timestamp = time.Now().Add(-constants.RecommendationTimeout - time.Second)
+		rec2.Timestamp = time.Now().Add(-config.RecommendationTimeout - time.Second)
 		gm.AddRecommendation(rec2)
 
 		gm.CleanExpiredRecommendations()
@@ -376,7 +376,7 @@ func TestGameManagerValidations(t *testing.T) {
 
 	t.Run("MaxPlayersLimit", func(t *testing.T) {
 		// Add maximum players
-		for i := 0; i < constants.MaxPlayers; i++ {
+		for i := 0; i < config.MaxPlayers; i++ {
 			player := models.NewPlayer(string(rune(i)), nil)
 			_, err := gm.AddPlayer(player)
 			require.NoError(t, err)
@@ -396,7 +396,7 @@ func TestGameManagerValidations(t *testing.T) {
 		gm = GetGameInstance()
 
 		// Add less than minimum players
-		for i := 0; i < constants.MinPlayers-1; i++ {
+		for i := 0; i < config.MinPlayers-1; i++ {
 			player := models.NewPlayer(string(rune(i)), nil)
 			player.IsReady = true
 			player.IsActive = true // Mark as active for test
@@ -518,7 +518,7 @@ func TestGameManagerCanStartGame(t *testing.T) {
 
 	t.Run("CannotStartWithoutHost", func(t *testing.T) {
 		// Add enough players
-		for i := 0; i < constants.MinPlayers; i++ {
+		for i := 0; i < config.MinPlayers; i++ {
 			player := models.NewPlayer(string(rune('a'+i)), nil)
 			player.IsReady = true
 			player.IsActive = true
@@ -539,7 +539,7 @@ func TestGameManagerCanStartGame(t *testing.T) {
 		_, _ = gm.SetHost(host)
 
 		// Add fewer than minimum players
-		for i := 0; i < constants.MinPlayers-1; i++ {
+		for i := 0; i < config.MinPlayers-1; i++ {
 			player := models.NewPlayer(string(rune('a'+i)), nil)
 			player.IsReady = true
 			player.IsActive = true
@@ -851,7 +851,7 @@ func TestResourceRoundTimerBehavior(t *testing.T) {
 		expectedDuration := 50 * time.Millisecond
 
 		// Mock a short round duration for testing
-		originalDuration := constants.ResourceGatheringRoundDuration
+		originalDuration := config.ResourceGatheringRoundDuration
 		// Note: We can't actually modify constants in tests easily,
 		// so we'll test timer behavior directly
 

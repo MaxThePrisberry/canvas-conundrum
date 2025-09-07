@@ -1,7 +1,7 @@
 package services
 
 import (
-	"canvas-conundrum/constants"
+	"canvas-conundrum/config"
 	"canvas-conundrum/models"
 	"fmt"
 	"io/ioutil"
@@ -145,11 +145,11 @@ func (ts *TriviaService) shouldBeSpecialty(player *models.Player, difficulty mod
 	var probability float64
 	switch difficulty {
 	case models.DifficultyEasy:
-		probability = constants.EasySpecialtyProbability
+		probability = config.EasySpecialtyProbability
 	case models.DifficultyHard:
-		probability = constants.HardSpecialtyProbability
+		probability = config.HardSpecialtyProbability
 	default:
-		probability = constants.MediumSpecialtyProbability
+		probability = config.MediumSpecialtyProbability
 	}
 
 	return rand.Float64() < probability
@@ -293,7 +293,7 @@ func (ts *TriviaService) ProcessAnswer(playerID string, questionID string, selec
 
 	if correct {
 		// Base tokens
-		tokensEarned = constants.BaseTokensPerCorrectAnswer
+		tokensEarned = config.BaseTokensPerCorrectAnswer
 
 		// Get token type for current station
 		if player.CurrentStation != "" {
@@ -301,21 +301,21 @@ func (ts *TriviaService) ProcessAnswer(playerID string, questionID string, selec
 
 			// Apply role bonus if at matching station
 			if tokenType == player.Role.GetBonusTokenType() {
-				tokensEarned = int(float64(tokensEarned) * constants.RoleResourceMultiplier)
+				tokensEarned = int(float64(tokensEarned) * config.RoleResourceMultiplier)
 			}
 		}
 
 		// Apply specialty bonus
 		if question.IsSpecialty {
-			tokensEarned = int(float64(tokensEarned) * constants.SpecialtyPointMultiplier)
+			tokensEarned = int(float64(tokensEarned) * config.SpecialtyPointMultiplier)
 		}
 
 		// Apply difficulty modifier
 		switch game.Difficulty {
 		case models.DifficultyEasy:
-			tokensEarned = int(float64(tokensEarned) * constants.EasyTimeMultiplier)
+			tokensEarned = int(float64(tokensEarned) * config.EasyTimeMultiplier)
 		case models.DifficultyHard:
-			tokensEarned = int(float64(tokensEarned) * constants.HardTimeMultiplier)
+			tokensEarned = int(float64(tokensEarned) * config.HardTimeMultiplier)
 		}
 	}
 

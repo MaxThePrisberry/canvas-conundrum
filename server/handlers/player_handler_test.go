@@ -1,7 +1,7 @@
 package handlers
 
 import (
-	"canvas-conundrum/constants"
+	"canvas-conundrum/config"
 	"canvas-conundrum/models"
 	"canvas-conundrum/services"
 	"canvas-conundrum/test_helpers"
@@ -31,7 +31,7 @@ func TestHandlePlayerMessage(t *testing.T) {
 			"specialties": []string{"science"},
 		}
 
-		msg := test_helpers.CreateTestMessage(constants.EventSetupToServerPlayerConfiguration, payload)
+		msg := test_helpers.CreateTestMessage(config.EventSetupToServerPlayerConfiguration, payload)
 
 		// Should not panic
 		HandlePlayerMessage(player, msg)
@@ -43,7 +43,7 @@ func TestHandlePlayerMessage(t *testing.T) {
 			"stationHash": "ANCHOR_STATION_QR_HASH_2024",
 		}
 
-		msg := test_helpers.CreateTestMessage(constants.EventResourceToServerLocationVerified, payload)
+		msg := test_helpers.CreateTestMessage(config.EventResourceToServerLocationVerified, payload)
 
 		HandlePlayerMessage(player, msg)
 		assert.True(t, true)
@@ -55,7 +55,7 @@ func TestHandlePlayerMessage(t *testing.T) {
 			"answer":     "Test Answer",
 		}
 
-		msg := test_helpers.CreateTestMessage(constants.EventResourceToServerTriviaAnswer, payload)
+		msg := test_helpers.CreateTestMessage(config.EventResourceToServerTriviaAnswer, payload)
 
 		HandlePlayerMessage(player, msg)
 		assert.True(t, true)
@@ -66,7 +66,7 @@ func TestHandlePlayerMessage(t *testing.T) {
 			"segmentId": "test-segment-id",
 		}
 
-		msg := test_helpers.CreateTestMessage(constants.EventPuzzleToServerSegmentCompleted, payload)
+		msg := test_helpers.CreateTestMessage(config.EventPuzzleToServerSegmentCompleted, payload)
 
 		HandlePlayerMessage(player, msg)
 		assert.True(t, true)
@@ -81,7 +81,7 @@ func TestHandlePlayerMessage(t *testing.T) {
 			"toCol":      1,
 		}
 
-		msg := test_helpers.CreateTestMessage(constants.EventPuzzleToServerFragmentMove, payload)
+		msg := test_helpers.CreateTestMessage(config.EventPuzzleToServerFragmentMove, payload)
 
 		HandlePlayerMessage(player, msg)
 		assert.True(t, true)
@@ -97,7 +97,7 @@ func TestHandlePlayerMessage(t *testing.T) {
 			"message":    "This piece should go here",
 		}
 
-		msg := test_helpers.CreateTestMessage(constants.EventPuzzleToServerRecommendMove, payload)
+		msg := test_helpers.CreateTestMessage(config.EventPuzzleToServerRecommendMove, payload)
 
 		HandlePlayerMessage(player, msg)
 		assert.True(t, true)
@@ -113,7 +113,7 @@ func TestHandlePlayerMessage(t *testing.T) {
 			"response":         "accept",
 		}
 
-		msg := test_helpers.CreateTestMessage(constants.EventPuzzleToServerRecommendationResponse, payload)
+		msg := test_helpers.CreateTestMessage(config.EventPuzzleToServerRecommendationResponse, payload)
 
 		HandlePlayerMessage(player, msg)
 		assert.True(t, true)
@@ -124,7 +124,7 @@ func TestHandlePlayerMessage(t *testing.T) {
 			"timestamp": "2025-01-01T00:00:00Z",
 		}
 
-		msg := test_helpers.CreateTestMessage(constants.EventSystemPing, payload)
+		msg := test_helpers.CreateTestMessage(config.EventSystemPing, payload)
 
 		HandlePlayerMessage(player, msg)
 		assert.True(t, true)
@@ -356,7 +356,7 @@ func TestFragmentMoveRateLimiting(t *testing.T) {
 
 	t.Run("Move After Cooldown Should Succeed", func(t *testing.T) {
 		// Simulate cooldown period has passed by setting last move time to past
-		pastTime := time.Now().Add(time.Duration(-constants.FragmentMoveCooldown-100) * time.Millisecond)
+		pastTime := time.Now().Add(time.Duration(-config.FragmentMoveCooldown-100) * time.Millisecond)
 		player.LastMoveTime = pastTime
 
 		// Use a minimal test to verify cooldown logic without full game state validation
@@ -377,15 +377,15 @@ func TestFragmentMoveRateLimiting(t *testing.T) {
 	t.Run("CanMoveFragment Method Tests", func(t *testing.T) {
 		// Test cooldown logic directly
 		player.LastMoveTime = time.Time{} // Zero time - first move
-		assert.True(t, player.CanMoveFragment(constants.FragmentMoveCooldown), "First move should be allowed")
+		assert.True(t, player.CanMoveFragment(config.FragmentMoveCooldown), "First move should be allowed")
 
 		// Set recent move time
 		player.UpdateLastMove()
-		assert.False(t, player.CanMoveFragment(constants.FragmentMoveCooldown), "Move should be blocked by cooldown")
+		assert.False(t, player.CanMoveFragment(config.FragmentMoveCooldown), "Move should be blocked by cooldown")
 
 		// Set old move time
-		player.LastMoveTime = time.Now().Add(time.Duration(-constants.FragmentMoveCooldown-1) * time.Millisecond)
-		assert.True(t, player.CanMoveFragment(constants.FragmentMoveCooldown), "Move should be allowed after cooldown")
+		player.LastMoveTime = time.Now().Add(time.Duration(-config.FragmentMoveCooldown-1) * time.Millisecond)
+		assert.True(t, player.CanMoveFragment(config.FragmentMoveCooldown), "Move should be allowed after cooldown")
 	})
 }
 

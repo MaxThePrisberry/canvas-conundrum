@@ -2,7 +2,6 @@ package handlers
 
 import (
 	"canvas-conundrum/config"
-	"canvas-conundrum/constants"
 	"canvas-conundrum/models"
 	"canvas-conundrum/services"
 	"canvas-conundrum/utils"
@@ -63,7 +62,7 @@ func TestHandlePlayerWebSocket(t *testing.T) {
 
 		msg, err := utils.ParseMessage(message)
 		if err == nil {
-			assert.Equal(t, constants.EventSetupToPlayerRolesAvailable, msg.Event)
+			assert.Equal(t, config.EventSetupToPlayerRolesAvailable, msg.Event)
 
 			// Unmarshal payload to access fields
 			var payloadMap map[string]interface{}
@@ -125,7 +124,7 @@ func TestHandleHostWebSocket(t *testing.T) {
 		msg, err := utils.ParseMessage(message)
 		if err == nil {
 			// According to websocket-events.md, we should get SETUP_TO_HOST_CONNECTION_CONFIRMED
-			if msg.Event == constants.EventSetupToHostConnectionConfirmed {
+			if msg.Event == config.EventSetupToHostConnectionConfirmed {
 				// Unmarshal payload to access fields
 				var payloadMap map[string]interface{}
 				err := json.Unmarshal(msg.Payload, &payloadMap)
@@ -619,7 +618,7 @@ func TestWebSocketMaxMessageSizeLimit(t *testing.T) {
 		largePayload := strings.Repeat("x", config.MaxMessageSize+1000) // 9KB+ payload
 
 		largeMessage := map[string]interface{}{
-			"event": constants.EventSystemPing,
+			"event": config.EventSystemPing,
 			"payload": map[string]interface{}{
 				"timestamp": time.Now().Unix(),
 				"largeData": largePayload,

@@ -2,7 +2,6 @@ package handlers
 
 import (
 	"canvas-conundrum/config"
-	"canvas-conundrum/constants"
 	"canvas-conundrum/models"
 	"canvas-conundrum/services"
 	"canvas-conundrum/utils"
@@ -180,7 +179,7 @@ func handlePlayerRead(player *models.Player) {
 		}
 
 		// Validate authentication (except for initial setup)
-		if msg.Event != constants.EventSetupToServerPlayerConfiguration {
+		if msg.Event != config.EventSetupToServerPlayerConfiguration {
 			if msg.Auth == nil || msg.Auth.Token != player.ID {
 				sendAuthError(player)
 				continue
@@ -321,12 +320,12 @@ func handleHostWrite(host *models.Host) {
 func sendConnectionError(conn *websocket.Conn, errorMsg string) {
 	payload := utils.CreateErrorPayload(
 		"connection_error",
-		constants.ErrorCodeGameInProgress,
+		config.ErrorCodeGameInProgress,
 		errorMsg,
 		"Cannot connect at this time",
 	)
 
-	msg := utils.NewServerMessage(constants.EventSystemToClientError, payload)
+	msg := utils.NewServerMessage(config.EventSystemToClientError, payload)
 	data, _ := msg.Marshal()
 	conn.WriteMessage(websocket.TextMessage, data)
 }
@@ -342,18 +341,18 @@ func sendHostConnectionConfirmed(host *models.Host, isReconnection bool) {
 		"currentPhase":   string(game.CurrentPhase),
 		"isReconnection": isReconnection,
 		"gameConfig": map[string]interface{}{
-			"minPlayers":                     constants.MinPlayers,
-			"maxPlayers":                     constants.MaxPlayers,
-			"resourceGatheringRounds":        constants.ResourceGatheringRounds,
-			"resourceGatheringRoundDuration": constants.ResourceGatheringRoundDuration,
-			"puzzleBaseTime":                 constants.PuzzleBaseTime,
+			"minPlayers":                     config.MinPlayers,
+			"maxPlayers":                     config.MaxPlayers,
+			"resourceGatheringRounds":        config.ResourceGatheringRounds,
+			"resourceGatheringRoundDuration": config.ResourceGatheringRoundDuration,
+			"puzzleBaseTime":                 config.PuzzleBaseTime,
 			"difficultyMode":                 string(game.Difficulty),
 		},
 	}
 
 	broadcastService := gameManager.GetBroadcastService()
 	if broadcastService != nil {
-		broadcastService.SendToHost(host, constants.EventSetupToHostConnectionConfirmed, payload)
+		broadcastService.SendToHost(host, config.EventSetupToHostConnectionConfirmed, payload)
 	}
 
 	// Also send the initial player roster
@@ -378,7 +377,7 @@ func sendRolesAvailable(player *models.Player, isReconnection bool) {
 		{
 			"roleType":       "art_enthusiast",
 			"displayName":    "Art Enthusiast",
-			"resourceBonus":  constants.RoleResourceMultiplier,
+			"resourceBonus":  config.RoleResourceMultiplier,
 			"bonusTokenType": "clarity",
 			"description":    "Excels at clarity token collection",
 			"available":      roleDistribution[models.RoleArtEnthusiast] < maxPerRole,
@@ -386,7 +385,7 @@ func sendRolesAvailable(player *models.Player, isReconnection bool) {
 		{
 			"roleType":       "detective",
 			"displayName":    "Detective",
-			"resourceBonus":  constants.RoleResourceMultiplier,
+			"resourceBonus":  config.RoleResourceMultiplier,
 			"bonusTokenType": "guide",
 			"description":    "Excels at guide token collection",
 			"available":      roleDistribution[models.RoleDetective] < maxPerRole,
@@ -394,7 +393,7 @@ func sendRolesAvailable(player *models.Player, isReconnection bool) {
 		{
 			"roleType":       "tourist",
 			"displayName":    "Tourist",
-			"resourceBonus":  constants.RoleResourceMultiplier,
+			"resourceBonus":  config.RoleResourceMultiplier,
 			"bonusTokenType": "chronos",
 			"description":    "Excels at chronos token collection",
 			"available":      roleDistribution[models.RoleTourist] < maxPerRole,
@@ -402,7 +401,7 @@ func sendRolesAvailable(player *models.Player, isReconnection bool) {
 		{
 			"roleType":       "janitor",
 			"displayName":    "Janitor",
-			"resourceBonus":  constants.RoleResourceMultiplier,
+			"resourceBonus":  config.RoleResourceMultiplier,
 			"bonusTokenType": "anchor",
 			"description":    "Excels at anchor token collection",
 			"available":      roleDistribution[models.RoleJanitor] < maxPerRole,
@@ -431,12 +430,12 @@ func sendRolesAvailable(player *models.Player, isReconnection bool) {
 		"triviaCategories": []string{
 			"general", "geography", "history", "music", "science", "video_games",
 		},
-		"maxSpecialties": constants.MaxSpecialtiesPerPlayer,
+		"maxSpecialties": config.MaxSpecialtiesPerPlayer,
 	}
 
 	broadcastService := services.GetGameInstance().GetBroadcastService()
 	if broadcastService != nil {
-		broadcastService.SendToPlayer(player, constants.EventSetupToPlayerRolesAvailable, payload)
+		broadcastService.SendToPlayer(player, config.EventSetupToPlayerRolesAvailable, payload)
 	}
 }
 
@@ -463,15 +462,15 @@ func sendPlayerPhaseRestoration(player *models.Player) {
 		// Send RESOURCE_TO_CLIENT_PHASE_START to player using existing infrastructure
 		resourcePayload := map[string]interface{}{
 			"currentRound":    game.CurrentRound,
-			"totalRounds":     constants.ResourceGatheringRounds,
-			"roundDuration":   constants.ResourceGatheringRoundDuration,
+			"totalRounds":     config.ResourceGatheringRounds,
+			"roundDuration":   config.ResourceGatheringRoundDuration,
 			"playerStation":   player.CurrentStation,
-			"tokenMultiplier": constants.RoleResourceMultiplier,
+			"tokenMultiplier": config.RoleResourceMultiplier,
 		}
-		broadcastService.SendToPlayer(player, constants.EventResourceToClientPhaseStart, resourcePayload)
+		broadcastService.SendToPlayer(player, config.EventResourceToClientPhaseStart, resourcePayload)
 
 		// Send RESOURCE_TO_CLIENT_TEAM_PROGRESS using existing getTeamProgressPayload
-		broadcastService.SendToPlayer(player, constants.EventResourceToClientTeamProgress, getTeamProgressPayload())
+		broadcastService.SendToPlayer(player, config.EventResourceToClientTeamProgress, getTeamProgressPayload())
 
 		// If there's an active trivia question for the current round, send it to the reconnecting player
 		triviaService := gameManager.GetTriviaService()
@@ -487,7 +486,7 @@ func sendPlayerPhaseRestoration(player *models.Player) {
 			if analytics != nil {
 				// Send personal report using existing analytics data
 				if playerAnalytics, exists := analytics.PlayerAnalytics[player.ID]; exists {
-					broadcastService.SendToPlayer(player, constants.EventAnalyticsToPlayerPersonalReport, playerAnalytics)
+					broadcastService.SendToPlayer(player, config.EventAnalyticsToPlayerPersonalReport, playerAnalytics)
 				}
 
 				// Send team summary using existing analytics data
@@ -505,7 +504,7 @@ func sendPlayerPhaseRestoration(player *models.Player) {
 					"puzzleMVP":        analytics.TeamAnalytics.PuzzleMVP,
 					"recommendations":  analytics.RecommendationsForImprovement,
 				}
-				broadcastService.SendToPlayer(player, constants.EventAnalyticsToClientTeamSummary, teamSummary)
+				broadcastService.SendToPlayer(player, config.EventAnalyticsToClientTeamSummary, teamSummary)
 			}
 		}
 
@@ -534,11 +533,11 @@ func sendHostPhaseRestoration(host *models.Host) {
 		// Send RESOURCE_TO_HOST_PHASE_START using existing resource phase infrastructure
 		hostResourcePayload := map[string]interface{}{
 			"currentRound":  game.CurrentRound,
-			"totalRounds":   constants.ResourceGatheringRounds,
-			"roundDuration": constants.ResourceGatheringRoundDuration,
+			"totalRounds":   config.ResourceGatheringRounds,
+			"roundDuration": config.ResourceGatheringRoundDuration,
 			"gamePhase":     string(game.CurrentPhase),
 		}
-		broadcastService.SendToHost(host, constants.EventResourceToHostPhaseStart, hostResourcePayload)
+		broadcastService.SendToHost(host, config.EventResourceToHostPhaseStart, hostResourcePayload)
 
 		// Round analytics are sent by the existing round management system
 		// No need to send placeholder analytics during reconnection
@@ -549,9 +548,9 @@ func sendHostPhaseRestoration(host *models.Host) {
 			"puzzleImageUrl": "/api/puzzle/image",
 			"gridSize":       game.GetGridSize(),
 			"totalFragments": game.GetGridSize() * game.GetGridSize(),
-			"timeLimit":      constants.PuzzleBaseTime,
+			"timeLimit":      config.PuzzleBaseTime,
 		}
-		broadcastService.SendToHost(host, constants.EventPuzzleToHostPhaseLoad, phaseLoadPayload)
+		broadcastService.SendToHost(host, config.EventPuzzleToHostPhaseLoad, phaseLoadPayload)
 
 		// Send current grid state using existing infrastructure
 		if game.PuzzleGrid != nil {
@@ -579,7 +578,7 @@ func sendHostPhaseRestoration(host *models.Host) {
 				"timeRemaining":      game.GetPuzzleTimeRemaining(),
 				"updateType":         "reconnection",
 			}
-			broadcastService.SendToHost(host, constants.EventPuzzleToHostGridState, gridPayload)
+			broadcastService.SendToHost(host, config.EventPuzzleToHostGridState, gridPayload)
 		}
 
 		// Timer events are handled by the existing timer system when active
@@ -605,7 +604,7 @@ func sendHostPhaseRestoration(host *models.Host) {
 					"puzzleMetrics":    analytics.PuzzleAssemblyMetrics,
 					"recommendations":  analytics.RecommendationsForImprovement,
 				}
-				broadcastService.SendToHost(host, constants.EventAnalyticsToHostCompleteReport, hostReport)
+				broadcastService.SendToHost(host, config.EventAnalyticsToHostCompleteReport, hostReport)
 			}
 		}
 
@@ -620,8 +619,8 @@ func sendAuthError(player *models.Player) {
 	if broadcastService != nil {
 		broadcastService.SendError(
 			player,
-			constants.ErrorCodeInvalidToken,
-			constants.ErrorMessageInvalidToken,
+			config.ErrorCodeInvalidToken,
+			config.ErrorMessageInvalidToken,
 			"Authentication token mismatch",
 		)
 	}
@@ -633,8 +632,8 @@ func sendHostAuthError(host *models.Host) {
 	if broadcastService != nil {
 		broadcastService.SendError(
 			host,
-			constants.ErrorCodeInvalidToken,
-			constants.ErrorMessageInvalidToken,
+			config.ErrorCodeInvalidToken,
+			config.ErrorMessageInvalidToken,
 			"Authentication token mismatch",
 		)
 	}
@@ -670,7 +669,7 @@ func sendCurrentTriviaQuestionIfActive(player *models.Player, triviaService *ser
 	if question, exists := questions[player.ID]; exists && question != nil {
 		// Calculate remaining time for this round
 		// This is a simplified approach - in a real implementation you'd track round start time
-		timeRemaining := constants.TriviaAnswerTime
+		timeRemaining := config.TriviaAnswerTime
 
 		questionPayload := map[string]interface{}{
 			"questionId":     question.ID,
@@ -682,11 +681,11 @@ func sendCurrentTriviaQuestionIfActive(player *models.Player, triviaService *ser
 			"timeLimit":      timeRemaining,
 			"options":        question.Options,
 			"roundNumber":    game.CurrentRound,
-			"totalRounds":    constants.ResourceGatheringRounds,
+			"totalRounds":    config.ResourceGatheringRounds,
 			"answerDeadline": time.Now().Add(time.Duration(timeRemaining) * time.Second).Format(time.RFC3339),
 		}
 
-		broadcastService.SendToPlayer(player, constants.EventResourceToPlayerTriviaQuestion, questionPayload)
+		broadcastService.SendToPlayer(player, config.EventResourceToPlayerTriviaQuestion, questionPayload)
 		log.Printf("Sent current trivia question to reconnecting player %s", player.ID)
 	}
 }

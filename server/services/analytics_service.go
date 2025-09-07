@@ -1,7 +1,7 @@
 package services
 
 import (
-	"canvas-conundrum/constants"
+	"canvas-conundrum/config"
 	"canvas-conundrum/models"
 	"log"
 	"sync"
@@ -288,7 +288,7 @@ func (as *AnalyticsService) FinalizeGame(game *models.Game, players map[string]*
 func (as *AnalyticsService) calculateResourceMetrics(game *models.Game) {
 	metrics := as.analytics.ResourceGatheringMetrics
 
-	metrics.TotalRounds = constants.ResourceGatheringRounds
+	metrics.TotalRounds = config.ResourceGatheringRounds
 
 	// Calculate overall accuracy
 	totalQuestions := 0

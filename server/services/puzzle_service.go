@@ -1,7 +1,7 @@
 package services
 
 import (
-	"canvas-conundrum/constants"
+	"canvas-conundrum/config"
 	"canvas-conundrum/models"
 	"canvas-conundrum/utils"
 	"fmt"
@@ -91,7 +91,7 @@ func (ps *PuzzleService) checkAndExpireRecommendations() {
 						"details": "Recommendation expired after 30 seconds",
 					}
 					broadcastService.SendToPlayer(targetPlayer,
-						constants.EventPuzzleToPlayerRecommendationExpired, expiredPayload)
+						config.EventPuzzleToPlayerRecommendationExpired, expiredPayload)
 				}
 
 				// Also notify the recommender
@@ -104,7 +104,7 @@ func (ps *PuzzleService) checkAndExpireRecommendations() {
 						"executionStatus": "timeout",
 					}
 					broadcastService.SendToPlayer(fromPlayer,
-						constants.EventPuzzleToPlayerRecommendationResult, resultPayload)
+						config.EventPuzzleToPlayerRecommendationResult, resultPayload)
 				}
 			}
 		}
@@ -365,7 +365,7 @@ func (ps *PuzzleService) InvalidateRecommendationsForFragment(fragmentID string)
 							"details": fmt.Sprintf("One or more fragments involved in recommendation have moved (fragment %s)", fragmentID),
 						}
 						broadcastService.SendToPlayer(targetPlayer,
-							constants.EventPuzzleToPlayerRecommendationExpired, expiredPayload)
+							config.EventPuzzleToPlayerRecommendationExpired, expiredPayload)
 					}
 				}
 
@@ -389,7 +389,7 @@ func (ps *PuzzleService) InvalidateRecommendationsForFragment(fragmentID string)
 						"executionStatus":  "failed",
 					}
 					broadcastService.SendToPlayer(fromPlayer,
-						constants.EventPuzzleToPlayerRecommendationResult, resultPayload)
+						config.EventPuzzleToPlayerRecommendationResult, resultPayload)
 				}
 			}
 		}

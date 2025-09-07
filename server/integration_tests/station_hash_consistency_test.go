@@ -2,7 +2,6 @@ package integration_tests
 
 import (
 	"canvas-conundrum/config"
-	"canvas-conundrum/constants"
 	"canvas-conundrum/services"
 	"canvas-conundrum/test_helpers"
 	"encoding/json"
@@ -144,7 +143,7 @@ func TestFullGameFlowWithHashValidation(t *testing.T) {
 		// Look through all messages for this player
 		messages := players[playerIdx].GetMessages()
 		for _, message := range messages {
-			if message.Event == constants.EventResourceToClientPhaseStart {
+			if message.Event == config.EventResourceToClientPhaseStart {
 				// Parse the payload
 				var payload map[string]interface{}
 				if payloadBytes, ok := message.Payload.([]byte); ok {

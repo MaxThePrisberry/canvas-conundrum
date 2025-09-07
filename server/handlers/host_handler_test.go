@@ -1,7 +1,7 @@
 package handlers
 
 import (
-	"canvas-conundrum/constants"
+	"canvas-conundrum/config"
 	"canvas-conundrum/models"
 	"canvas-conundrum/services"
 	"canvas-conundrum/test_helpers"
@@ -51,7 +51,7 @@ func TestHandleHostStartGame_InsufficientPlayers(t *testing.T) {
 
 	// This is the key test - verify the error message formatting code path
 	// We test the specific string formatting that was broken
-	expectedDetails := fmt.Sprintf("Need at least %d ready players to start", constants.MinPlayers)
+	expectedDetails := fmt.Sprintf("Need at least %d ready players to start", config.MinPlayers)
 
 	// Verify the format string produces the expected result
 	assert.Equal(t, "Need at least 4 ready players to start", expectedDetails)
@@ -74,7 +74,7 @@ func TestHandleHostMessage(t *testing.T) {
 
 	t.Run("Start Game Event", func(t *testing.T) {
 		payload := map[string]interface{}{}
-		msg := test_helpers.CreateTestMessage(constants.EventSetupToServerStartGame, payload)
+		msg := test_helpers.CreateTestMessage(config.EventSetupToServerStartGame, payload)
 
 		// Should not panic
 		HandleHostMessage(host, msg)
@@ -83,7 +83,7 @@ func TestHandleHostMessage(t *testing.T) {
 
 	t.Run("Start Puzzle Timer Event", func(t *testing.T) {
 		payload := map[string]interface{}{}
-		msg := test_helpers.CreateTestMessage(constants.EventPuzzleToServerStartTimer, payload)
+		msg := test_helpers.CreateTestMessage(config.EventPuzzleToServerStartTimer, payload)
 
 		HandleHostMessage(host, msg)
 		assert.True(t, true)
@@ -95,7 +95,7 @@ func TestHandleHostMessage(t *testing.T) {
 			"saveAnalytics": false,
 		}
 
-		msg := test_helpers.CreateTestMessage(constants.EventAnalyticsToServerResetGame, payload)
+		msg := test_helpers.CreateTestMessage(config.EventAnalyticsToServerResetGame, payload)
 
 		HandleHostMessage(host, msg)
 		assert.True(t, true)
@@ -107,7 +107,7 @@ func TestHandleHostMessage(t *testing.T) {
 			"sequenceNumber":  1,
 		}
 
-		msg := test_helpers.CreateTestMessage(constants.EventSystemPing, payload)
+		msg := test_helpers.CreateTestMessage(config.EventSystemPing, payload)
 
 		HandleHostMessage(host, msg)
 		assert.True(t, true)
@@ -207,7 +207,7 @@ func TestStringFormattingFix(t *testing.T) {
 	// Testing the exact code path that was broken before our fix
 
 	// Test the old broken way vs the new correct way
-	minPlayers := constants.MinPlayers // This is 4
+	minPlayers := config.MinPlayers // This is 4
 
 	// The BROKEN way (what was causing the bug):
 	// brokenResult := "Need at least " + string(rune(minPlayers)) + " ready players to start"
@@ -222,8 +222,8 @@ func TestStringFormattingFix(t *testing.T) {
 	assert.NotContains(t, fixedResult, string(rune(4))) // Should not contain control character
 
 	// Verify the constants are correct
-	assert.Equal(t, 4, constants.MinPlayers)
-	assert.Equal(t, constants.ErrorMessageInsufficientPlayers, "Need at least 4 players to start")
+	assert.Equal(t, 4, config.MinPlayers)
+	assert.Equal(t, config.ErrorMessageInsufficientPlayers, "Need at least 4 players to start")
 }
 
 func TestHandleHostResetGame(t *testing.T) {
@@ -313,7 +313,7 @@ func TestHostHandlerEdgeCases(t *testing.T) {
 	t.Run("No Broadcast Service", func(t *testing.T) {
 		// Test handlers without broadcast service
 		payload := map[string]interface{}{}
-		msg := test_helpers.CreateTestMessage(constants.EventSetupToServerStartGame, payload)
+		msg := test_helpers.CreateTestMessage(config.EventSetupToServerStartGame, payload)
 
 		// Should handle gracefully without broadcast service
 		HandleHostMessage(host, msg)
@@ -344,7 +344,7 @@ func TestHostHandlerIntegration(t *testing.T) {
 	t.Run("Complete Game Flow", func(t *testing.T) {
 		// Test without broadcast service to avoid deadlock
 		// Add players
-		for i := 0; i < constants.MinPlayers; i++ {
+		for i := 0; i < config.MinPlayers; i++ {
 			player := test_helpers.CreateTestPlayer("player-" + string(rune(i+'A')))
 			player.Name = "Player " + string(rune(i+'A'))
 			player.Role = models.RoleArtEnthusiast

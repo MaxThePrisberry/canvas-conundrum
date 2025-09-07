@@ -1,7 +1,7 @@
 package utils
 
 import (
-	"canvas-conundrum/constants"
+	"canvas-conundrum/config"
 	"encoding/json"
 	"testing"
 	"time"
@@ -13,7 +13,7 @@ import (
 func TestMessage(t *testing.T) {
 	t.Run("MarshalMessage", func(t *testing.T) {
 		msg := &Message{
-			Event: constants.EventSetupToServerPlayerConfiguration,
+			Event: config.EventSetupToServerPlayerConfiguration,
 			Auth: &Auth{
 				Token: "test-token",
 			},
@@ -38,7 +38,7 @@ func TestMessage(t *testing.T) {
 func TestServerMessage(t *testing.T) {
 	t.Run("MarshalServerMessage", func(t *testing.T) {
 		msg := &ServerMessage{
-			Event:     constants.EventSetupToPlayerRolesAvailable,
+			Event:     config.EventSetupToPlayerRolesAvailable,
 			Payload:   map[string]interface{}{"roles": []interface{}{}},
 			Timestamp: time.Now().Format(time.RFC3339),
 		}
@@ -109,10 +109,10 @@ func TestNewServerMessage(t *testing.T) {
 		"number": 42,
 	}
 
-	msg := NewServerMessage(constants.EventSetupToPlayerRolesAvailable, payload)
+	msg := NewServerMessage(config.EventSetupToPlayerRolesAvailable, payload)
 
 	assert.NotNil(t, msg)
-	assert.Equal(t, constants.EventSetupToPlayerRolesAvailable, msg.Event)
+	assert.Equal(t, config.EventSetupToPlayerRolesAvailable, msg.Event)
 	assert.NotNil(t, msg.Payload)
 	assert.NotZero(t, msg.Timestamp)
 
@@ -127,13 +127,13 @@ func TestNewServerMessage(t *testing.T) {
 func TestCreateErrorPayload(t *testing.T) {
 	payload := CreateErrorPayload(
 		"test_error",
-		constants.ErrorCodeInvalidToken,
+		config.ErrorCodeInvalidToken,
 		"Invalid authentication token",
 		"Please reconnect",
 	)
 
 	assert.Equal(t, "test_error", payload["errorType"])
-	assert.Equal(t, constants.ErrorCodeInvalidToken, payload["errorCode"])
+	assert.Equal(t, config.ErrorCodeInvalidToken, payload["errorCode"])
 	assert.Equal(t, "Invalid authentication token", payload["message"])
 	assert.Equal(t, "Please reconnect", payload["details"])
 	assert.True(t, payload["retryable"].(bool))

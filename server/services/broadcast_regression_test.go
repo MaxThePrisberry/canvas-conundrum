@@ -1,7 +1,7 @@
 package services
 
 import (
-	"canvas-conundrum/constants"
+	"canvas-conundrum/config"
 	"canvas-conundrum/models"
 	"canvas-conundrum/test_helpers"
 	"strings"
@@ -91,16 +91,16 @@ func TestBroadcastRegressionProtection(t *testing.T) {
 		drainAllChannels()
 		service.BroadcastLobbyStatus()
 
-		verifyPlayersReceive(t, constants.EventSetupToClientLobbyStatus)
-		verifyHostDoesNotReceive(t, constants.EventSetupToClientLobbyStatus)
+		verifyPlayersReceive(t, config.EventSetupToClientLobbyStatus)
+		verifyHostDoesNotReceive(t, config.EventSetupToClientLobbyStatus)
 	})
 
 	t.Run("RESOURCE_TO_CLIENT_PHASE_START_Regression", func(t *testing.T) {
 		drainAllChannels()
 		service.BroadcastResourcePhaseStart()
 
-		verifyPlayersReceive(t, constants.EventResourceToClientPhaseStart)
-		verifyHostDoesNotReceive(t, constants.EventResourceToClientPhaseStart)
+		verifyPlayersReceive(t, config.EventResourceToClientPhaseStart)
+		verifyHostDoesNotReceive(t, config.EventResourceToClientPhaseStart)
 	})
 
 	t.Run("ANALYTICS_TO_CLIENT_TEAM_SUMMARY_Regression", func(t *testing.T) {
@@ -138,37 +138,37 @@ func TestBroadcastRegressionProtection(t *testing.T) {
 		// Drain the personal report events first
 		select {
 		case msg := <-player1.Send:
-			assert.Contains(t, string(msg), constants.EventAnalyticsToPlayerPersonalReport, "Player1 should receive personal report first")
+			assert.Contains(t, string(msg), config.EventAnalyticsToPlayerPersonalReport, "Player1 should receive personal report first")
 		case <-time.After(100 * time.Millisecond):
 			t.Error("Player1 should have received personal report")
 		}
 
 		select {
 		case msg := <-player2.Send:
-			assert.Contains(t, string(msg), constants.EventAnalyticsToPlayerPersonalReport, "Player2 should receive personal report first")
+			assert.Contains(t, string(msg), config.EventAnalyticsToPlayerPersonalReport, "Player2 should receive personal report first")
 		case <-time.After(100 * time.Millisecond):
 			t.Error("Player2 should have received personal report")
 		}
 
 		// Now check for team summary
-		verifyPlayersReceive(t, constants.EventAnalyticsToClientTeamSummary)
-		verifyHostDoesNotReceive(t, constants.EventAnalyticsToClientTeamSummary)
+		verifyPlayersReceive(t, config.EventAnalyticsToClientTeamSummary)
+		verifyHostDoesNotReceive(t, config.EventAnalyticsToClientTeamSummary)
 	})
 
 	t.Run("SYSTEM_TO_CLIENT_HOST_DISCONNECTED_Regression", func(t *testing.T) {
 		drainAllChannels()
 		service.BroadcastHostDisconnected()
 
-		verifyPlayersReceive(t, constants.EventSystemToClientHostDisconnected)
-		verifyHostDoesNotReceive(t, constants.EventSystemToClientHostDisconnected)
+		verifyPlayersReceive(t, config.EventSystemToClientHostDisconnected)
+		verifyHostDoesNotReceive(t, config.EventSystemToClientHostDisconnected)
 	})
 
 	t.Run("SYSTEM_TO_CLIENT_HOST_RECONNECTED_Regression", func(t *testing.T) {
 		drainAllChannels()
 		service.BroadcastHostReconnected()
 
-		verifyPlayersReceive(t, constants.EventSystemToClientHostReconnected)
-		verifyHostDoesNotReceive(t, constants.EventSystemToClientHostReconnected)
+		verifyPlayersReceive(t, config.EventSystemToClientHostReconnected)
+		verifyHostDoesNotReceive(t, config.EventSystemToClientHostReconnected)
 	})
 
 	// Test the event from player_handler.go that was also fixed
@@ -183,10 +183,10 @@ func TestBroadcastRegressionProtection(t *testing.T) {
 			"teamPerformance": map[string]interface{}{"averageAccuracy": 0.75},
 		}
 
-		service.BroadcastToAllPlayers(constants.EventResourceToClientTeamProgress, teamProgressPayload)
+		service.BroadcastToAllPlayers(config.EventResourceToClientTeamProgress, teamProgressPayload)
 
-		verifyPlayersReceive(t, constants.EventResourceToClientTeamProgress)
-		verifyHostDoesNotReceive(t, constants.EventResourceToClientTeamProgress)
+		verifyPlayersReceive(t, config.EventResourceToClientTeamProgress)
+		verifyHostDoesNotReceive(t, config.EventResourceToClientTeamProgress)
 	})
 }
 

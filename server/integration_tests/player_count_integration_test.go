@@ -2,7 +2,6 @@ package integration_tests
 
 import (
 	"canvas-conundrum/config"
-	"canvas-conundrum/constants"
 	"canvas-conundrum/handlers"
 	"canvas-conundrum/services"
 	"canvas-conundrum/test_helpers"
@@ -48,7 +47,7 @@ func TestPlayerCountingWithHost(t *testing.T) {
 	require.NoError(t, err)
 
 	// Wait for lobby status update (after configuration)
-	msg, err := player1.WaitForEvent(constants.EventSetupToClientLobbyStatus, 2*time.Second)
+	msg, err := player1.WaitForEvent(config.EventSetupToClientLobbyStatus, 2*time.Second)
 	require.NoError(t, err)
 
 	var payload map[string]interface{}
@@ -86,7 +85,7 @@ func TestPlayerCountingWithHost(t *testing.T) {
 	found := false
 
 	for _, msg := range messages {
-		if msg.Event == constants.EventSetupToClientLobbyStatus {
+		if msg.Event == config.EventSetupToClientLobbyStatus {
 			payloadBytes, ok := msg.Payload.([]byte)
 			if !ok {
 				tempBytes, _ := json.Marshal(msg.Payload)
@@ -173,11 +172,11 @@ func TestPingResponseActiveConnections(t *testing.T) {
 		},
 	}
 
-	err = player.SendMessage(constants.EventSystemPing, pingPayload)
+	err = player.SendMessage(config.EventSystemPing, pingPayload)
 	require.NoError(t, err)
 
 	// Wait for pong response
-	msg, err := player.WaitForEvent(constants.EventSystemPong, 3*time.Second)
+	msg, err := player.WaitForEvent(config.EventSystemPong, 3*time.Second)
 	require.NoError(t, err)
 
 	var pongPayload map[string]interface{}

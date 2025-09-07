@@ -2,7 +2,6 @@ package handlers
 
 import (
 	"canvas-conundrum/config"
-	"canvas-conundrum/constants"
 	"canvas-conundrum/models"
 	"canvas-conundrum/services"
 	"canvas-conundrum/utils"
@@ -19,28 +18,28 @@ func HandlePlayerMessage(player *models.Player, msg *utils.Message) {
 	log.Printf("Player %s sent event: %s", player.ID, msg.Event)
 
 	switch msg.Event {
-	case constants.EventSetupToServerPlayerConfiguration:
+	case config.EventSetupToServerPlayerConfiguration:
 		handlePlayerConfiguration(player, msg.Payload)
 
-	case constants.EventResourceToServerLocationVerified:
+	case config.EventResourceToServerLocationVerified:
 		handleLocationVerified(player, msg.Payload)
 
-	case constants.EventResourceToServerTriviaAnswer:
+	case config.EventResourceToServerTriviaAnswer:
 		handleTriviaAnswer(player, msg.Payload)
 
-	case constants.EventPuzzleToServerSegmentCompleted:
+	case config.EventPuzzleToServerSegmentCompleted:
 		handleSegmentCompleted(player, msg.Payload)
 
-	case constants.EventPuzzleToServerFragmentMove:
+	case config.EventPuzzleToServerFragmentMove:
 		handleFragmentMove(player, msg.Payload)
 
-	case constants.EventPuzzleToServerRecommendMove:
+	case config.EventPuzzleToServerRecommendMove:
 		handleRecommendMove(player, msg.Payload)
 
-	case constants.EventPuzzleToServerRecommendationResponse:
+	case config.EventPuzzleToServerRecommendationResponse:
 		handleRecommendationResponse(player, msg.Payload)
 
-	case constants.EventSystemPing:
+	case config.EventSystemPing:
 		handlePing(player, msg.Payload)
 
 	default:
@@ -108,8 +107,8 @@ func handlePlayerConfiguration(player *models.Player, payload json.RawMessage) {
 		if broadcastService != nil {
 			broadcastService.SendError(
 				player,
-				constants.ErrorCodeInvalidRole,
-				constants.ErrorMessageInvalidRole,
+				config.ErrorCodeInvalidRole,
+				config.ErrorMessageInvalidRole,
 				err.Error(),
 			)
 		}
@@ -244,7 +243,7 @@ func handleTriviaAnswer(player *models.Player, payload json.RawMessage) {
 			"selectedAnswer": data.SelectedAnswer,
 			"correctAnswer":  question.CorrectAnswer,
 			"tokensEarned":   tokensEarned,
-			"baseTokens":     constants.BaseTokensPerCorrectAnswer,
+			"baseTokens":     config.BaseTokensPerCorrectAnswer,
 			"bonuses": map[string]interface{}{
 				"roleBonus":            player.Role.GetBonusTokenType() == tokenType,
 				"roleBonusTokens":      0, // Calculate if needed
@@ -255,10 +254,10 @@ func handleTriviaAnswer(player *models.Player, payload json.RawMessage) {
 			"currentLocation": player.CurrentStation,
 		}
 
-		broadcastService.SendToPlayer(player, constants.EventResourceToPlayerAnswerResult, resultPayload)
+		broadcastService.SendToPlayer(player, config.EventResourceToPlayerAnswerResult, resultPayload)
 
 		// Broadcast team progress update
-		broadcastService.BroadcastToAllPlayers(constants.EventResourceToClientTeamProgress, getTeamProgressPayload())
+		broadcastService.BroadcastToAllPlayers(config.EventResourceToClientTeamProgress, getTeamProgressPayload())
 	}
 }
 
@@ -330,7 +329,7 @@ func handleFragmentMove(player *models.Player, payload json.RawMessage) {
 				"status": "failed",
 				"error":  err.Error(),
 			}
-			broadcastService.SendToPlayer(player, constants.EventPuzzleToPlayerMoveResult, moveResult)
+			broadcastService.SendToPlayer(player, config.EventPuzzleToPlayerMoveResult, moveResult)
 		}
 		return
 	}
@@ -348,8 +347,8 @@ func handleFragmentMove(player *models.Player, payload json.RawMessage) {
 			"fragmentId":  data.FragmentID,
 			"newPosition": data.TargetPosition,
 			"cooldownInfo": map[string]interface{}{
-				"nextMoveAvailable": time.Now().Add(time.Duration(constants.FragmentMoveCooldown) * time.Millisecond).Unix(),
-				"cooldownRemaining": constants.FragmentMoveCooldown / 1000.0,
+				"nextMoveAvailable": time.Now().Add(time.Duration(config.FragmentMoveCooldown) * time.Millisecond).Unix(),
+				"cooldownRemaining": config.FragmentMoveCooldown / 1000.0,
 			},
 		}
 
@@ -358,7 +357,7 @@ func handleFragmentMove(player *models.Player, payload json.RawMessage) {
 			moveResult["swappedFragmentNewPosition"] = data.CurrentPosition
 		}
 
-		broadcastService.SendToPlayer(player, constants.EventPuzzleToPlayerMoveResult, moveResult)
+		broadcastService.SendToPlayer(player, config.EventPuzzleToPlayerMoveResult, moveResult)
 	}
 }
 
@@ -420,7 +419,7 @@ func handleRecommendMove(player *models.Player, payload json.RawMessage) {
 			"expiresAt":      rec.ExpiresAt.Format(time.RFC3339),
 		}
 
-		broadcastService.SendToPlayer(targetPlayer, constants.EventPuzzleToPlayerMoveRecommendation, recPayload)
+		broadcastService.SendToPlayer(targetPlayer, config.EventPuzzleToPlayerMoveRecommendation, recPayload)
 	}
 }
 
@@ -481,7 +480,7 @@ func handleRecommendationResponse(player *models.Player, payload json.RawMessage
 				"executionStatus":  data.Response + "ed",
 			}
 
-			broadcastService.SendToPlayer(fromPlayer, constants.EventPuzzleToPlayerRecommendationResult, resultPayload)
+			broadcastService.SendToPlayer(fromPlayer, config.EventPuzzleToPlayerRecommendationResult, resultPayload)
 		}
 	}
 }
@@ -519,7 +518,7 @@ func handlePing(player *models.Player, payload json.RawMessage) {
 			},
 		}
 
-		broadcastService.SendToPlayer(player, constants.EventSystemPong, pongPayload)
+		broadcastService.SendToPlayer(player, config.EventSystemPong, pongPayload)
 	}
 }
 
@@ -531,7 +530,7 @@ func getTeamProgressPayload() map[string]interface{} {
 
 	return map[string]interface{}{
 		"currentRound": game.CurrentRound,
-		"totalRounds":  constants.ResourceGatheringRounds,
+		"totalRounds":  config.ResourceGatheringRounds,
 		"teamTokens": map[string]int{
 			"anchorTokens":  game.TeamTokens.AnchorTokens,
 			"chronosTokens": game.TeamTokens.ChronosTokens,
@@ -541,26 +540,26 @@ func getTeamProgressPayload() map[string]interface{} {
 		"tokenThresholds": map[string]interface{}{
 			"anchor": map[string]interface{}{
 				"currentThreshold":   game.TeamTokens.GetThreshold(models.TokenAnchor),
-				"maxThresholds":      constants.MaxThresholds,
-				"tokensPerThreshold": constants.AnchorTokenThreshold,
+				"maxThresholds":      config.MaxThresholds,
+				"tokensPerThreshold": config.AnchorTokenThreshold,
 				"effectDescription":  "2 pieces pre-solved per threshold",
 			},
 			"chronos": map[string]interface{}{
 				"currentThreshold":   game.TeamTokens.GetThreshold(models.TokenChronos),
-				"maxThresholds":      constants.MaxThresholds,
-				"tokensPerThreshold": constants.ChronosTokenThreshold,
+				"maxThresholds":      config.MaxThresholds,
+				"tokensPerThreshold": config.ChronosTokenThreshold,
 				"effectDescription":  "+20 seconds per threshold",
 			},
 			"guide": map[string]interface{}{
 				"currentThreshold":   game.TeamTokens.GetThreshold(models.TokenGuide),
-				"maxThresholds":      constants.MaxThresholds,
-				"tokensPerThreshold": constants.GuideTokenThreshold,
+				"maxThresholds":      config.MaxThresholds,
+				"tokensPerThreshold": config.GuideTokenThreshold,
 				"effectDescription":  "Remove (gridSize²)/7 squares per threshold",
 			},
 			"clarity": map[string]interface{}{
 				"currentThreshold":   game.TeamTokens.GetThreshold(models.TokenClarity),
-				"maxThresholds":      constants.MaxThresholds,
-				"tokensPerThreshold": constants.ClarityTokenThreshold,
+				"maxThresholds":      config.MaxThresholds,
+				"tokensPerThreshold": config.ClarityTokenThreshold,
 				"effectDescription":  "+1 second preview per threshold",
 			},
 		},

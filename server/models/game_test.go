@@ -1,7 +1,7 @@
 package models
 
 import (
-	"canvas-conundrum/constants"
+	"canvas-conundrum/config"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -203,7 +203,7 @@ func TestGetTotalPuzzleTime(t *testing.T) {
 				TokenClarity: 0,
 			},
 			playerCount:  4,
-			expectedTime: constants.PuzzleBaseTime,
+			expectedTime: config.PuzzleBaseTime,
 		},
 		{
 			name: "With chronos bonus",
@@ -214,7 +214,7 @@ func TestGetTotalPuzzleTime(t *testing.T) {
 				TokenClarity: 0,
 			},
 			playerCount:  4,
-			expectedTime: constants.PuzzleBaseTime + constants.TimeExtensionPerThreshold,
+			expectedTime: config.PuzzleBaseTime + config.TimeExtensionPerThreshold,
 		},
 		{
 			name: "Max chronos bonus",
@@ -225,7 +225,7 @@ func TestGetTotalPuzzleTime(t *testing.T) {
 				TokenClarity: 0,
 			},
 			playerCount:  4,
-			expectedTime: constants.PuzzleBaseTime + (3 * constants.TimeExtensionPerThreshold),
+			expectedTime: config.PuzzleBaseTime + (3 * config.TimeExtensionPerThreshold),
 		},
 	}
 
@@ -518,9 +518,9 @@ func TestGameGetClarityPreviewTime(t *testing.T) {
 		clarityTokens int
 		expectedTime  int
 	}{
-		{"No clarity tokens", 0, constants.ClarityBasePreviewTime},
-		{"One threshold", 30, constants.ClarityBasePreviewTime + 1},  // 30/30 = 1 threshold
-		{"Two thresholds", 60, constants.ClarityBasePreviewTime + 2}, // 60/30 = 2 thresholds
+		{"No clarity tokens", 0, config.ClarityBasePreviewTime},
+		{"One threshold", 30, config.ClarityBasePreviewTime + 1},  // 30/30 = 1 threshold
+		{"Two thresholds", 60, config.ClarityBasePreviewTime + 2}, // 60/30 = 2 thresholds
 	}
 
 	for _, tt := range tests {

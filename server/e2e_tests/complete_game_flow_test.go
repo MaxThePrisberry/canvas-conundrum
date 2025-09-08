@@ -278,8 +278,10 @@ func TestCompleteGameFlow(t *testing.T) {
 				err := gm.CompleteSegment(playerID, player.AssignedSegment)
 				require.NoError(t, err)
 
-				// Verify player state updated
-				assert.True(t, player.SegmentCompleted)
+				// Get updated player state from game manager
+				updatedPlayer, exists := gm.GetPlayer(playerID)
+				require.True(t, exists)
+				assert.True(t, updatedPlayer.SegmentCompleted)
 			}
 		}
 

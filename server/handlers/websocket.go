@@ -242,7 +242,9 @@ func handlePlayerWrite(player *models.Player) {
 // handleHostRead handles incoming messages from the host
 func handleHostRead(host *models.Host) {
 	defer func() {
-		host.Connection.Close()
+		if conn := host.GetConnection(); conn != nil {
+			conn.Close()
+		}
 		// Safely close Done channel using recover to handle already closed channels
 		func() {
 			defer func() {

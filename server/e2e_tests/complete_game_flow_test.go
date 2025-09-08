@@ -252,9 +252,8 @@ func TestCompleteGameFlow(t *testing.T) {
 
 	// Phase 3: Puzzle Assembly
 	t.Run("Phase3_PuzzleAssembly", func(t *testing.T) {
-		// Initialize puzzle service
-		puzzleService := gm.GetPuzzleService()
-		require.NotNil(t, puzzleService)
+		// Simulate the actual game flow transition to puzzle phase
+		// This follows the same logic as CompleteResourceGathering()
 
 		// Get the game and verify puzzle grid exists
 		game := gm.GetGame()
@@ -264,15 +263,32 @@ func TestCompleteGameFlow(t *testing.T) {
 		}
 		require.NotNil(t, game.PuzzleGrid, "Puzzle grid should be initialized")
 
-		// Assign puzzle segments using the service method
-		gridSize := game.GetGridSize()
-		puzzleService.AssignSegments(gm.GetAllPlayers(), gridSize)
+		// Get puzzle service
+		puzzleService := gm.GetPuzzleService()
+		require.NotNil(t, puzzleService)
+
+		// Since we can't access private fields from the test, let's simulate the transition
+		// by directly using the GameManager's public CompleteResourceGathering method
+		// which handles the proper puzzle phase transition
+
+		// First set the game to resource gathering phase so CompleteResourceGathering works
+		game.CurrentPhase = models.PhaseResourceGathering
+
+		// Call the actual game method that handles puzzle phase transition
+		gm.CompleteResourceGathering()
+
+		// Wait for the transition to complete (CompleteResourceGathering waits 5 seconds then transitions)
+		time.Sleep(6 * time.Second)
+
+		// Verify we're in puzzle phase
+		assert.Equal(t, models.PhasePuzzleAssembly, gm.GetCurrentPhase())
 
 		// Start puzzle timer (needed for solve time calculation)
 		gm.GetGame().StartPuzzleTimer()
 
-		// Simulate individual puzzle solving
-		for playerID, player := range gm.GetAllPlayers() {
+		// Now simulate individual puzzle solving using the properly assigned segments
+		allPlayers := gm.GetAllPlayers()
+		for playerID, player := range allPlayers {
 			if player.AssignedSegment != "" {
 				// Simulate segment completion through game manager
 				err := gm.CompleteSegment(playerID, player.AssignedSegment)
@@ -291,6 +307,7 @@ func TestCompleteGameFlow(t *testing.T) {
 
 		// Place some fragments
 		fragments := grid.Fragments
+		gridSize := grid.Size
 		placedCount := 0
 		for _, fragment := range fragments {
 			if placedCount >= 4 {

@@ -119,17 +119,20 @@ func (ts *TriviaService) GetQuestionsForRound(players map[string]*models.Player)
 		}
 
 		if question != nil {
+			// Create a copy of the question for this player to avoid race conditions
+			playerQuestion := *question
+
 			// Mark if this is a specialty question for the player
 			if isSpecialty && len(player.Specialties) > 0 {
 				for _, specialty := range player.Specialties {
-					if question.Category == specialty {
-						question.IsSpecialty = true
-						question.SpecialtyBonus = true
+					if playerQuestion.Category == specialty {
+						playerQuestion.IsSpecialty = true
+						playerQuestion.SpecialtyBonus = true
 						break
 					}
 				}
 			}
-			questions[playerID] = question
+			questions[playerID] = &playerQuestion
 		}
 	}
 

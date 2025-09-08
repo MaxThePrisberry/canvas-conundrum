@@ -231,6 +231,7 @@ func (gm *GameManager) RemovePlayer(playerID string) {
 	var shouldBroadcastRoles bool
 	var broadcastSvc *BroadcastService
 	var beforeAvailability map[models.Role]bool
+	var currentPhase models.GamePhase
 
 	// Capture role availability before removing player
 	beforeAvailability = gm.GetRoleAvailabilityMap()
@@ -347,8 +348,11 @@ func (gm *GameManager) RemovePlayer(playerID string) {
 		}
 	}
 
+	// Capture current phase for use after mutex unlock
+	currentPhase = gm.game.CurrentPhase
+
 	// Check if we should broadcast roster update (only during setup phase)
-	if gm.game.CurrentPhase == models.PhaseSetup && gm.broadcastSvc != nil && gm.host != nil && gm.host.Connection != nil {
+	if currentPhase == models.PhaseSetup && gm.broadcastSvc != nil && gm.host != nil && gm.host.Connection != nil {
 		shouldBroadcast = true
 		broadcastSvc = gm.broadcastSvc
 	}
@@ -367,7 +371,7 @@ func (gm *GameManager) RemovePlayer(playerID string) {
 	}
 
 	// Broadcast role availability changes if any occurred (only during setup phase)
-	if shouldBroadcastRoles && gm.game.CurrentPhase == models.PhaseSetup && broadcastSvc != nil {
+	if shouldBroadcastRoles && currentPhase == models.PhaseSetup && broadcastSvc != nil {
 		log.Printf("Broadcasting role availability changes after player %s disconnected", playerID)
 		broadcastSvc.BroadcastRoleAvailability()
 	}
@@ -403,10 +407,12 @@ func (gm *GameManager) GetAllPlayers() map[string]*models.Player {
 	gm.mu.RLock()
 	defer gm.mu.RUnlock()
 
-	// Return a copy to avoid race conditions
+	// Return deep copies of players to avoid race conditions
 	playersCopy := make(map[string]*models.Player)
 	for id, player := range gm.players {
-		playersCopy[id] = player
+		// Create a deep copy of the player
+		playerCopy := *player
+		playersCopy[id] = &playerCopy
 	}
 	return playersCopy
 }

@@ -5,6 +5,7 @@ import (
 	"html"
 	"math/rand"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -148,6 +149,7 @@ type TriviaAnswer struct {
 
 // QuestionPool manages a pool of trivia questions
 type QuestionPool struct {
+	mu        sync.RWMutex
 	Questions []*TriviaQuestion
 	Used      map[string]bool
 	Index     int
@@ -164,11 +166,16 @@ func NewQuestionPool() *QuestionPool {
 
 // AddQuestion adds a question to the pool
 func (qp *QuestionPool) AddQuestion(q *TriviaQuestion) {
+	qp.mu.Lock()
+	defer qp.mu.Unlock()
 	qp.Questions = append(qp.Questions, q)
 }
 
 // GetNextQuestion gets the next question from the pool
 func (qp *QuestionPool) GetNextQuestion() *TriviaQuestion {
+	qp.mu.Lock()
+	defer qp.mu.Unlock()
+
 	if len(qp.Questions) == 0 {
 		return nil
 	}

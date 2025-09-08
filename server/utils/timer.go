@@ -89,3 +89,10 @@ func (t *Timer) Stop() {
 	default:
 	}
 }
+
+// IsRunning returns whether the timer is currently running
+func (t *Timer) IsRunning() bool {
+	t.mu.RLock()
+	defer t.mu.RUnlock()
+	return t.isRunning
+}

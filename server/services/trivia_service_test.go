@@ -6,6 +6,7 @@ import (
 	"io/ioutil"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -67,7 +68,7 @@ func TestTriviaServiceLoadQuestions(t *testing.T) {
 				},
 				{
 					"question": "What planet is known as the Red Planet?",
-					"correct_answer": "Mars", 
+					"correct_answer": "Mars",
 					"incorrect_answers": ["Venus", "Jupiter", "Saturn"],
 					"category": "Science",
 					"type": "multiple",
@@ -314,12 +315,18 @@ func TestTriviaServiceConcurrency(t *testing.T) {
 	}
 
 	// Test concurrent access
+	var wg sync.WaitGroup
 	for i := 0; i < 10; i++ {
+		wg.Add(1)
 		go func() {
+			defer wg.Done()
 			_ = service.GetQuestionsForRound(players)
 			_ = service.GetQuestionByID("q1")
 		}()
 	}
+
+	// Wait for all goroutines to complete
+	wg.Wait()
 
 	// Test should complete without race conditions
 	assert.True(t, true)

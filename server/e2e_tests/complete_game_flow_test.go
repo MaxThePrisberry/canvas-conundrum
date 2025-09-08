@@ -156,14 +156,21 @@ func TestCompleteGameFlow(t *testing.T) {
 		// Verify lobby status
 		assert.Equal(t, 4, gm.GetPlayerCount())
 
-		// Instead of starting game through websocket which triggers timers,
-		// directly set up game state for testing
+		// Set difficulty before starting the game
 		game := gm.GetGame()
 		game.SetDifficulty(models.DifficultyMedium)
-		game.GameStarted = true
-		game.CurrentPhase = models.PhaseResourceGathering
-		game.PhaseStartTime = time.Now()
-		game.CurrentRound = 1
+
+		// Mark all players as ready so we can start the game by updating their configuration
+		allPlayers := gm.GetAllPlayers()
+		for _, player := range allPlayers {
+			// Use the proper method to mark players as ready
+			err := gm.UpdatePlayerConfiguration(player.ID, player.Name, player.Role, []string{})
+			require.NoError(t, err)
+		}
+
+		// Use proper GameManager method to start the game
+		err := gm.StartGame()
+		require.NoError(t, err)
 
 		// Verify game state
 		assert.True(t, game.GameStarted)

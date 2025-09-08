@@ -2,6 +2,7 @@ package utils
 
 import (
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -19,7 +20,7 @@ func TestNewTimer(t *testing.T) {
 	assert.Equal(t, 100*time.Millisecond, timer.duration)
 	assert.NotNil(t, timer.onExpire)
 	assert.NotNil(t, timer.done)
-	assert.False(t, timer.isRunning)
+	assert.False(t, timer.IsRunning())
 	assert.False(t, timer.isPaused)
 }
 
@@ -37,7 +38,7 @@ func TestTimerStart(t *testing.T) {
 
 	// Test starting timer
 	timer.Start()
-	assert.True(t, timer.isRunning)
+	assert.True(t, timer.IsRunning())
 	assert.False(t, timer.isPaused)
 
 	// Test that starting again does nothing
@@ -61,7 +62,7 @@ func TestTimerStartWithoutExpireFunction(t *testing.T) {
 	timer := NewTimer(50*time.Millisecond, nil)
 
 	timer.Start()
-	assert.True(t, timer.isRunning)
+	assert.True(t, timer.IsRunning())
 
 	// Wait for timer to expire (should not panic)
 	time.Sleep(100 * time.Millisecond)
@@ -82,13 +83,13 @@ func TestTimerStop(t *testing.T) {
 	time.Sleep(50 * time.Millisecond)
 	timer.Stop()
 
-	assert.False(t, timer.isRunning)
+	assert.False(t, timer.IsRunning())
 	assert.False(t, timer.isPaused)
 	assert.False(t, called)
 
 	// Test stopping when not running
 	timer.Stop()
-	assert.False(t, timer.isRunning)
+	assert.False(t, timer.IsRunning())
 }
 
 func TestTimerConcurrentAccess(t *testing.T) {
@@ -107,28 +108,28 @@ func TestTimerConcurrentAccess(t *testing.T) {
 	}
 
 	wg.Wait()
-	assert.False(t, timer.isRunning)
+	assert.False(t, timer.IsRunning())
 }
 
 func TestTimerTick(t *testing.T) {
-	expired := false
-	timer := NewTimer(50*time.Millisecond, func() {
-		expired = true
+	var expired int32
+	timer := NewTimer(100*time.Millisecond, func() {
+		atomic.StoreInt32(&expired, 1)
 	})
 
 	timer.Start()
 
 	// Wait longer than duration to ensure expiration
-	time.Sleep(100 * time.Millisecond)
+	time.Sleep(200 * time.Millisecond)
 
-	assert.True(t, expired)
-	assert.False(t, timer.isRunning)
+	assert.Equal(t, int32(1), atomic.LoadInt32(&expired))
+	assert.False(t, timer.IsRunning())
 }
 
 func TestTimerTickWithEarlyStop(t *testing.T) {
-	expired := false
+	var expired int32
 	timer := NewTimer(200*time.Millisecond, func() {
-		expired = true
+		atomic.StoreInt32(&expired, 1)
 	})
 
 	timer.Start()
@@ -140,6 +141,6 @@ func TestTimerTickWithEarlyStop(t *testing.T) {
 	// Wait to ensure no expiration
 	time.Sleep(200 * time.Millisecond)
 
-	assert.False(t, expired)
-	assert.False(t, timer.isRunning)
+	assert.Equal(t, int32(0), atomic.LoadInt32(&expired))
+	assert.False(t, timer.IsRunning())
 }

@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gorilla/websocket"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -23,22 +24,41 @@ func TestPuzzlePhaseIntegration(t *testing.T) {
 	gameManager.SetPuzzleService(puzzleService)
 	defer puzzleService.Cleanup()
 
-	// Set up host
-	host := models.NewHost("test-host", nil)
+	// Set up host with websocket connection (required for game to start)
+	host := models.NewHost("test-host", &websocket.Conn{})
 	gameManager.SetHost(host)
 
-	// Set up test players
+	// Set up test players with proper ready state (need minimum 4 players)
 	player1 := test_helpers.CreateTestPlayer("player1")
 	player2 := test_helpers.CreateTestPlayer("player2")
-	player1.IsActive = true
-	player2.IsActive = true
-	gameManager.AddPlayer(player1)
-	gameManager.AddPlayer(player2)
+	player3 := test_helpers.CreateTestPlayer("player3")
+	player4 := test_helpers.CreateTestPlayer("player4")
+
+	// Set all players as active and ready
+	players := []*models.Player{player1, player2, player3, player4}
+	for _, player := range players {
+		player.IsActive = true
+		player.IsReady = true
+		gameManager.AddPlayer(player)
+	}
 
 	t.Run("End-to-End Puzzle Phase with Rate Limiting and Recommendation Invalidation", func(t *testing.T) {
-		// Initialize puzzle phase using real application flow
-		gameManager.GetGame().StartPuzzlePhase(2) // Start puzzle phase with 2 players (creates 2x2 grid)
-		grid := gameManager.GetGame().PuzzleGrid
+		// Use proper server flow to get to puzzle phase
+		err := gameManager.StartGame()
+		require.NoError(t, err)
+
+		// Transition to puzzle phase using real server method
+		// Set to resource gathering phase first (StartGame does this)
+		// Then complete resource gathering to trigger puzzle phase
+		gameManager.CompleteResourceGathering()
+		// Wait for the transition to complete (CompleteResourceGathering waits 5 seconds then transitions)
+		time.Sleep(6 * time.Second)
+
+		// Verify we're in puzzle phase and get the grid
+		assert.Equal(t, models.PhasePuzzleAssembly, gameManager.GetCurrentPhase())
+		game := gameManager.GetGame()
+		grid := game.PuzzleGrid
+		require.NotNil(t, grid)
 
 		// Add fragments to grid
 		fragment1 := &models.Fragment{
@@ -56,20 +76,23 @@ func TestPuzzlePhaseIntegration(t *testing.T) {
 
 		// Test 1: Rate Limiting (testing cooldown logic directly)
 		t.Run("Fragment Move Rate Limiting Works", func(t *testing.T) {
-			// Test cooldown logic directly on player object to avoid deadlock issues
-			player1.LastMoveTime = time.Time{} // Zero time - first move
-			assert.True(t, player1.CanMoveFragment(2500), "First move should be allowed")
+			// Create a separate test player to avoid race conditions with GameManager's players
+			testPlayer := test_helpers.CreateTestPlayer("test-player-for-rate-limiting")
+
+			// Test cooldown logic directly on isolated player object
+			testPlayer.LastMoveTime = time.Time{} // Zero time - first move
+			assert.True(t, testPlayer.CanMoveFragment(2500), "First move should be allowed")
 
 			// Update last move time to now
-			player1.UpdateLastMove()
+			testPlayer.UpdateLastMove()
 
 			// Immediate second move should be blocked by cooldown
-			assert.False(t, player1.CanMoveFragment(2500), "Second immediate move should be blocked by cooldown")
+			assert.False(t, testPlayer.CanMoveFragment(2500), "Second immediate move should be blocked by cooldown")
 
 			// Move after cooldown period should be allowed
 			pastTime := time.Now().Add(-3 * time.Second) // Past cooldown period
-			player1.LastMoveTime = pastTime
-			assert.True(t, player1.CanMoveFragment(2500), "Move should be allowed after cooldown period")
+			testPlayer.LastMoveTime = pastTime
+			assert.True(t, testPlayer.CanMoveFragment(2500), "Move should be allowed after cooldown period")
 		})
 
 		// Test 2: Recommendation System with Grid State Invalidation

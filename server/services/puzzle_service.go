@@ -114,7 +114,7 @@ func (ps *PuzzleService) checkAndExpireRecommendations() {
 }
 
 // AssignSegments assigns puzzle segments to players and initializes individual puzzles
-func (ps *PuzzleService) AssignSegments(players map[string]*models.Player, gridSize int) {
+func (ps *PuzzleService) AssignSegments(players map[string]*models.Player, gridSize int, game *models.Game) {
 	ps.mu.Lock()
 	defer ps.mu.Unlock()
 
@@ -130,9 +130,7 @@ func (ps *PuzzleService) AssignSegments(players map[string]*models.Player, gridS
 		allSegments[i], allSegments[j] = allSegments[j], allSegments[i]
 	})
 
-	// Get game instance to access token counts
-	gameManager := GetGameInstance()
-	game := gameManager.GetGame()
+	// Use provided game instance to access token counts
 	preSolvedPieces := game.GetPreSolvedPieces()
 
 	// Assign segments to connected players

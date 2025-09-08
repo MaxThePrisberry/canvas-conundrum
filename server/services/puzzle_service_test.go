@@ -44,7 +44,8 @@ func TestPuzzleServiceAssignSegments(t *testing.T) {
 		gameManager.AddPlayer(players["player2"])
 
 		// Assign segments
-		service.AssignSegments(players, 2) // 2x2 grid
+		game := gameManager.GetGame()
+		service.AssignSegments(players, 2, game) // 2x2 grid
 
 		// Check assignments
 		assert.Len(t, service.segmentAssignments, 2)
@@ -69,7 +70,8 @@ func TestPuzzleServiceAssignSegments(t *testing.T) {
 		players["player1"].IsActive = true
 		players["player2"].IsActive = false // Inactive
 
-		service.AssignSegments(players, 2)
+		game := gameManager.GetGame()
+		service.AssignSegments(players, 2, game)
 
 		// Only active player should get assignment
 		assert.Len(t, service.segmentAssignments, 1)
@@ -86,7 +88,8 @@ func TestPuzzleServiceAssignSegments(t *testing.T) {
 		}
 		players["player1"].IsActive = true
 
-		service.AssignSegments(players, 3) // 3x3 = 9 segments, 1 player
+		game := gameManager.GetGame()
+		service.AssignSegments(players, 3, game) // 3x3 = 9 segments, 1 player
 
 		// Check assignments
 		assert.Len(t, service.segmentAssignments, 1)

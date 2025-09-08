@@ -35,10 +35,14 @@ type GameManager struct {
 var (
 	gameInstance *GameManager
 	once         sync.Once
+	singletonMu  sync.Mutex // Protects singleton reset operations
 )
 
 // GetGameInstance returns the singleton game manager instance
 func GetGameInstance() *GameManager {
+	singletonMu.Lock()
+	defer singletonMu.Unlock()
+
 	once.Do(func() {
 		gameInstance = &GameManager{
 			game:            models.NewGame(),
@@ -51,6 +55,9 @@ func GetGameInstance() *GameManager {
 
 // ResetGameManagerInstance resets the singleton instance (for testing)
 func ResetGameManagerInstance() {
+	singletonMu.Lock()
+	defer singletonMu.Unlock()
+
 	if gameInstance != nil {
 		gameInstance.Cleanup()
 	}
@@ -839,8 +846,7 @@ func (gm *GameManager) CompleteResourceGathering() {
 		// Keep track of what to broadcast after unlocking
 		var shouldBroadcast bool
 		var oldPhase models.GamePhase
-		var playersCopy map[string]*models.Player
-		var gridSize int
+		var broadcastSvc *BroadcastService
 
 		// Do state changes under lock
 		func() {
@@ -851,31 +857,28 @@ func (gm *GameManager) CompleteResourceGathering() {
 			oldPhase = gm.game.CurrentPhase
 			shouldBroadcast = gm.broadcastSvc != nil
 
+			// Store service reference for use outside lock
+			broadcastSvc = gm.broadcastSvc
+
 			// Transition to puzzle phase
 			playerCount := len(gm.players)
 			gm.game.StartPuzzlePhase(playerCount)
-			gridSize = gm.game.PuzzleGrid.Size
+			gridSize := gm.game.PuzzleGrid.Size
 
-			// Make a copy of players for puzzle assignment
-			playersCopy = make(map[string]*models.Player)
-			for id, p := range gm.players {
-				playersCopy[id] = p
+			// Assign puzzle segments while under lock
+			if gm.puzzleSvc != nil {
+				gm.puzzleSvc.AssignSegments(gm.players, gridSize, gm.game)
 			}
 		}()
 
 		// Broadcast phase transition outside of lock
 		if shouldBroadcast {
-			gm.broadcastSvc.BroadcastPhaseTransition(oldPhase, models.PhasePuzzleAssembly)
-		}
-
-		// Assign puzzle segments
-		if gm.puzzleSvc != nil {
-			gm.puzzleSvc.AssignSegments(playersCopy, gridSize)
+			broadcastSvc.BroadcastPhaseTransition(oldPhase, models.PhasePuzzleAssembly)
 		}
 
 		// Broadcast puzzle phase start
-		if gm.broadcastSvc != nil {
-			gm.broadcastSvc.BroadcastPuzzlePhaseStart()
+		if broadcastSvc != nil {
+			broadcastSvc.BroadcastPuzzlePhaseStart()
 		}
 
 		log.Println("Transitioned to puzzle assembly phase")
@@ -1075,11 +1078,11 @@ func (gm *GameManager) MoveFragment(playerID string, fragmentID string, targetPo
 	player.UpdateLastMove()
 
 	// Invalidate recommendations involving moved fragments
-	if gm.puzzleSvc != nil {
-		gm.puzzleSvc.InvalidateRecommendationsForFragment(fragmentID)
+	if puzzleSvc != nil {
+		puzzleSvc.InvalidateRecommendationsForFragment(fragmentID)
 		if targetFragment != nil {
 			// Also invalidate recommendations for the swapped fragment
-			gm.puzzleSvc.InvalidateRecommendationsForFragment(targetFragment.ID)
+			puzzleSvc.InvalidateRecommendationsForFragment(targetFragment.ID)
 		}
 	}
 

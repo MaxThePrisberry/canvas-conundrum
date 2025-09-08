@@ -5,7 +5,6 @@ import (
 	"canvas-conundrum/models"
 	"canvas-conundrum/test_helpers"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 
@@ -16,8 +15,7 @@ import (
 // This test will fail if someone accidentally changes BroadcastToAllPlayers back to BroadcastToAll
 func TestBroadcastRegressionProtection(t *testing.T) {
 	// Reset game manager for clean test
-	gameInstance = nil
-	once = sync.Once{}
+	ResetGameManagerInstance()
 
 	service := NewBroadcastService()
 	gameManager := GetGameInstance()

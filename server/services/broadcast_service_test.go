@@ -11,9 +11,8 @@ import (
 )
 
 func resetGameManager() {
-	// Reset singleton for clean tests
-	gameInstance = nil
-	once = sync.Once{}
+	// Reset singleton for clean tests using the proper function
+	ResetGameManagerInstance()
 }
 
 func TestNewBroadcastService(t *testing.T) {

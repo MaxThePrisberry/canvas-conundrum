@@ -645,7 +645,7 @@ This dual-system architecture is fundamental to Canvas Conundrum's unique gamepl
 
 For complete technical specifications of all WebSocket events, message formats, and communication protocols, refer to the separate **websocket-events.md** document. That document contains:
 
-- Exact JSON message structures for all 59 game events
+- Exact JSON message structures for all 50 game events
 - Authentication and message formatting requirements
 - Detailed payload specifications for each phase
 - Error handling and system event protocols

@@ -433,7 +433,6 @@ When a player reconnects using the same token:
     "category": "geography",
     "difficulty": "medium",
     "isSpecialty": false,
-    "specialtyBonus": false,
     "options": [
       "Paris",
       "London",
@@ -490,7 +489,8 @@ When a player reconnects using the same token:
       "specialtyBonusTokens": 0,
       "difficultyMultiplier": 1.0
     },
-    "currentLocation": "clarity"
+    "currentLocation": "clarity",
+    "nextTriviaTimestamp": "2025-01-XX:XX:XX.XXXZ"
   },
   "timestamp": "2025-01-XX:XX:XX.XXXZ"
 }

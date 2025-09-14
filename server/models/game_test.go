@@ -16,7 +16,6 @@ func TestNewGame(t *testing.T) {
 	assert.Equal(t, PhaseSetup, game.CurrentPhase)
 	assert.Equal(t, DifficultyMedium, game.Difficulty)
 	assert.Equal(t, 0, game.PlayerCount)
-	assert.False(t, game.GameStarted)
 	assert.False(t, game.PuzzleSuccess)
 	assert.NotNil(t, game.TeamTokens)
 	assert.Equal(t, 0, game.CurrentRound)
@@ -464,7 +463,6 @@ func TestGameStartResourceGathering(t *testing.T) {
 	game.StartResourceGathering()
 
 	assert.Equal(t, PhaseResourceGathering, game.CurrentPhase)
-	assert.True(t, game.GameStarted)
 	assert.Equal(t, 0, game.CurrentRound)
 }
 
@@ -551,7 +549,6 @@ func TestGameReset(t *testing.T) {
 
 	// Modify game state
 	game.CurrentPhase = PhasePuzzleAssembly
-	game.GameStarted = true
 	game.PuzzleSuccess = true
 	game.PlayerCount = 8
 	game.CurrentRound = 3
@@ -561,7 +558,6 @@ func TestGameReset(t *testing.T) {
 
 	// Should be back to initial state
 	assert.Equal(t, PhaseSetup, game.CurrentPhase)
-	assert.False(t, game.GameStarted)
 	assert.False(t, game.PuzzleSuccess)
 	assert.Equal(t, 0, game.PlayerCount)
 	assert.Equal(t, 0, game.CurrentRound)

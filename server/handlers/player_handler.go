@@ -235,6 +235,20 @@ func handleTriviaAnswer(player *models.Player, payload json.RawMessage) {
 		}
 	}
 
+	// Calculate next trivia timestamp
+	var nextTriviaTimestamp *string
+	if game.CurrentRound < config.ResourceGatheringRounds {
+		// Calculate when the next round will start
+		gameStartTime := game.StartTime
+		nextRound := game.CurrentRound + 1
+		// Next trivia is sent at: gameStartTime + round_duration + (nextRound * round_duration)
+		// The initial delay is one round duration, then each subsequent round starts at intervals
+		nextTriviaTime := gameStartTime.Add(time.Duration(nextRound*config.ResourceGatheringRoundDuration) * time.Second)
+		timestamp := nextTriviaTime.Format(time.RFC3339)
+		nextTriviaTimestamp = &timestamp
+	}
+	// If this is the last round, nextTriviaTimestamp remains nil (no more questions)
+
 	// Send answer result to player
 	if broadcastService != nil {
 		resultPayload := map[string]interface{}{
@@ -252,6 +266,11 @@ func handleTriviaAnswer(player *models.Player, payload json.RawMessage) {
 				"difficultyMultiplier": 1.0,
 			},
 			"currentLocation": player.CurrentStation,
+		}
+
+		// Add nextTriviaTimestamp if there's a next question
+		if nextTriviaTimestamp != nil {
+			resultPayload["nextTriviaTimestamp"] = *nextTriviaTimestamp
 		}
 
 		broadcastService.SendToPlayer(player, config.EventResourceToPlayerAnswerResult, resultPayload)
@@ -542,25 +561,21 @@ func getTeamProgressPayload() map[string]interface{} {
 				"currentThreshold":   game.TeamTokens.GetThreshold(models.TokenAnchor),
 				"maxThresholds":      config.MaxThresholds,
 				"tokensPerThreshold": config.AnchorTokenThreshold,
-				"effectDescription":  "2 pieces pre-solved per threshold",
 			},
 			"chronos": map[string]interface{}{
 				"currentThreshold":   game.TeamTokens.GetThreshold(models.TokenChronos),
 				"maxThresholds":      config.MaxThresholds,
 				"tokensPerThreshold": config.ChronosTokenThreshold,
-				"effectDescription":  "+20 seconds per threshold",
 			},
 			"guide": map[string]interface{}{
 				"currentThreshold":   game.TeamTokens.GetThreshold(models.TokenGuide),
 				"maxThresholds":      config.MaxThresholds,
 				"tokensPerThreshold": config.GuideTokenThreshold,
-				"effectDescription":  "Remove (gridSize²)/7 squares per threshold",
 			},
 			"clarity": map[string]interface{}{
 				"currentThreshold":   game.TeamTokens.GetThreshold(models.TokenClarity),
 				"maxThresholds":      config.MaxThresholds,
 				"tokensPerThreshold": config.ClarityTokenThreshold,
-				"effectDescription":  "+1 second preview per threshold",
 			},
 		},
 	}

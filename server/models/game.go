@@ -140,7 +140,6 @@ type Game struct {
 	ID             string         `json:"id"`
 	CurrentPhase   GamePhase      `json:"currentPhase"`
 	Difficulty     DifficultyMode `json:"difficulty"`
-	GameStarted    bool           `json:"gameStarted"`
 	StartTime      time.Time      `json:"startTime"`
 	PhaseStartTime time.Time      `json:"phaseStartTime"`
 	PlayerCount    int            `json:"playerCount"`
@@ -175,7 +174,6 @@ func NewGame() *Game {
 		ID:           generateGameID(),
 		CurrentPhase: PhaseSetup,
 		Difficulty:   DifficultyMedium,
-		GameStarted:  false,
 		MinPlayers:   config.MinPlayers,
 		MaxPlayers:   config.MaxPlayers,
 		TeamTokens:   NewTeamTokens(),
@@ -217,7 +215,6 @@ func (g *Game) GetGridSize() int {
 func (g *Game) StartResourceGathering() {
 	g.CurrentPhase = PhaseResourceGathering
 	g.PhaseStartTime = time.Now()
-	g.GameStarted = true
 	g.StartTime = time.Now()
 	g.CurrentRound = 0 // Initialize to 0, will be incremented to 1 on first round
 }

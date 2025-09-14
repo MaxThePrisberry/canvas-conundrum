@@ -11,7 +11,7 @@ const (
 	EventResourceToServerTriviaAnswer     = "RESOURCE_TO_SERVER_TRIVIA_ANSWER"
 
 	// Puzzle Assembly Phase Events
-	EventPuzzleToServerStartTimer             = "PUZZLE_TO_SERVER_START_TIMER"
+	EventPuzzleToServerPhaseStart             = "PUZZLE_TO_SERVER_PHASE_START"
 	EventPuzzleToServerSegmentCompleted       = "PUZZLE_TO_SERVER_SEGMENT_COMPLETED"
 	EventPuzzleToServerFragmentMove           = "PUZZLE_TO_SERVER_FRAGMENT_MOVE"
 	EventPuzzleToServerRecommendMove          = "PUZZLE_TO_SERVER_RECOMMEND_MOVE"
@@ -31,7 +31,6 @@ const (
 	EventSetupToPlayerRolesAvailable    = "SETUP_TO_PLAYER_ROLES_AVAILABLE"
 	EventSetupToClientLobbyStatus       = "SETUP_TO_CLIENT_LOBBY_STATUS"
 	EventSetupToHostPlayerRoster        = "SETUP_TO_HOST_PLAYER_ROSTER"
-	EventSetupToClientGameStarted       = "SETUP_TO_CLIENT_GAME_STARTED"
 	EventSetupToHostGameStarted         = "SETUP_TO_HOST_GAME_STARTED"
 
 	// Resource Gathering Phase Events
@@ -47,8 +46,8 @@ const (
 	// Puzzle Assembly Phase Events
 	EventPuzzleToClientPhaseLoad             = "PUZZLE_TO_CLIENT_PHASE_LOAD"
 	EventPuzzleToHostPhaseLoad               = "PUZZLE_TO_HOST_PHASE_LOAD"
-	EventPuzzleToClientTimerStart            = "PUZZLE_TO_CLIENT_TIMER_START"
-	EventPuzzleToHostTimerStart              = "PUZZLE_TO_HOST_TIMER_START"
+	EventPuzzleToClientPhaseStart            = "PUZZLE_TO_CLIENT_PHASE_START"
+	EventPuzzleToHostPhaseStart              = "PUZZLE_TO_HOST_PHASE_START"
 	EventPuzzleToPlayerSegmentAcknowledged   = "PUZZLE_TO_PLAYER_SEGMENT_ACKNOWLEDGED"
 	EventPuzzleToHostSegmentCompleted        = "PUZZLE_TO_HOST_SEGMENT_COMPLETED"
 	EventPuzzleToPlayerPersonalState         = "PUZZLE_TO_PLAYER_PERSONAL_STATE"
@@ -76,6 +75,4 @@ const (
 	EventSystemToClientHostReconnected      = "SYSTEM_TO_CLIENT_HOST_RECONNECTED"
 	EventSystemToHostPlayerDisconnected     = "SYSTEM_TO_HOST_PLAYER_DISCONNECTED"
 	EventSystemPong                         = "SYSTEM_PONG"
-	EventSystemToClientPhaseTransition      = "SYSTEM_TO_CLIENT_PHASE_TRANSITION"
-	EventSystemToHostPhaseTransition        = "SYSTEM_TO_HOST_PHASE_TRANSITION"
 )

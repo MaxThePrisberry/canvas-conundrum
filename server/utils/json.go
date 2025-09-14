@@ -62,7 +62,5 @@ func CreateErrorPayload(errorType, errorCode, message, details string) map[strin
 		"errorCode": errorCode,
 		"message":   message,
 		"details":   details,
-		"retryable": true,
-		"severity":  "error",
 	}
 }

@@ -247,9 +247,9 @@ func (c *TestHostClient) StartGame(difficulty string) error {
 	return c.SendMessage(config.EventSetupToServerStartGame, payload)
 }
 
-// StartPuzzleTimer sends the start puzzle timer command
-func (c *TestHostClient) StartPuzzleTimer() error {
-	return c.SendMessage(config.EventPuzzleToServerStartTimer, nil)
+// StartPuzzlePhase sends the start puzzle phase command
+func (c *TestHostClient) StartPuzzlePhase() error {
+	return c.SendMessage(config.EventPuzzleToServerPhaseStart, nil)
 }
 
 // ResetGame sends the reset game command
@@ -325,11 +325,12 @@ func (c *TestPlayerClient) MoveFragment(fragmentID, fromPosition, toPosition str
 }
 
 // RecommendMove sends a move recommendation
-func (c *TestPlayerClient) RecommendMove(targetPlayerID, fragmentID, suggestedPosition string) error {
+func (c *TestPlayerClient) RecommendMove(targetPlayerID, fromFragmentID, toFragmentID, reasoning string) error {
 	payload := map[string]interface{}{
-		"targetPlayerId":    targetPlayerID,
-		"fragmentId":        fragmentID,
-		"suggestedPosition": suggestedPosition,
+		"targetPlayerId": targetPlayerID,
+		"fromFragmentId": fromFragmentID,
+		"toFragmentId":   toFragmentID,
+		"reasoning":      reasoning,
 	}
 	return c.SendMessage(config.EventPuzzleToServerRecommendMove, payload)
 }

@@ -41,7 +41,6 @@ type Fragment struct {
 	PlayerID        string    `json:"playerId,omitempty"`
 	Position        Position  `json:"position"`
 	CorrectPosition Position  `json:"correctPosition"`
-	Visible         bool      `json:"visible"`
 	LastMoved       time.Time `json:"lastMoved,omitempty"`
 	MoveCount       int       `json:"moveCount"`
 }
@@ -96,7 +95,6 @@ func (pg *PuzzleGrid) AddFragment(segmentID string, playerID string) *Fragment {
 		PlayerID:        playerID,
 		Position:        pos,
 		CorrectPosition: correctPos,
-		Visible:         true,
 		LastMoved:       time.Now(),
 		MoveCount:       0,
 	}

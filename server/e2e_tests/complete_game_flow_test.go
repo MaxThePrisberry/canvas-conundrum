@@ -173,7 +173,6 @@ func TestCompleteGameFlow(t *testing.T) {
 		require.NoError(t, err)
 
 		// Verify game state
-		assert.True(t, game.GameStarted)
 		assert.Equal(t, models.PhaseResourceGathering, gm.GetCurrentPhase())
 	})
 
@@ -522,7 +521,6 @@ func TestGameReset(t *testing.T) {
 
 	// Verify reset
 	game = gm.GetGame()
-	assert.False(t, game.GameStarted)
 	assert.Equal(t, models.PhaseSetup, gm.GetCurrentPhase())
 	assert.Equal(t, 0, gm.GetPlayerCount())
 	assert.Equal(t, 0, game.CurrentRound)

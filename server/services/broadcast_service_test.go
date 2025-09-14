@@ -316,15 +316,9 @@ func TestBroadcastServiceGameFlow(t *testing.T) {
 		assert.True(t, true)
 	})
 
-	t.Run("Broadcast Game Start", func(t *testing.T) {
+	t.Run("Broadcast Resource Phase Start", func(t *testing.T) {
 		// Should not panic
-		service.BroadcastGameStart()
-		assert.True(t, true)
-	})
-
-	t.Run("Broadcast Phase Transition", func(t *testing.T) {
-		// Should not panic
-		service.BroadcastPhaseTransition(models.PhaseSetup, models.PhaseResourceGathering)
+		service.BroadcastResourcePhaseStart()
 		assert.True(t, true)
 	})
 
@@ -339,8 +333,10 @@ func TestBroadcastServiceGameFlow(t *testing.T) {
 		game := gameManager.GetGame()
 		game.StartPuzzlePhase(4) // Initialize with 4 players
 
-		// Should not panic
-		service.BroadcastPuzzlePhaseStart()
+		// Should not panic - pass the required parameters
+		totalTime := game.GetTotalPuzzleTime()
+		previewTime := game.GetClarityPreviewTime()
+		service.BroadcastPuzzlePhaseStart(totalTime, previewTime)
 		assert.True(t, true)
 	})
 }
@@ -391,27 +387,38 @@ func TestBroadcastServiceRoleAvailability(t *testing.T) {
 			gameManager.AddPlayer(player)
 		}
 
-		// Configure one player with a role to affect availability
+		// Configure one player with a role to affect availability (this marks them as ready)
 		err := gameManager.UpdatePlayerConfiguration(players[0].ID, "Player1", models.RoleArtEnthusiast, []string{"science"})
 		assert.NoError(t, err)
 
 		// Call BroadcastRoleAvailability
 		service.BroadcastRoleAvailability()
 
-		// Verify that active players receive the role availability message
+		// Verify that only non-ready players receive the role availability message
 		for i, player := range players {
 			if player.IsActive {
-				select {
-				case msg := <-player.Send:
-					assert.Contains(t, string(msg), "SETUP_TO_PLAYER_ROLES_AVAILABLE")
-					assert.Contains(t, string(msg), "roles")
-					assert.Contains(t, string(msg), "art_enthusiast")
-					assert.Contains(t, string(msg), "detective")
-					assert.Contains(t, string(msg), "tourist")
-					assert.Contains(t, string(msg), "janitor")
-					assert.Contains(t, string(msg), "triviaCategories")
-				default:
-					t.Errorf("Player %d should have received role availability message", i+1)
+				if player.IsReady {
+					// Ready players should NOT receive role availability messages
+					select {
+					case <-player.Send:
+						t.Errorf("Player %d is ready and should NOT have received role availability message", i+1)
+					default:
+						// This is expected - ready players don't get role availability updates
+					}
+				} else {
+					// Non-ready players should receive role availability messages
+					select {
+					case msg := <-player.Send:
+						assert.Contains(t, string(msg), "SETUP_TO_PLAYER_ROLES_AVAILABLE")
+						assert.Contains(t, string(msg), "roles")
+						assert.Contains(t, string(msg), "art_enthusiast")
+						assert.Contains(t, string(msg), "detective")
+						assert.Contains(t, string(msg), "tourist")
+						assert.Contains(t, string(msg), "janitor")
+						assert.Contains(t, string(msg), "triviaCategories")
+					default:
+						t.Errorf("Player %d is not ready and should have received role availability message", i+1)
+					}
 				}
 			}
 		}
@@ -449,14 +456,24 @@ func TestBroadcastServiceRoleAvailability(t *testing.T) {
 		service.BroadcastRoleAvailability()
 
 		// Check that art_enthusiast role shows as unavailable (capacity reached)
+		// Since players[0] is now ready (configured), they won't receive the message
+		// Check a non-ready player instead (players[1])
 		select {
-		case msg := <-players[0].Send:
+		case msg := <-players[1].Send:
 			msgStr := string(msg)
 			assert.Contains(t, msgStr, "SETUP_TO_PLAYER_ROLES_AVAILABLE")
 			// Art enthusiast should be unavailable (capacity of 1 reached)
 			assert.Contains(t, msgStr, `"available":false`)
 		default:
-			t.Error("Player should have received role availability message")
+			t.Error("Non-ready player should have received role availability message")
+		}
+
+		// Verify the ready player doesn't receive any message
+		select {
+		case <-players[0].Send:
+			t.Error("Ready player should NOT have received role availability message")
+		default:
+			// This is expected - ready players don't get role availability updates
 		}
 	})
 }

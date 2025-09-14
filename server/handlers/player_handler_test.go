@@ -89,12 +89,10 @@ func TestHandlePlayerMessage(t *testing.T) {
 
 	t.Run("Recommend Move", func(t *testing.T) {
 		payload := map[string]interface{}{
-			"fragmentId": "test-fragment-id",
-			"fromRow":    0,
-			"fromCol":    0,
-			"toRow":      1,
-			"toCol":      1,
-			"message":    "This piece should go here",
+			"targetPlayerId": "target-player-id",
+			"fromFragmentId": "fragment_01",
+			"toFragmentId":   "fragment_02",
+			"reasoning":      "This piece should go here",
 		}
 
 		msg := test_helpers.CreateTestMessage(config.EventPuzzleToServerRecommendMove, payload)
@@ -403,12 +401,10 @@ func TestHandleRecommendMove(t *testing.T) {
 
 	t.Run("Valid Recommendation", func(t *testing.T) {
 		payload := map[string]interface{}{
-			"fragmentId": "test-fragment-id",
-			"fromRow":    0,
-			"fromCol":    0,
-			"toRow":      1,
-			"toCol":      1,
-			"message":    "This piece should go here",
+			"targetPlayerId": "target-player-id",
+			"fromFragmentId": "fragment_01",
+			"toFragmentId":   "fragment_02",
+			"reasoning":      "This piece should go here",
 		}
 		payloadJSON, _ := json.Marshal(payload)
 

@@ -700,7 +700,6 @@ func (gm *GameManager) CanStartGame() bool {
 func (gm *GameManager) StartGame() error {
 	// Keep track of what to broadcast after unlocking
 	var shouldBroadcast bool
-	var oldPhase models.GamePhase
 
 	// Do all state changes under lock
 	err := func() error {
@@ -738,8 +737,7 @@ func (gm *GameManager) StartGame() error {
 			}
 		}
 
-		// Store old phase for transition broadcast
-		oldPhase = gm.game.CurrentPhase
+		// Check if we can broadcast
 		shouldBroadcast = gm.broadcastSvc != nil
 
 		// Transition to resource gathering
@@ -755,12 +753,13 @@ func (gm *GameManager) StartGame() error {
 
 	// Broadcast phase transition after releasing lock
 	if shouldBroadcast {
-		gm.broadcastSvc.BroadcastPhaseTransition(oldPhase, models.PhaseResourceGathering)
+		gm.broadcastSvc.BroadcastResourcePhaseStart()
 	}
 
 	// Start first round after transition
 	go func() {
-		time.Sleep(5 * time.Second) // Give players time to transition
+		// Wait one full round duration to give players time to move to resource stations and scan QR codes
+		time.Sleep(time.Duration(config.ResourceGatheringRoundDuration) * time.Second)
 		gm.StartResourceRound()
 	}()
 
@@ -845,7 +844,6 @@ func (gm *GameManager) CompleteResourceGathering() {
 
 		// Keep track of what to broadcast after unlocking
 		var shouldBroadcast bool
-		var oldPhase models.GamePhase
 		var broadcastSvc *BroadcastService
 
 		// Do state changes under lock
@@ -853,8 +851,7 @@ func (gm *GameManager) CompleteResourceGathering() {
 			gm.mu.Lock()
 			defer gm.mu.Unlock()
 
-			// Store old phase for transition broadcast
-			oldPhase = gm.game.CurrentPhase
+			// Check if we can broadcast
 			shouldBroadcast = gm.broadcastSvc != nil
 
 			// Store service reference for use outside lock
@@ -871,14 +868,9 @@ func (gm *GameManager) CompleteResourceGathering() {
 			}
 		}()
 
-		// Broadcast phase transition outside of lock
+		// Broadcast puzzle phase load outside of lock
 		if shouldBroadcast {
-			broadcastSvc.BroadcastPhaseTransition(oldPhase, models.PhasePuzzleAssembly)
-		}
-
-		// Broadcast puzzle phase start
-		if broadcastSvc != nil {
-			broadcastSvc.BroadcastPuzzlePhaseStart()
+			broadcastSvc.BroadcastPuzzlePhaseLoad()
 		}
 
 		log.Println("Transitioned to puzzle assembly phase")
@@ -915,7 +907,7 @@ func (gm *GameManager) StartPuzzleTimer() error {
 
 	// Broadcast timer start
 	if gm.broadcastSvc != nil {
-		gm.broadcastSvc.BroadcastPuzzleTimerStart(totalTime, gm.game.GetClarityPreviewTime())
+		gm.broadcastSvc.BroadcastPuzzlePhaseStart(totalTime, gm.game.GetClarityPreviewTime())
 	}
 
 	return nil
@@ -1098,8 +1090,7 @@ func (gm *GameManager) MoveFragment(playerID string, fragmentID string, targetPo
 func (gm *GameManager) PuzzleComplete(success bool) {
 	gm.mu.Lock()
 
-	// Store old phase for transition broadcast
-	oldPhase := gm.game.CurrentPhase
+	// Check current state
 
 	// Check if already completed
 	if gm.game.PuzzleCompleted {
@@ -1127,9 +1118,8 @@ func (gm *GameManager) PuzzleComplete(success bool) {
 
 	gm.mu.Unlock()
 
-	// Broadcast phase transition and completion (outside of lock)
+	// Broadcast completion and analytics (outside of lock)
 	if broadcastSvc != nil {
-		broadcastSvc.BroadcastPhaseTransition(oldPhase, models.PhaseAnalytics)
 		broadcastSvc.BroadcastPuzzleComplete(success, completionTime)
 
 		// Send analytics data to host

@@ -183,12 +183,12 @@ func (a *GameStateAssertion) HasPlayerCount(count int) *GameStateAssertion {
 }
 
 func (a *GameStateAssertion) IsStarted() *GameStateAssertion {
-	assert.True(a.t, a.game.GameStarted, "Expected game to be started")
+	assert.NotEqual(a.t, models.PhaseSetup, a.game.CurrentPhase, "Expected game to be started (not in setup phase)")
 	return a
 }
 
 func (a *GameStateAssertion) IsNotStarted() *GameStateAssertion {
-	assert.False(a.t, a.game.GameStarted, "Expected game not to be started")
+	assert.Equal(a.t, models.PhaseSetup, a.game.CurrentPhase, "Expected game not to be started (in setup phase)")
 	return a
 }
 

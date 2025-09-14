@@ -136,8 +136,6 @@ func TestCreateErrorPayload(t *testing.T) {
 	assert.Equal(t, config.ErrorCodeInvalidToken, payload["errorCode"])
 	assert.Equal(t, "Invalid authentication token", payload["message"])
 	assert.Equal(t, "Please reconnect", payload["details"])
-	assert.True(t, payload["retryable"].(bool))
-	assert.Equal(t, "error", payload["severity"])
 }
 
 func TestComplexPayloads(t *testing.T) {

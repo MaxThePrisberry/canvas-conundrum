@@ -7,18 +7,17 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-// TestAllWebSocketEventsCovered verifies that all 59 WebSocket events from the specification are defined
+// TestAllWebSocketEventsCovered verifies that all 50 WebSocket events from the specification are defined
 func TestAllWebSocketEventsCovered(t *testing.T) {
-	// All 59 events from websocket-events.md specification
+	// All 50 events from websocket-events.md specification
 	requiredEvents := []string{
-		// Phase 0: Connection and Setup (8 events)
+		// Phase 0: Connection and Setup (7 events)
 		config.EventSetupToHostConnectionConfirmed,
 		config.EventSetupToPlayerRolesAvailable,
 		config.EventSetupToServerPlayerConfiguration,
 		config.EventSetupToClientLobbyStatus,
 		config.EventSetupToHostPlayerRoster,
 		config.EventSetupToServerStartGame,
-		config.EventSetupToClientGameStarted,
 		config.EventSetupToHostGameStarted,
 
 		// Phase 1: Resource Gathering (10 events)
@@ -33,12 +32,12 @@ func TestAllWebSocketEventsCovered(t *testing.T) {
 		config.EventResourceToClientPhaseComplete,
 		config.EventResourceToHostPhaseComplete,
 
-		// Phase 2: Puzzle Assembly (21 events)
+		// Phase 2: Puzzle Assembly (20 events)
 		config.EventPuzzleToClientPhaseLoad,
 		config.EventPuzzleToHostPhaseLoad,
-		config.EventPuzzleToServerStartTimer,
-		config.EventPuzzleToClientTimerStart,
-		config.EventPuzzleToHostTimerStart,
+		config.EventPuzzleToServerPhaseStart,
+		config.EventPuzzleToClientPhaseStart,
+		config.EventPuzzleToHostPhaseStart,
 		config.EventPuzzleToServerSegmentCompleted,
 		config.EventPuzzleToPlayerSegmentAcknowledged,
 		config.EventPuzzleToHostSegmentCompleted,
@@ -62,7 +61,7 @@ func TestAllWebSocketEventsCovered(t *testing.T) {
 		config.EventAnalyticsToServerResetGame,
 		config.EventAnalyticsToClientGameReset,
 
-		// System Events (10 events)
+		// System Events (8 events)
 		config.EventSystemToClientError,
 		config.EventSystemToHostError,
 		config.EventSystemToClientDisconnectionWarning,
@@ -71,12 +70,10 @@ func TestAllWebSocketEventsCovered(t *testing.T) {
 		config.EventSystemToHostPlayerDisconnected,
 		config.EventSystemPing,
 		config.EventSystemPong,
-		config.EventSystemToClientPhaseTransition,
-		config.EventSystemToHostPhaseTransition,
 	}
 
-	// Verify we have exactly 53 events (as per actual specification)
-	assert.Len(t, requiredEvents, 53, "Should have exactly 53 WebSocket events")
+	// Verify we have exactly 50 events (as per actual specification)
+	assert.Len(t, requiredEvents, 50, "Should have exactly 50 WebSocket events")
 
 	// Check each event is defined (non-empty)
 	for _, event := range requiredEvents {
@@ -101,10 +98,9 @@ func TestAllWebSocketEventsCovered(t *testing.T) {
 			config.EventSetupToClientLobbyStatus,
 			config.EventSetupToHostPlayerRoster,
 			config.EventSetupToServerStartGame,
-			config.EventSetupToClientGameStarted,
 			config.EventSetupToHostGameStarted,
 		}
-		assert.Len(t, setupEvents, 8, "Setup phase should have 8 events")
+		assert.Len(t, setupEvents, 7, "Setup phase should have 7 events")
 		for _, event := range setupEvents {
 			assert.NotEmpty(t, event)
 		}
@@ -133,9 +129,9 @@ func TestAllWebSocketEventsCovered(t *testing.T) {
 		puzzleEvents := []string{
 			config.EventPuzzleToClientPhaseLoad,
 			config.EventPuzzleToHostPhaseLoad,
-			config.EventPuzzleToServerStartTimer,
-			config.EventPuzzleToClientTimerStart,
-			config.EventPuzzleToHostTimerStart,
+			config.EventPuzzleToServerPhaseStart,
+			config.EventPuzzleToClientPhaseStart,
+			config.EventPuzzleToHostPhaseStart,
 			config.EventPuzzleToServerSegmentCompleted,
 			config.EventPuzzleToPlayerSegmentAcknowledged,
 			config.EventPuzzleToHostSegmentCompleted,
@@ -182,10 +178,8 @@ func TestAllWebSocketEventsCovered(t *testing.T) {
 			config.EventSystemToHostPlayerDisconnected,
 			config.EventSystemPing,
 			config.EventSystemPong,
-			config.EventSystemToClientPhaseTransition,
-			config.EventSystemToHostPhaseTransition,
 		}
-		assert.Len(t, systemEvents, 10, "System should have 10 events")
+		assert.Len(t, systemEvents, 8, "System should have 8 events")
 		for _, event := range systemEvents {
 			assert.NotEmpty(t, event)
 		}
@@ -202,7 +196,6 @@ func TestEventNamingConvention(t *testing.T) {
 		config.EventSetupToClientLobbyStatus,
 		config.EventSetupToHostPlayerRoster,
 		config.EventSetupToServerStartGame,
-		config.EventSetupToClientGameStarted,
 		config.EventSetupToHostGameStarted,
 		config.EventResourceToClientPhaseStart,
 		config.EventResourceToHostPhaseStart,
@@ -216,9 +209,9 @@ func TestEventNamingConvention(t *testing.T) {
 		config.EventResourceToHostPhaseComplete,
 		config.EventPuzzleToClientPhaseLoad,
 		config.EventPuzzleToHostPhaseLoad,
-		config.EventPuzzleToServerStartTimer,
-		config.EventPuzzleToClientTimerStart,
-		config.EventPuzzleToHostTimerStart,
+		config.EventPuzzleToServerPhaseStart,
+		config.EventPuzzleToClientPhaseStart,
+		config.EventPuzzleToHostPhaseStart,
 		config.EventPuzzleToServerSegmentCompleted,
 		config.EventPuzzleToPlayerSegmentAcknowledged,
 		config.EventPuzzleToHostSegmentCompleted,
@@ -247,8 +240,6 @@ func TestEventNamingConvention(t *testing.T) {
 		config.EventSystemToHostPlayerDisconnected,
 		config.EventSystemPing,
 		config.EventSystemPong,
-		config.EventSystemToClientPhaseTransition,
-		config.EventSystemToHostPhaseTransition,
 	}
 
 	validPrefixes := []string{
@@ -302,7 +293,7 @@ func TestEventDirectionality(t *testing.T) {
 		config.EventSetupToServerStartGame,
 		config.EventResourceToServerLocationVerified,
 		config.EventResourceToServerTriviaAnswer,
-		config.EventPuzzleToServerStartTimer,
+		config.EventPuzzleToServerPhaseStart,
 		config.EventPuzzleToServerSegmentCompleted,
 		config.EventPuzzleToServerFragmentMove,
 		config.EventPuzzleToServerRecommendMove,
@@ -313,12 +304,11 @@ func TestEventDirectionality(t *testing.T) {
 	// Events TO_CLIENT should only come from server
 	toClientEvents := []string{
 		config.EventSetupToClientLobbyStatus,
-		config.EventSetupToClientGameStarted,
 		config.EventResourceToClientPhaseStart,
 		config.EventResourceToClientTeamProgress,
 		config.EventResourceToClientPhaseComplete,
 		config.EventPuzzleToClientPhaseLoad,
-		config.EventPuzzleToClientTimerStart,
+		config.EventPuzzleToClientPhaseStart,
 		config.EventPuzzleToClientGridState,
 		config.EventPuzzleToClientCompletedSuccess,
 		config.EventPuzzleToClientCompletedTimeout,
@@ -328,7 +318,6 @@ func TestEventDirectionality(t *testing.T) {
 		config.EventSystemToClientDisconnectionWarning,
 		config.EventSystemToClientHostDisconnected,
 		config.EventSystemToClientHostReconnected,
-		config.EventSystemToClientPhaseTransition,
 	}
 
 	// Events TO_PLAYER should only come from server
@@ -353,21 +342,20 @@ func TestEventDirectionality(t *testing.T) {
 		config.EventResourceToHostRoundAnalytics,
 		config.EventResourceToHostPhaseComplete,
 		config.EventPuzzleToHostPhaseLoad,
-		config.EventPuzzleToHostTimerStart,
+		config.EventPuzzleToHostPhaseStart,
 		config.EventPuzzleToHostSegmentCompleted,
 		config.EventPuzzleToHostGridState,
 		config.EventPuzzleToHostCompletionAnalytics,
 		config.EventAnalyticsToHostCompleteReport,
 		config.EventSystemToHostError,
 		config.EventSystemToHostPlayerDisconnected,
-		config.EventSystemToHostPhaseTransition,
 	}
 
 	// Verify counts
 	totalDirectionalEvents := len(toServerEvents) + len(toClientEvents) +
 		len(toPlayerEvents) + len(toHostEvents) + 2 // +2 for PING/PONG
 
-	assert.Equal(t, 53, totalDirectionalEvents, "All events should be accounted for")
+	assert.Equal(t, 50, totalDirectionalEvents, "All events should be accounted for")
 }
 
 // Helper function

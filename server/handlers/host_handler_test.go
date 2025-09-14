@@ -81,9 +81,9 @@ func TestHandleHostMessage(t *testing.T) {
 		assert.True(t, true)
 	})
 
-	t.Run("Start Puzzle Timer Event", func(t *testing.T) {
+	t.Run("Start Puzzle Phase Event", func(t *testing.T) {
 		payload := map[string]interface{}{}
-		msg := test_helpers.CreateTestMessage(config.EventPuzzleToServerStartTimer, payload)
+		msg := test_helpers.CreateTestMessage(config.EventPuzzleToServerPhaseStart, payload)
 
 		HandleHostMessage(host, msg)
 		assert.True(t, true)
@@ -125,7 +125,7 @@ func TestHandleHostMessage(t *testing.T) {
 	})
 }
 
-func TestHandleHostStartPuzzleTimer(t *testing.T) {
+func TestHandleHostStartPuzzlePhase(t *testing.T) {
 	resetGameManager()
 	gameManager := services.GetGameInstance()
 	broadcastService := services.NewBroadcastService()
@@ -135,7 +135,7 @@ func TestHandleHostStartPuzzleTimer(t *testing.T) {
 
 	t.Run("Not In Puzzle Phase", func(t *testing.T) {
 		// Game not in puzzle phase - should fail gracefully
-		handleHostStartPuzzleTimer(host)
+		handleHostStartPuzzlePhase(host)
 		assert.True(t, true) // Test passes if no panic
 	})
 

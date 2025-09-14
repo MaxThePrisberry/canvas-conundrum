@@ -123,7 +123,6 @@ func TestHostWebSocketConnection(t *testing.T) {
 
 		payload := msg["payload"].(map[string]interface{})
 		assert.NotEmpty(t, payload["playerId"])
-		assert.Equal(t, "Connected as game host", payload["message"])
 
 		// Check game config
 		gameConfig := payload["gameConfig"].(map[string]interface{})

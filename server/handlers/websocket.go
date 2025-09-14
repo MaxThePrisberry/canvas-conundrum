@@ -354,7 +354,6 @@ func sendHostConnectionConfirmed(host *models.Host, isReconnection bool) {
 
 	payload := map[string]interface{}{
 		"playerId":       host.ID,
-		"message":        "Connected as game host",
 		"currentPhase":   string(game.CurrentPhase),
 		"isReconnection": isReconnection,
 		"gameConfig": map[string]interface{}{
@@ -581,7 +580,6 @@ func sendHostPhaseRestoration(host *models.Host) {
 					"playerId":        fragment.PlayerID,
 					"position":        fragment.Position,
 					"correctPosition": fragment.CorrectPosition,
-					"visible":         fragment.Visible,
 					"lastMoved":       fragment.LastMoved,
 					"moveCount":       fragment.MoveCount,
 					"isCorrect":       fragment.IsCorrect(),
@@ -695,8 +693,6 @@ func sendCurrentTriviaQuestionIfActive(player *models.Player, triviaService *ser
 			"category":       question.Category,
 			"difficulty":     question.Difficulty,
 			"isSpecialty":    question.IsSpecialty,
-			"specialtyBonus": question.SpecialtyBonus,
-			"timeLimit":      timeRemaining,
 			"options":        question.Options,
 			"roundNumber":    game.CurrentRound,
 			"totalRounds":    config.ResourceGatheringRounds,

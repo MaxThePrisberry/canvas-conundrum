@@ -213,7 +213,6 @@ func TestGameManagerGameFlow(t *testing.T) {
 
 		err := gm.StartGame()
 		assert.NoError(t, err)
-		assert.True(t, gm.GetGame().GameStarted)
 		assert.Equal(t, models.PhaseResourceGathering, gm.GetCurrentPhase())
 
 		// Can't start again
@@ -225,7 +224,6 @@ func TestGameManagerGameFlow(t *testing.T) {
 
 		// Manually set game as started for remaining tests
 		game := gm.GetGame()
-		game.GameStarted = true
 		game.CurrentPhase = models.PhaseResourceGathering
 		game.CurrentRound = 1
 	})
@@ -259,7 +257,6 @@ func TestGameManagerGameFlow(t *testing.T) {
 	t.Run("ResetGame", func(t *testing.T) {
 		gm.ResetGame()
 		game := gm.GetGame()
-		assert.False(t, game.GameStarted)
 		assert.Equal(t, models.PhaseSetup, game.CurrentPhase)
 		assert.Equal(t, 0, game.CurrentRound)
 		assert.Equal(t, 0, gm.GetPlayerCount())

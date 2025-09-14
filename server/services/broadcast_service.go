@@ -232,7 +232,13 @@ func (bs *BroadcastService) BroadcastRoleAvailability() {
 		"maxSpecialties": config.MaxSpecialtiesPerPlayer,
 	}
 
-	bs.BroadcastToAllPlayers(config.EventSetupToPlayerRolesAvailable, payload)
+	// Only send to players who are not ready (haven't completed role and specialty selection)
+	players := gameManager.GetAllPlayers()
+	for _, player := range players {
+		if player.IsActive && !player.IsReady {
+			bs.SendToPlayer(player, config.EventSetupToPlayerRolesAvailable, payload)
+		}
+	}
 }
 
 // getWaitingMessage generates appropriate waiting message
@@ -292,74 +298,6 @@ func (bs *BroadcastService) countReadyPlayers() int {
 	return count
 }
 
-// BroadcastGameStart broadcasts game start event
-func (bs *BroadcastService) BroadcastGameStart() {
-	// To players
-	playerPayload := map[string]interface{}{
-		"nextPhase":           "resource_gathering",
-		"transitionCountdown": 5,
-		"message":             "Game starting! Prepare for resource gathering phase.",
-		"instructions":        "Make your way to the resource gathering stations.",
-	}
-	bs.BroadcastToAllPlayers(config.EventSetupToClientGameStarted, playerPayload)
-
-	// To host
-	gameManager := GetGameInstance()
-	game := gameManager.GetGame()
-	hostPayload := map[string]interface{}{
-		"phase":        "resource_gathering",
-		"gameStarted":  true,
-		"totalPlayers": gameManager.GetPlayerCount(),
-		"initialTeamTokens": map[string]int{
-			"anchorTokens":  game.TeamTokens.AnchorTokens,
-			"chronosTokens": game.TeamTokens.ChronosTokens,
-			"guideTokens":   game.TeamTokens.GuideTokens,
-			"clarityTokens": game.TeamTokens.ClarityTokens,
-		},
-		"monitoringActive": true,
-	}
-
-	if host := gameManager.GetHost(); host != nil {
-		bs.SendToHost(host, config.EventSetupToHostGameStarted, hostPayload)
-	}
-}
-
-// BroadcastPhaseTransition broadcasts phase transition
-func (bs *BroadcastService) BroadcastPhaseTransition(fromPhase, toPhase models.GamePhase) {
-	// Common payload
-	payload := map[string]interface{}{
-		"fromPhase":        fromPhase,
-		"toPhase":          toPhase,
-		"transitionReason": bs.getTransitionReason(fromPhase, toPhase),
-		"countdown":        30,
-		"message":          bs.getTransitionMessage(fromPhase, toPhase),
-	}
-
-	// Add phase-specific instructions
-	if toPhase == models.PhasePuzzleAssembly {
-		payload["preparationInstructions"] = []string{
-			"Return to the main room",
-			"Prepare for collaborative puzzle solving",
-			"Individual puzzle segments will be assigned",
-		}
-		payload["phaseInfo"] = map[string]interface{}{
-			"nextPhaseName":        "Puzzle Assembly",
-			"nextPhaseDescription": "Solve individual puzzles then collaborate on master assembly",
-			"estimatedDuration":    "6-8 minutes",
-		}
-	}
-
-	bs.BroadcastToAll(config.EventSystemToClientPhaseTransition, payload)
-
-	// Send host-specific transition info
-	bs.sendHostPhaseTransition(fromPhase, toPhase)
-
-	// Send phase start events
-	if toPhase == models.PhaseResourceGathering {
-		bs.BroadcastResourcePhaseStart()
-	}
-}
-
 // BroadcastResourcePhaseStart broadcasts resource gathering phase start events
 func (bs *BroadcastService) BroadcastResourcePhaseStart() {
 	gameManager := GetGameInstance()
@@ -411,12 +349,6 @@ func (bs *BroadcastService) BroadcastResourcePhaseStart() {
 					"unknown": gameManager.GetPlayerCount(),
 				},
 			},
-			"analyticsTracking": map[string]bool{
-				"questionDelivery":   true,
-				"answerTracking":     true,
-				"locationTracking":   true,
-				"performanceMetrics": true,
-			},
 		}
 
 		bs.SendToHost(host, config.EventResourceToHostPhaseStart, hostPayload)
@@ -457,102 +389,6 @@ func (bs *BroadcastService) getThresholdMultiplier(difficulty models.DifficultyM
 	}
 }
 
-// getTransitionReason returns reason for phase transition
-func (bs *BroadcastService) getTransitionReason(fromPhase, toPhase models.GamePhase) string {
-	switch {
-	case fromPhase == models.PhaseSetup && toPhase == models.PhaseResourceGathering:
-		return "game_started"
-	case fromPhase == models.PhaseResourceGathering && toPhase == models.PhasePuzzleAssembly:
-		return "resource_phase_completed"
-	case fromPhase == models.PhasePuzzleAssembly && toPhase == models.PhaseAnalytics:
-		return "puzzle_completed"
-	default:
-		return "phase_transition"
-	}
-}
-
-// getTransitionMessage returns message for phase transition
-func (bs *BroadcastService) getTransitionMessage(fromPhase, toPhase models.GamePhase) string {
-	switch toPhase {
-	case models.PhaseResourceGathering:
-		return "Starting resource gathering phase!"
-	case models.PhasePuzzleAssembly:
-		return "Transitioning to puzzle assembly phase in 30 seconds"
-	case models.PhaseAnalytics:
-		return "Game complete! Viewing analytics..."
-	default:
-		return "Phase transition in progress..."
-	}
-}
-
-// sendHostPhaseTransition sends phase transition details to host
-func (bs *BroadcastService) sendHostPhaseTransition(fromPhase, toPhase models.GamePhase) {
-	gameManager := GetGameInstance()
-	host := gameManager.GetHost()
-	if host == nil {
-		return
-	}
-
-	payload := map[string]interface{}{
-		"fromPhase":        fromPhase,
-		"toPhase":          toPhase,
-		"transitionStatus": "confirmed",
-		"transitionTime":   30,
-		"hostControls": map[string]interface{}{
-			"availableActions":      bs.getHostActions(toPhase),
-			"monitoringFeatures":    bs.getHostMonitoringFeatures(toPhase),
-			"phaseSpecificControls": bs.getHostPhaseControls(toPhase),
-		},
-		"playerTransitionStatus": map[string]interface{}{
-			"playersReady":         gameManager.GetPlayerCount(),
-			"playersTransitioning": 0,
-			"transitionComplete":   true,
-		},
-	}
-
-	bs.SendToHost(host, config.EventSystemToHostPhaseTransition, payload)
-}
-
-// getHostActions returns available host actions for a phase
-func (bs *BroadcastService) getHostActions(phase models.GamePhase) []string {
-	switch phase {
-	case models.PhaseSetup:
-		return []string{"start_game", "monitor_players"}
-	case models.PhaseResourceGathering:
-		return []string{"monitor_progress", "view_analytics"}
-	case models.PhasePuzzleAssembly:
-		return []string{"start_puzzle_timer", "monitor_progress"}
-	case models.PhaseAnalytics:
-		return []string{"view_reports", "reset_game"}
-	default:
-		return []string{"monitor"}
-	}
-}
-
-// getHostMonitoringFeatures returns monitoring features for a phase
-func (bs *BroadcastService) getHostMonitoringFeatures(phase models.GamePhase) []string {
-	switch phase {
-	case models.PhasePuzzleAssembly:
-		return []string{"individual_progress", "grid_state", "collaboration_metrics"}
-	case models.PhaseResourceGathering:
-		return []string{"trivia_performance", "token_collection", "location_tracking"}
-	default:
-		return []string{"player_status", "game_state"}
-	}
-}
-
-// getHostPhaseControls returns phase-specific controls
-func (bs *BroadcastService) getHostPhaseControls(phase models.GamePhase) []string {
-	switch phase {
-	case models.PhasePuzzleAssembly:
-		return []string{"timer_management", "completion_tracking"}
-	case models.PhaseAnalytics:
-		return []string{"export_data", "reset_game"}
-	default:
-		return []string{}
-	}
-}
-
 // BroadcastTriviaQuestions sends trivia questions to players
 func (bs *BroadcastService) BroadcastTriviaQuestions(questions map[string]*models.TriviaQuestion) {
 	gameManager := GetGameInstance()
@@ -570,8 +406,6 @@ func (bs *BroadcastService) BroadcastTriviaQuestions(questions map[string]*model
 			"category":       question.Category,
 			"difficulty":     question.Difficulty,
 			"isSpecialty":    question.IsSpecialty,
-			"specialtyBonus": question.SpecialtyBonus,
-			"timeLimit":      config.TriviaAnswerTime,
 			"options":        question.Options,
 			"roundNumber":    game.CurrentRound,
 			"totalRounds":    config.ResourceGatheringRounds,
@@ -620,8 +454,8 @@ func (bs *BroadcastService) sendHostRoundAnalytics() {
 	bs.SendToHost(host, config.EventResourceToHostRoundAnalytics, payload)
 }
 
-// BroadcastPuzzlePhaseStart broadcasts puzzle assembly phase start
-func (bs *BroadcastService) BroadcastPuzzlePhaseStart() {
+// BroadcastPuzzlePhaseLoad broadcasts puzzle assembly phase load
+func (bs *BroadcastService) BroadcastPuzzlePhaseLoad() {
 	gameManager := GetGameInstance()
 	game := gameManager.GetGame()
 
@@ -668,8 +502,6 @@ func (bs *BroadcastService) BroadcastPuzzlePhaseStart() {
 				"clarityPreviewDuration": config.ClarityBasePreviewTime + game.TeamTokens.GetThreshold(models.TokenClarity),
 				"guideHighlightCount":    bs.calculateGuideHighlights(gridSize, game.TeamTokens.GetThreshold(models.TokenGuide)),
 				"allSegmentIds":          allSegmentIds,
-				"loadInstructions":       "Load your assigned segment and prepare individual puzzle",
-				"waitingForHost":         true,
 			}
 			bs.SendToPlayer(player, config.EventPuzzleToClientPhaseLoad, playerPayload)
 		}
@@ -704,8 +536,6 @@ func (bs *BroadcastService) BroadcastPuzzlePhaseStart() {
 			"guideHighlights":  bs.calculateGuideHighlights(gridSize, game.TeamTokens.GetThreshold(models.TokenGuide)),
 			"clarityPreview":   config.ClarityBasePreviewTime + game.TeamTokens.GetThreshold(models.TokenClarity),
 		},
-		"monitoringActive": true,
-		"canStartTimer":    true,
 	}
 
 	if host := gameManager.GetHost(); host != nil {
@@ -723,8 +553,8 @@ func (bs *BroadcastService) calculateGuideHighlights(gridSize, threshold int) in
 	return total - removed
 }
 
-// BroadcastPuzzleTimerStart broadcasts puzzle timer start
-func (bs *BroadcastService) BroadcastPuzzleTimerStart(totalTime int, previewTime int) {
+// BroadcastPuzzlePhaseStart broadcasts puzzle phase start
+func (bs *BroadcastService) BroadcastPuzzlePhaseStart(totalTime int, previewTime int) {
 	gameManager := GetGameInstance()
 
 	// To players
@@ -737,7 +567,7 @@ func (bs *BroadcastService) BroadcastPuzzleTimerStart(totalTime int, previewTime
 		"previewDuration":      previewTime,
 		"instructions":         "Begin solving your individual puzzle segments",
 	}
-	bs.BroadcastToAllPlayers(config.EventPuzzleToClientTimerStart, playerPayload)
+	bs.BroadcastToAllPlayers(config.EventPuzzleToClientPhaseStart, playerPayload)
 
 	// To host
 	hostPayload := map[string]interface{}{
@@ -751,7 +581,7 @@ func (bs *BroadcastService) BroadcastPuzzleTimerStart(totalTime int, previewTime
 	}
 
 	if host := gameManager.GetHost(); host != nil {
-		bs.SendToHost(host, config.EventPuzzleToHostTimerStart, hostPayload)
+		bs.SendToHost(host, config.EventPuzzleToHostPhaseStart, hostPayload)
 	}
 
 	// Start periodic grid updates for players
@@ -792,14 +622,11 @@ func (bs *BroadcastService) broadcastGridState() {
 	// Prepare fragment data
 	fragments := []map[string]interface{}{}
 	for _, fragment := range game.PuzzleGrid.Fragments {
-		if fragment.Visible {
-			fragments = append(fragments, map[string]interface{}{
-				"fragmentId": fragment.ID,
-				"segmentId":  fragment.SegmentID,
-				"position":   fragment.Position,
-				"visible":    fragment.Visible,
-			})
-		}
+		fragments = append(fragments, map[string]interface{}{
+			"fragmentId": fragment.ID,
+			"segmentId":  fragment.SegmentID,
+			"position":   fragment.Position,
+		})
 	}
 
 	payload := map[string]interface{}{
@@ -833,7 +660,6 @@ func (bs *BroadcastService) sendHostGridState() {
 			"fragmentId": fragment.ID,
 			"segmentId":  fragment.SegmentID,
 			"position":   fragment.Position,
-			"visible":    fragment.Visible,
 			"lastMoved":  fragment.LastMoved.Format(time.RFC3339),
 			"moveCount":  fragment.MoveCount,
 		}
@@ -889,8 +715,7 @@ func (bs *BroadcastService) BroadcastResourcePhaseComplete() {
 
 	// To players
 	playerPayload := map[string]interface{}{
-		"phase":     "resource_gathering",
-		"nextPhase": "puzzle_assembly",
+		"phase": "resource_gathering",
 		"finalTokenTotals": map[string]int{
 			"anchorTokens":  game.TeamTokens.AnchorTokens,
 			"chronosTokens": game.TeamTokens.ChronosTokens,
@@ -909,8 +734,7 @@ func (bs *BroadcastService) BroadcastResourcePhaseComplete() {
 			"guideHighlights": guideThreshold,
 			"previewTime":     config.ClarityBasePreviewTime + clarityThreshold,
 		},
-		"transitionInstructions": "Return to the main room for puzzle assembly",
-		"transitionCountdown":    30,
+		"transitionCountdown": 30,
 	}
 	bs.BroadcastToAllPlayers(config.EventResourceToClientPhaseComplete, playerPayload)
 
@@ -920,7 +744,6 @@ func (bs *BroadcastService) BroadcastResourcePhaseComplete() {
 
 		hostPayload := map[string]interface{}{
 			"phase":                  "resource_gathering",
-			"completed":              true,
 			"totalQuestionsAnswered": bs.getTotalQuestionsAnswered(),
 			"teamPerformance": map[string]interface{}{
 				"overallAccuracy":     bs.getTeamAccuracy(),
@@ -972,7 +795,6 @@ func (bs *BroadcastService) BroadcastSegmentCompleted(player *models.Player, fra
 	// To the completing player
 	playerPayload := map[string]interface{}{
 		"segmentId":           player.AssignedSegment,
-		"acknowledged":        true,
 		"centralGridPosition": fragment.Position,
 		"fragmentId":          fragment.ID,
 	}
@@ -1455,13 +1277,10 @@ func (bs *BroadcastService) BroadcastPuzzleComplete(success bool, completionTime
 	if success {
 		// Success payload
 		payload := map[string]interface{}{
-			"success":             true,
-			"completionTime":      int(completionTime),
-			"totalTime":           game.GetTotalPuzzleTime(),
-			"timeRemaining":       game.GetPuzzleTimeRemaining(),
-			"message":             "Masterpiece restored! Well done!",
-			"celebrationDuration": 5,
-			"nextPhase":           "analytics",
+			"success":        true,
+			"completionTime": int(completionTime),
+			"totalTime":      game.GetTotalPuzzleTime(),
+			"timeRemaining":  game.GetPuzzleTimeRemaining(),
 		}
 		bs.BroadcastToAll(config.EventPuzzleToClientCompletedSuccess, payload)
 	} else {
@@ -1471,8 +1290,6 @@ func (bs *BroadcastService) BroadcastPuzzleComplete(success bool, completionTime
 			"reason":      "time_expired",
 			"totalTime":   game.GetTotalPuzzleTime(),
 			"timeExpired": true,
-			"message":     "Time's up! The masterpiece remains incomplete.",
-			"nextPhase":   "analytics",
 		}
 		bs.BroadcastToAll(config.EventPuzzleToClientCompletedTimeout, payload)
 	}
@@ -1484,7 +1301,6 @@ func (bs *BroadcastService) BroadcastPlayerDisconnected(playerID, playerName str
 	playerPayload := map[string]interface{}{
 		"playerId":   playerID,
 		"playerName": playerName,
-		"message":    playerName + " has disconnected",
 	}
 	bs.BroadcastToAllPlayers(config.EventSystemToClientDisconnectionWarning, playerPayload)
 
@@ -1516,15 +1332,12 @@ func (bs *BroadcastService) BroadcastHostDisconnected() {
 		"hostStatus":   "disconnected",
 		"currentPhase": string(currentPhase),
 		"gameImpact": map[string]interface{}{
-			"gamePaused":       currentPhase == models.PhaseSetup || currentPhase == models.PhaseResourceGathering,
 			"canContinue":      currentPhase == models.PhasePuzzleAssembly || currentPhase == models.PhaseAnalytics,
 			"affectedFeatures": []string{"host_monitoring", "phase_transitions"},
 		},
-		"message": "Host disconnected. Game continuing without host monitoring.",
 		"reconnectInfo": map[string]interface{}{
 			"hostCanReconnect":   true,
 			"reconnectTimeLimit": 600,
-			"gameWillContinue":   true,
 		},
 	}
 
@@ -1540,12 +1353,6 @@ func (bs *BroadcastService) BroadcastHostReconnected() {
 		"hostStatus":       "reconnected",
 		"currentPhase":     game.CurrentPhase,
 		"restoredFeatures": []string{"host_monitoring", "phase_transitions", "analytics_tracking"},
-		"message":          "Host reconnected. Full monitoring resumed.",
-		"gameImpact": map[string]interface{}{
-			"gameResumed":        false,
-			"monitoringRestored": true,
-			"noInterruption":     true,
-		},
 	}
 
 	bs.BroadcastToAllPlayers(config.EventSystemToClientHostReconnected, payload)

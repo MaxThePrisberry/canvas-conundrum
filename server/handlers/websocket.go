@@ -372,8 +372,9 @@ func sendHostConnectionConfirmed(host *models.Host, isReconnection bool) {
 		broadcastService.SendToHost(host, config.EventSetupToHostConnectionConfirmed, payload)
 	}
 
-	// Also send the initial player roster
-	if broadcastService != nil {
+	// Send initial player roster for new connections only
+	// For reconnections, sendHostPhaseRestoration will handle phase-specific restoration
+	if !isReconnection && broadcastService != nil {
 		broadcastService.BroadcastLobbyStatus()
 	}
 }

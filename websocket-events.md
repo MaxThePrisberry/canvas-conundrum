@@ -50,7 +50,7 @@ When a host reconnects using the same UUID and token:
    - **Puzzle Assembly Phase**:
      - `PUZZLE_TO_HOST_PHASE_LOAD`
      - `PUZZLE_TO_HOST_GRID_STATE`
-     - `PUZZLE_TO_HOST_TIMER_START` (if timer is active)
+     - `PUZZLE_TO_HOST_PHASE_START` (if phase is active)
    - **Analytics Phase**:
      - `ANALYTICS_TO_HOST_COMPLETE_REPORT`
 
@@ -133,6 +133,8 @@ When a player reconnects using the same token:
 #### `SETUP_TO_PLAYER_ROLES_AVAILABLE`
 **Direction**: Server → Player
 **Trigger**: Player connects to `/ws` (initial connection or reconnection) or when role availability changes due to more players joining
+
+**Important**: This event is only sent to players who have not yet marked themselves as ready. Once a player is ready (has completed role and specialty selection), they no longer receive role availability updates since they cannot change their configuration.
 
 ```json
 {
@@ -296,23 +298,6 @@ When a player reconnects using the same token:
 }
 ```
 
-#### `SETUP_TO_CLIENT_GAME_STARTED`
-**Direction**: Server → All Players
-**Trigger**: Host starts game successfully
-
-```json
-{
-  "event": "SETUP_TO_CLIENT_GAME_STARTED",
-  "payload": {
-    "nextPhase": "resource_gathering",
-    "transitionCountdown": 5,
-    "message": "Game starting! Prepare for resource gathering phase.",
-    "instructions": "Make your way to the resource gathering stations."
-  },
-  "timestamp": "2025-01-XX:XX:XX.XXXZ"
-}
-```
-
 #### `SETUP_TO_HOST_GAME_STARTED`
 **Direction**: Server → Host
 **Trigger**: Game successfully started
@@ -344,7 +329,9 @@ When a player reconnects using the same token:
 
 #### `RESOURCE_TO_CLIENT_PHASE_START`
 **Direction**: Server → All Players
-**Trigger**: Resource gathering phase begins
+**Trigger**: Resource gathering phase begins (marks transition from Setup phase)
+
+**Important**: After sending this event, the server waits one full round duration (60 seconds) before starting Round 1 and sending the first `RESOURCE_TO_PLAYER_TRIVIA_QUESTION`. This gives players time to move to their initial resource stations and scan QR codes to switch resource types.
 
 ```json
 {
@@ -447,7 +434,6 @@ When a player reconnects using the same token:
     "difficulty": "medium",
     "isSpecialty": false,
     "specialtyBonus": false,
-    "timeLimit": 30,
     "options": [
       "Paris",
       "London",
@@ -701,7 +687,9 @@ When a player reconnects using the same token:
 
 #### `PUZZLE_TO_CLIENT_PHASE_LOAD`
 **Direction**: Server → All Players
-**Trigger**: Puzzle phase begins
+**Trigger**: Resource gathering phase completes (marks transition to Puzzle Assembly phase)
+
+**Important**: This event is sent immediately when resource gathering completes. However, the puzzle phase timer doesn't start until the host sends `PUZZLE_TO_SERVER_PHASE_START`. Players can load their puzzle segments but should wait for the host to officially begin the phase.
 
 ```json
 {
@@ -722,8 +710,7 @@ When a player reconnects using the same token:
       "segment_09", "segment_10", "segment_11", "segment_12",
       "segment_13", "segment_14", "segment_15", "segment_16"
     ],
-    "loadInstructions": "Load your assigned segment and prepare individual puzzle",
-    "waitingForHost": true
+    "loadInstructions": "Load your assigned segment and prepare individual puzzle"
   },
   "timestamp": "2025-01-XX:XX:XX.XXXZ"
 }
@@ -767,15 +754,15 @@ When a player reconnects using the same token:
 }
 ```
 
-### Timer Management
+### Phase Start Management
 
-#### `PUZZLE_TO_SERVER_START_TIMER`
+#### `PUZZLE_TO_SERVER_PHASE_START`
 **Direction**: Host → Server
-**Trigger**: Host starts puzzle timer
+**Trigger**: Host starts puzzle phase
 
 ```json
 {
-  "event": "PUZZLE_TO_SERVER_START_TIMER",
+  "event": "PUZZLE_TO_SERVER_PHASE_START",
   "auth": {
     "token": "host-uuid"
   },
@@ -784,13 +771,13 @@ When a player reconnects using the same token:
 }
 ```
 
-#### `PUZZLE_TO_CLIENT_TIMER_START`
+#### `PUZZLE_TO_CLIENT_PHASE_START`
 **Direction**: Server → All Players
-**Trigger**: Puzzle timer started by host
+**Trigger**: Puzzle phase started by host
 
 ```json
 {
-  "event": "PUZZLE_TO_CLIENT_TIMER_START",
+  "event": "PUZZLE_TO_CLIENT_PHASE_START",
   "payload": {
     "startTimestamp": 1640995200000,
     "totalTime": 360,
@@ -808,13 +795,13 @@ When a player reconnects using the same token:
 }
 ```
 
-#### `PUZZLE_TO_HOST_TIMER_START`
+#### `PUZZLE_TO_HOST_PHASE_START`
 **Direction**: Server → Host
-**Trigger**: Puzzle timer started
+**Trigger**: Puzzle phase started
 
 ```json
 {
-  "event": "PUZZLE_TO_HOST_TIMER_START",
+  "event": "PUZZLE_TO_HOST_PHASE_START",
   "payload": {
     "timerActive": true,
     "startTimestamp": 1640995200000,
@@ -1167,8 +1154,7 @@ When a player reconnects using the same token:
       "Perfect Collaboration",
       "Strategic Masters",
       "Time Efficient"
-    ],
-    "nextPhase": "analytics"
+    ]
   },
   "timestamp": "2025-01-XX:XX:XX.XXXZ"
 }
@@ -1196,8 +1182,7 @@ When a player reconnects using the same token:
     "partialAchievements": [
       "Team Effort",
       "Good Communication"
-    ],
-    "nextPhase": "analytics"
+    ]
   },
   "timestamp": "2025-01-XX:XX:XX.XXXZ"
 }
@@ -1843,82 +1828,68 @@ When a player reconnects using the same token:
 
 ### Phase Transitions
 
-#### `SYSTEM_TO_CLIENT_PHASE_TRANSITION`
-**Direction**: Server → All Participants
-**Trigger**: Game phase changes
+Phase transitions in Canvas Conundrum are handled through existing phase-specific events rather than dedicated transition packets. This approach eliminates redundancy and provides clearer signals for each transition:
 
-```json
-{
-  "event": "SYSTEM_TO_CLIENT_PHASE_TRANSITION",
-  "payload": {
-    "fromPhase": "resource_gathering",
-    "toPhase": "puzzle_assembly",
-    "transitionReason": "resource_phase_completed",
-    "countdown": 30,
-    "message": "Transitioning to puzzle assembly phase in 30 seconds",
-    "preparationInstructions": [
-      "Return to the main room",
-      "Prepare for collaborative puzzle solving",
-      "Individual puzzle segments will be assigned"
-    ],
-    "phaseInfo": {
-      "nextPhaseName": "Puzzle Assembly",
-      "nextPhaseDescription": "Solve individual puzzles then collaborate on master assembly",
-      "estimatedDuration": "6-8 minutes"
-    }
-  },
-  "timestamp": "2025-01-XX:XX:XX.XXXZ"
-}
-```
+#### **Setup → Resource Gathering (Phase 0 → 1)**
+- **Transition Trigger**: Host sends `SETUP_TO_SERVER_START_GAME`
+- **Host Events**:
+  - Receives `SETUP_TO_HOST_GAME_STARTED` as immediate confirmation
+  - Receives `RESOURCE_TO_HOST_PHASE_START` to begin monitoring
+- **Client Events**:
+  - All players receive `RESOURCE_TO_CLIENT_PHASE_START` (marks the transition)
+  - Server waits one full round duration (60 seconds) before sending first `RESOURCE_TO_PLAYER_TRIVIA_QUESTION`
+- **Purpose of Delay**: Allows players time to physically move to resource stations and scan QR codes
 
-#### `SYSTEM_TO_HOST_PHASE_TRANSITION`
-**Direction**: Server → Host
-**Trigger**: Game phase changes
+#### **Resource Gathering → Puzzle Assembly (Phase 1 → 2)**
+- **Transition Trigger**: All resource gathering rounds complete automatically
+- **Host Events**:
+  - Receives `RESOURCE_TO_HOST_PHASE_COMPLETE` when phase 1 ends
+  - Receives `PUZZLE_TO_HOST_PHASE_LOAD` immediately as phase 1 completes
+  - Must send `PUZZLE_TO_SERVER_PHASE_START` to begin puzzle timer
+  - Receives `PUZZLE_TO_HOST_PHASE_START` when timer starts
+- **Client Events**:
+  - All players receive `RESOURCE_TO_CLIENT_PHASE_COMPLETE` when phase 1 ends
+  - All players receive `PUZZLE_TO_CLIENT_PHASE_LOAD` immediately (marks the transition)
+  - All players receive `PUZZLE_TO_CLIENT_PHASE_START` only after host triggers timer start
+- **Two-Stage Process**:
+  - **Background Loading**: `PUZZLE_TO_CLIENT_PHASE_LOAD` triggers background loading of all necessary puzzle pieces and assets
+  - **Hidden State**: Puzzle pieces are loaded but remain hidden until timer starts
+  - **Display Trigger**: Puzzle interface only becomes visible when `PUZZLE_TO_CLIENT_PHASE_START` is received
+  - **Host Control**: Timer and puzzle display wait for explicit host trigger via `PUZZLE_TO_SERVER_PHASE_START`
 
-```json
-{
-  "event": "SYSTEM_TO_HOST_PHASE_TRANSITION",
-  "payload": {
-    "fromPhase": "resource_gathering",
-    "toPhase": "puzzle_assembly",
-    "transitionStatus": "confirmed",
-    "transitionTime": 30,
-    "hostControls": {
-      "availableActions": ["start_puzzle_timer", "monitor_progress"],
-      "monitoringFeatures": ["individual_progress", "grid_state", "collaboration_metrics"],
-      "phaseSpecificControls": ["timer_management", "completion_tracking"]
-    },
-    "playerTransitionStatus": {
-      "playersReady": 5,
-      "playersTransitioning": 0,
-      "transitionComplete": true
-    },
-    "nextPhaseSetup": {
-      "segmentAssignments": "completed",
-      "gridInitialization": "ready",
-      "bonusEffectsApplied": true
-    }
-  },
-  "timestamp": "2025-01-XX:XX:XX.XXXZ"
-}
-```
+#### **Puzzle Assembly → Analytics (Phase 2 → 3)**
+- **Transition Trigger**: Puzzle completes successfully or timer expires
+- **Host Events**:
+  - Receives `PUZZLE_TO_HOST_COMPLETION_ANALYTICS` when phase 2 ends
+  - Receives `ANALYTICS_TO_HOST_COMPLETE_REPORT` immediately (marks transition to phase 3)
+- **Client Events**:
+  - All players receive `PUZZLE_TO_CLIENT_COMPLETED_SUCCESS` or `PUZZLE_TO_CLIENT_COMPLETED_TIMEOUT`
+  - All players receive `ANALYTICS_TO_PLAYER_PERSONAL_REPORT` immediately
+  - All players receive `ANALYTICS_TO_CLIENT_TEAM_SUMMARY` immediately
+- **Immediate Transition**: Analytics phase begins automatically with no delays or host control needed
+
+This design ensures that:
+- Host maintains control over critical phase timing (game start, puzzle timer start)
+- Phase transitions are clearly indicated through functional phase-start events
+- Players receive appropriate context and timing for each phase
+- No redundant messaging reduces network overhead while maintaining clear communication
 
 ---
 
 ## Event Summary
 
-**Total Events**: 53
-- **Setup Phase**: 8 events
+**Total Events**: 50
+- **Setup Phase**: 7 events
 - **Resource Gathering Phase**: 10 events
 - **Puzzle Assembly Phase**: 20 events
 - **Post-Game Analytics**: 5 events
-- **System-Wide Events**: 10 events
+- **System-Wide Events**: 8 events
 
 **By Direction**:
 - **Client to Server**: 8 events
 - **Host to Server**: 3 events
-- **Server to All Clients**: 15 events
-- **Server to Host Only**: 15 events
+- **Server to All Clients**: 13 events
+- **Server to Host Only**: 14 events
 - **Server to Individual Players**: 12 events
 
 This specification provides exact JSON structures for every WebSocket event in Canvas Conundrum, eliminating ambiguity about payload field names, data types, and message formats. Each event includes comprehensive context, making implementation straightforward for both client and server developers.

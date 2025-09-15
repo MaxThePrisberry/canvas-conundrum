@@ -114,7 +114,6 @@ When a player reconnects using the same token:
   "event": "SETUP_TO_HOST_CONNECTION_CONFIRMED",
   "payload": {
     "playerId": "uuid-generated-by-server",
-    "message": "Connected as game host",
     "currentPhase": "setup",
     "isReconnection": false,
     "gameConfig": {
@@ -307,15 +306,13 @@ When a player reconnects using the same token:
   "event": "SETUP_TO_HOST_GAME_STARTED",
   "payload": {
     "phase": "resource_gathering",
-    "gameStarted": true,
     "totalPlayers": 5,
     "initialTeamTokens": {
       "anchorTokens": 0,
       "chronosTokens": 0,
       "guideTokens": 0,
       "clarityTokens": 0
-    },
-    "monitoringActive": true
+    }
   },
   "timestamp": "2025-01-XX:XX:XX.XXXZ"
 }
@@ -385,12 +382,6 @@ When a player reconnects using the same token:
         "clarity": 0,
         "unknown": 5
       }
-    },
-    "analyticsTracking": {
-      "questionDelivery": true,
-      "answerTracking": true,
-      "locationTracking": true,
-      "performanceMetrics": true
     }
   },
   "timestamp": "2025-01-XX:XX:XX.XXXZ"
@@ -520,26 +511,22 @@ When a player reconnects using the same token:
       "anchor": {
         "currentThreshold": 2,
         "maxThresholds": 6,
-        "tokensPerThreshold": 25,
-        "effectDescription": "2 pieces pre-solved per threshold"
+        "tokensPerThreshold": 25
       },
       "chronos": {
         "currentThreshold": 1,
         "maxThresholds": 6,
-        "tokensPerThreshold": 20,
-        "effectDescription": "+20 seconds per threshold"
+        "tokensPerThreshold": 20
       },
       "guide": {
         "currentThreshold": 1,
         "maxThresholds": 6,
-        "tokensPerThreshold": 15,
-        "effectDescription": "Remove (gridSize²)/7 squares per threshold"
+        "tokensPerThreshold": 15
       },
       "clarity": {
         "currentThreshold": 1,
         "maxThresholds": 6,
-        "tokensPerThreshold": 30,
-        "effectDescription": "+1 second preview per threshold"
+        "tokensPerThreshold": 30
       }
     },
     "teamPerformance": {
@@ -631,7 +618,6 @@ When a player reconnects using the same token:
       "guideHighlights": 3,
       "previewTime": 5
     },
-    "transitionInstructions": "Return to the main room for puzzle assembly",
     "transitionCountdown": 30
   },
   "timestamp": "2025-01-XX:XX:XX.XXXZ"
@@ -647,7 +633,6 @@ When a player reconnects using the same token:
   "event": "RESOURCE_TO_HOST_PHASE_COMPLETE",
   "payload": {
     "phase": "resource_gathering",
-    "completed": true,
     "totalQuestionsAnswered": 40,
     "teamPerformance": {
       "overallAccuracy": 0.78,
@@ -709,8 +694,7 @@ When a player reconnects using the same token:
       "segment_05", "segment_06", "segment_07", "segment_08",
       "segment_09", "segment_10", "segment_11", "segment_12",
       "segment_13", "segment_14", "segment_15", "segment_16"
-    ],
-    "loadInstructions": "Load your assigned segment and prepare individual puzzle"
+    ]
   },
   "timestamp": "2025-01-XX:XX:XX.XXXZ"
 }
@@ -746,9 +730,7 @@ When a player reconnects using the same token:
       "chronosTimeBonus": 60,
       "guideHighlights": 9,
       "clarityPreview": 5
-    },
-    "monitoringActive": true,
-    "canStartTimer": true
+    }
   },
   "timestamp": "2025-01-XX:XX:XX.XXXZ"
 }
@@ -847,7 +829,6 @@ When a player reconnects using the same token:
   "event": "PUZZLE_TO_PLAYER_SEGMENT_ACKNOWLEDGED",
   "payload": {
     "segmentId": "segment_01",
-    "acknowledged": true,
     "centralGridPosition": {"x": 2, "y": 3},
     "fragmentId": "fragment_01",
     "allSegmentCompletions": {
@@ -962,14 +943,12 @@ When a player reconnects using the same token:
       {
         "fragmentId": "fragment_01",
         "segmentId": "segment_01",
-        "position": {"x": 1, "y": 1},
-        "visible": true
+        "position": {"x": 1, "y": 1}
       },
       {
         "fragmentId": "fragment_02",
         "segmentId": "segment_02",
-        "position": {"x": 2, "y": 3},
-        "visible": true
+        "position": {"x": 2, "y": 3}
       }
     ],
     "timeRemaining": 285
@@ -995,7 +974,6 @@ When a player reconnects using the same token:
         "playerName": "Alice",
         "segmentId": "segment_01",
         "position": {"x": 1, "y": 1},
-        "visible": true,
         "lastMoved": "2025-01-XX:XX:XX.XXXZ",
         "moveCount": 3
       }
@@ -1143,8 +1121,6 @@ When a player reconnects using the same token:
     "completionTime": 285,
     "totalTime": 360,
     "timeRemaining": 75,
-    "message": "Masterpiece restored! Well done!",
-    "celebrationDuration": 5,
     "finalGridState": {
       "allFragmentsCorrect": true,
       "totalFragments": 16,
@@ -1178,7 +1154,6 @@ When a player reconnects using the same token:
       "correctlyPlaced": 10,
       "completionPercentage": 62.5
     },
-    "message": "Time's up! The masterpiece remains incomplete.",
     "partialAchievements": [
       "Team Effort",
       "Good Communication"
@@ -1568,10 +1543,8 @@ When a player reconnects using the same token:
   "event": "ANALYTICS_TO_CLIENT_GAME_RESET",
   "payload": {
     "reason": "host_initiated_reset",
-    "message": "Game resetting. Please rejoin to start a new game.",
     "reconnectRequired": true,
     "reconnectInstructions": "Refresh your browser and reconnect to join the next game",
-    "gracePeriod": 30,
     "newGameAvailable": true
   },
   "timestamp": "2025-01-XX:XX:XX.XXXZ"
@@ -1604,9 +1577,7 @@ When a player reconnects using the same token:
     "suggestedActions": [
       "Select from available roles: art_enthusiast, detective, tourist, janitor",
       "Refresh the page if role list appears outdated"
-    ],
-    "retryable": true,
-    "severity": "warning"
+    ]
   },
   "timestamp": "2025-01-XX:XX:XX.XXXZ"
 }
@@ -1634,9 +1605,7 @@ When a player reconnects using the same token:
     "suggestedActions": [
       "Wait for more players to join",
       "Verify all players are properly connected"
-    ],
-    "retryable": true,
-    "severity": "error"
+    ]
   },
   "timestamp": "2025-01-XX:XX:XX.XXXZ"
 }
@@ -1682,15 +1651,12 @@ When a player reconnects using the same token:
     "hostStatus": "disconnected",
     "currentPhase": "puzzle_assembly",
     "gameImpact": {
-      "gamePaused": false,
       "canContinue": true,
       "affectedFeatures": ["host_monitoring", "phase_transitions"]
     },
-    "message": "Host disconnected. Game continuing without host monitoring.",
     "reconnectInfo": {
       "hostCanReconnect": true,
-      "reconnectTimeLimit": 600,
-      "gameWillContinue": true
+      "reconnectTimeLimit": 600
     }
   },
   "timestamp": "2025-01-XX:XX:XX.XXXZ"
@@ -1707,13 +1673,7 @@ When a player reconnects using the same token:
   "payload": {
     "hostStatus": "reconnected",
     "currentPhase": "puzzle_assembly",
-    "restoredFeatures": ["host_monitoring", "phase_transitions", "analytics_tracking"],
-    "message": "Host reconnected. Full monitoring resumed.",
-    "gameImpact": {
-      "gameResumed": false,
-      "monitoringRestored": true,
-      "noInterruption": true
-    }
+    "restoredFeatures": ["host_monitoring", "phase_transitions", "analytics_tracking"]
   },
   "timestamp": "2025-01-XX:XX:XX.XXXZ"
 }

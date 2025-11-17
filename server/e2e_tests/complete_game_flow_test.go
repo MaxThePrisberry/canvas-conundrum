@@ -169,7 +169,7 @@ func TestCompleteGameFlow(t *testing.T) {
 		}
 
 		// Use proper GameManager method to start the game
-		err := gm.StartGame()
+		err := gm.StartGame("medium")
 		require.NoError(t, err)
 
 		// Verify game state
@@ -387,7 +387,7 @@ func TestGameWithHighTokens(t *testing.T) {
 
 	// Set difficulty and start game
 	gm.GetGame().SetDifficulty(models.DifficultyMedium)
-	err := gm.StartGame()
+	err := gm.StartGame("medium")
 	require.NoError(t, err)
 
 	// Add high tokens to trigger thresholds
@@ -445,7 +445,7 @@ func TestLargeScaleGame(t *testing.T) {
 
 	// Start game with hard difficulty
 	gm.GetGame().SetDifficulty(models.DifficultyHard)
-	err := gm.StartGame()
+	err := gm.StartGame("medium")
 	require.NoError(t, err)
 
 	// Verify grid size scales with player count
@@ -503,7 +503,7 @@ func TestGameReset(t *testing.T) {
 
 	// Start and progress game
 	gm.GetGame().SetDifficulty(models.DifficultyEasy)
-	err := gm.StartGame()
+	err := gm.StartGame("medium")
 	require.NoError(t, err)
 
 	// Add some tokens

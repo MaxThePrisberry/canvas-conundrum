@@ -44,7 +44,7 @@ func TestHandleHostStartGame_InsufficientPlayers(t *testing.T) {
 	initialPhase := gameManager.GetCurrentPhase()
 
 	// Test the start game handler
-	handleHostStartGame(host)
+	handleHostStartGame(host, nil)
 
 	// Verify game didn't start (phase should be unchanged)
 	assert.Equal(t, initialPhase, gameManager.GetCurrentPhase(), "Game phase should not change when start fails")
@@ -328,7 +328,7 @@ func TestHostHandlerEdgeCases(t *testing.T) {
 			}
 		}()
 
-		handleHostStartGame(nil)
+		handleHostStartGame(nil, nil)
 		assert.True(t, true)
 	})
 }

@@ -702,7 +702,7 @@ func TestPhaseTransitionWebSocketStability(t *testing.T) {
 		}
 
 		// Start the game which should trigger resource phase
-		err := gameManager.StartGame()
+		err := gameManager.StartGame("medium")
 		if err != nil {
 			// Game might not start due to missing host, that's OK for this test
 			t.Logf("Game start failed (expected): %v", err)

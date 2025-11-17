@@ -2,55 +2,19 @@ package integration_tests
 
 import (
 	"canvas-conundrum/config"
-	"canvas-conundrum/handlers"
-	"canvas-conundrum/services"
 	"canvas-conundrum/test_helpers"
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"net/http/httptest"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
-	"github.com/gorilla/mux"
 	"github.com/gorilla/websocket"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
-
-func setupTestServer(t *testing.T) (*httptest.Server, func()) {
-	// Get game manager singleton and reset it
-	gm := services.GetGameInstance()
-
-	// Cleanup and reset for this test
-	gm.Cleanup()
-	gm.ResetGame()
-
-	// Setup services
-	gm.SetBroadcastService(services.NewBroadcastService())
-	gm.SetTriviaService(services.NewTriviaService())
-	gm.SetPuzzleService(services.NewPuzzleService())
-	gm.SetAnalyticsService(services.NewAnalyticsService())
-
-	// Create router
-	r := mux.NewRouter()
-	r.HandleFunc("/ws", handlers.HandlePlayerWebSocket).Methods("GET")
-	r.HandleFunc("/ws/host/{uuid}", handlers.HandleHostWebSocket).Methods("GET")
-
-	// Create test server
-	server := httptest.NewServer(r)
-
-	// Return cleanup function that resets game
-	cleanup := func() {
-		server.Close()
-		gm.Cleanup()   // Properly cleanup game manager
-		gm.ResetGame() // Reset state after cleanup
-	}
-
-	return server, cleanup
-}
 
 func TestPlayerWebSocketConnection(t *testing.T) {
 	server, cleanup := setupTestServer(t)

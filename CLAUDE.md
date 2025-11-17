@@ -1,7 +1,6 @@
 # Project Overview
 
-Canvas Conundrum is a collaborative multiplayer puzzle game with educational trivia elements. Players answer trivia questions to earn resources, then work together to assemble puzzle pieces on a shared canvas.
-
+Canvas Conundrum is a collaborative multiplayer puzzle game with educational trivia elements. Players answer trivia questions to earn resources, then work together to assemble puzzle pieces on a shared canvas. The GitHub repository is under the owner "MaxThePrisberry" and is called "canvas-conundrum".
 # Development Commands
 
 ```bash

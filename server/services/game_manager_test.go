@@ -211,12 +211,12 @@ func TestGameManagerGameFlow(t *testing.T) {
 		// Set difficulty before starting
 		gm.GetGame().SetDifficulty(models.DifficultyMedium)
 
-		err := gm.StartGame()
+		err := gm.StartGame("medium")
 		assert.NoError(t, err)
 		assert.Equal(t, models.PhaseResourceGathering, gm.GetCurrentPhase())
 
 		// Can't start again
-		err = gm.StartGame()
+		err = gm.StartGame("medium")
 		assert.Error(t, err)
 
 		// Stop the goroutines started by StartGame to prevent test hanging
@@ -408,7 +408,7 @@ func TestGameManagerValidations(t *testing.T) {
 		host.Connection = &websocket.Conn{} // Non-nil connection
 		_, _ = gm.SetHost(host)
 
-		err := gm.StartGame()
+		err := gm.StartGame("medium")
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "minimum")
 
@@ -418,7 +418,7 @@ func TestGameManagerValidations(t *testing.T) {
 		player.IsActive = true // Mark as active for test
 		_, _ = gm.AddPlayer(player)
 
-		err = gm.StartGame()
+		err = gm.StartGame("medium")
 		assert.NoError(t, err)
 	})
 }

@@ -20,7 +20,7 @@ func HandleHostMessage(host *models.Host, msg *utils.Message) {
 
 	switch msg.Event {
 	case config.EventSetupToServerStartGame:
-		handleHostStartGame(host)
+		handleHostStartGame(host, msg.Payload)
 
 	case config.EventPuzzleToServerPhaseStart:
 		handleHostStartPuzzlePhase(host)
@@ -45,9 +45,39 @@ func HandleHostMessage(host *models.Host, msg *utils.Message) {
 }
 
 // handleHostStartGame handles game start request from host
-func handleHostStartGame(host *models.Host) {
+func handleHostStartGame(host *models.Host, payload interface{}) {
 	gameManager := services.GetGameInstance()
 	broadcastService := gameManager.GetBroadcastService()
+
+	// Extract difficulty from payload
+	var difficulty string = "medium" // default
+	if payload != nil {
+		// Handle both parsed map and raw JSON bytes
+		var payloadMap map[string]interface{}
+
+		if pMap, ok := payload.(map[string]interface{}); ok {
+			// Already parsed
+			payloadMap = pMap
+		} else if bytes, ok := payload.([]byte); ok {
+			// Raw JSON bytes - need to parse
+			if err := json.Unmarshal(bytes, &payloadMap); err != nil {
+				log.Printf("Failed to parse JSON payload: %v", err)
+			}
+		} else if rawMsg, ok := payload.(json.RawMessage); ok {
+			// JSON RawMessage - need to parse
+			if err := json.Unmarshal(rawMsg, &payloadMap); err != nil {
+				log.Printf("Failed to parse RawMessage payload: %v", err)
+			}
+		}
+
+		if payloadMap != nil {
+			if diff, exists := payloadMap["difficulty"]; exists && diff != nil {
+				if diffStr, ok := diff.(string); ok {
+					difficulty = diffStr
+				}
+			}
+		}
+	}
 
 	// Check if game can be started
 	if !gameManager.CanStartGame() {
@@ -63,8 +93,8 @@ func handleHostStartGame(host *models.Host) {
 		return
 	}
 
-	// Start the game
-	err := gameManager.StartGame()
+	// Start the game with specified difficulty
+	err := gameManager.StartGame(difficulty)
 	if err != nil {
 		log.Printf("Failed to start game: %v", err)
 		if broadcastService != nil {

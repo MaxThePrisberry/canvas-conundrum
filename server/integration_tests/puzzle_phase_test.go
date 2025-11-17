@@ -44,7 +44,7 @@ func TestPuzzlePhaseIntegration(t *testing.T) {
 
 	t.Run("End-to-End Puzzle Phase with Rate Limiting and Recommendation Invalidation", func(t *testing.T) {
 		// Use proper server flow to get to puzzle phase
-		err := gameManager.StartGame()
+		err := gameManager.StartGame("medium")
 		require.NoError(t, err)
 
 		// Transition to puzzle phase using real server method

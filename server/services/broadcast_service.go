@@ -332,6 +332,9 @@ func (bs *BroadcastService) BroadcastResourcePhaseStart() {
 
 	bs.BroadcastToAllPlayers(config.EventResourceToClientPhaseStart, playerPayload)
 
+	// Send team progress to all players
+	bs.BroadcastToAllPlayers(config.EventResourceToClientTeamProgress, bs.getTeamProgressPayload())
+
 	// Send phase start to host
 	host := gameManager.GetHost()
 	if host != nil {
@@ -352,6 +355,23 @@ func (bs *BroadcastService) BroadcastResourcePhaseStart() {
 		}
 
 		bs.SendToHost(host, config.EventResourceToHostPhaseStart, hostPayload)
+	}
+}
+
+// getTeamProgressPayload returns the current team progress
+func (bs *BroadcastService) getTeamProgressPayload() map[string]interface{} {
+	gameManager := GetGameInstance()
+	game := gameManager.GetGame()
+
+	return map[string]interface{}{
+		"currentRound": game.CurrentRound,
+		"totalRounds":  config.ResourceGatheringRounds,
+		"teamTokens": map[string]int{
+			"anchorTokens":  game.TeamTokens.AnchorTokens,
+			"chronosTokens": game.TeamTokens.ChronosTokens,
+			"guideTokens":   game.TeamTokens.GuideTokens,
+			"clarityTokens": game.TeamTokens.ClarityTokens,
+		},
 	}
 }
 

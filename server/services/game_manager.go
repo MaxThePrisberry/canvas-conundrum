@@ -129,10 +129,10 @@ func (gm *GameManager) AddPlayer(player *models.Player) (bool, error) {
 	var beforeAvailability map[models.Role]bool
 	var isReconnection bool
 
-	// Capture role availability before adding player
-	beforeAvailability = gm.GetRoleAvailabilityMap()
-
 	gm.mu.Lock()
+
+	// Capture role availability before adding player (within lock to avoid deadlock)
+	beforeAvailability = gm.getRoleAvailabilityMapInline()
 	// Check if this is a reconnection
 	if existingPlayer, exists := gm.players[player.ID]; exists {
 		// Player reconnection
@@ -211,11 +211,12 @@ func (gm *GameManager) AddPlayer(player *models.Player) (bool, error) {
 		shouldBroadcast = true
 		broadcastSvc = gm.broadcastSvc
 	}
-	gm.mu.Unlock()
 
-	// Check if role availability changed after adding player (outside lock)
-	afterAvailability := gm.GetRoleAvailabilityMap()
+	// Check if role availability changed after adding player (within lock to avoid deadlock)
+	afterAvailability := gm.getRoleAvailabilityMapInline()
 	shouldBroadcastRoles = gm.CheckRoleAvailabilityChanged(beforeAvailability, afterAvailability)
+
+	gm.mu.Unlock()
 
 	// Send updated roster to host outside of lock to avoid deadlock
 	if shouldBroadcast {
@@ -240,9 +241,6 @@ func (gm *GameManager) RemovePlayer(playerID string) {
 	var beforeAvailability map[models.Role]bool
 	var currentPhase models.GamePhase
 
-	// Capture role availability before removing player
-	beforeAvailability = gm.GetRoleAvailabilityMap()
-
 	gm.mu.Lock()
 	player, exists := gm.players[playerID]
 	if !exists {
@@ -250,6 +248,9 @@ func (gm *GameManager) RemovePlayer(playerID string) {
 		log.Printf("RemovePlayer: Player %s not found", playerID)
 		return
 	}
+
+	// Capture role availability before removing player (within lock to avoid deadlock)
+	beforeAvailability = gm.getRoleAvailabilityMapInline()
 
 	log.Printf("RemovePlayer: Removing player %s (name: %s)", playerID, player.Name)
 
@@ -346,12 +347,25 @@ func (gm *GameManager) RemovePlayer(playerID string) {
 			gm.broadcastSvc != nil, gm.host != nil)
 	}
 
+	// Capture variables for puzzle disconnection broadcast outside lock
+	var puzzleFragment *models.Fragment
+	var shouldBroadcastPuzzleDisconnection bool
+
 	// Handle phase-specific disconnection logic
 	switch gm.game.CurrentPhase {
 	case models.PhasePuzzleAssembly:
 		// Auto-solve puzzle and make fragment unassigned
 		if !player.SegmentCompleted && player.AssignedSegment != "" {
-			gm.handlePuzzleDisconnection(player)
+			// Mark segment as completed
+			player.SegmentCompleted = true
+
+			// Add fragment as unassigned
+			if gm.game.PuzzleGrid != nil {
+				fragment := gm.game.PuzzleGrid.AddFragment(player.AssignedSegment, "")
+				player.FragmentID = fragment.ID
+				puzzleFragment = fragment
+				shouldBroadcastPuzzleDisconnection = true
+			}
 		}
 	}
 
@@ -364,12 +378,12 @@ func (gm *GameManager) RemovePlayer(playerID string) {
 		broadcastSvc = gm.broadcastSvc
 	}
 
+	// Capture role availability after removing player (within lock to avoid deadlock)
+	afterAvailability := gm.getRoleAvailabilityMapInline()
+	shouldBroadcastRoles = gm.CheckRoleAvailabilityChanged(beforeAvailability, afterAvailability)
+
 	log.Printf("Player %s disconnected", playerID)
 	gm.mu.Unlock()
-
-	// Check if role availability changed after removing player (outside lock)
-	afterAvailability := gm.GetRoleAvailabilityMap()
-	shouldBroadcastRoles = gm.CheckRoleAvailabilityChanged(beforeAvailability, afterAvailability)
 
 	// Send updated roster to host outside of lock to avoid deadlock
 	if shouldBroadcast {
@@ -377,27 +391,15 @@ func (gm *GameManager) RemovePlayer(playerID string) {
 		broadcastSvc.BroadcastLobbyStatus()
 	}
 
+	// Broadcast puzzle disconnection outside of lock to avoid deadlock
+	if shouldBroadcastPuzzleDisconnection && gm.broadcastSvc != nil && puzzleFragment != nil {
+		gm.broadcastSvc.BroadcastPlayerDisconnected(player.ID, player.Name, puzzleFragment)
+	}
+
 	// Broadcast role availability changes if any occurred (only during setup phase)
 	if shouldBroadcastRoles && currentPhase == models.PhaseSetup && broadcastSvc != nil {
 		log.Printf("Broadcasting role availability changes after player %s disconnected", playerID)
 		broadcastSvc.BroadcastRoleAvailability()
-	}
-}
-
-// handlePuzzleDisconnection handles player disconnection during puzzle phase
-func (gm *GameManager) handlePuzzleDisconnection(player *models.Player) {
-	// Mark segment as completed
-	player.SegmentCompleted = true
-
-	// Add fragment as unassigned
-	if gm.game.PuzzleGrid != nil {
-		fragment := gm.game.PuzzleGrid.AddFragment(player.AssignedSegment, "")
-		player.FragmentID = fragment.ID
-
-		// Broadcast update
-		if gm.broadcastSvc != nil {
-			gm.broadcastSvc.BroadcastPlayerDisconnected(player.ID, player.Name, fragment)
-		}
 	}
 }
 
@@ -493,10 +495,10 @@ func (gm *GameManager) GetHost() *models.Host {
 
 // UpdatePlayerConfiguration updates a player's role and specialties
 func (gm *GameManager) UpdatePlayerConfiguration(playerID string, name string, role models.Role, specialties []string) error {
-	// Capture role availability before making changes
-	beforeAvailability := gm.GetRoleAvailabilityMap()
-
 	gm.mu.Lock()
+
+	// Capture role availability before making changes (within lock to avoid deadlock)
+	beforeAvailability := gm.getRoleAvailabilityMapInline()
 	player, exists := gm.players[playerID]
 	if !exists {
 		gm.mu.Unlock()
@@ -528,12 +530,12 @@ func (gm *GameManager) UpdatePlayerConfiguration(playerID string, name string, r
 
 	log.Printf("Player %s configured: role=%s, specialties=%v", playerID, role, specialties)
 
+	// Check if role availability changed after the update (within lock to avoid deadlock)
+	afterAvailability := gm.getRoleAvailabilityMapInline()
+	shouldBroadcast := gm.CheckRoleAvailabilityChanged(beforeAvailability, afterAvailability)
+
 	broadcastSvc := gm.broadcastSvc
 	gm.mu.Unlock()
-
-	// Check if role availability changed after the update (outside lock)
-	afterAvailability := gm.GetRoleAvailabilityMap()
-	shouldBroadcast := gm.CheckRoleAvailabilityChanged(beforeAvailability, afterAvailability)
 
 	// Broadcast role availability changes if any occurred
 	if shouldBroadcast && broadcastSvc != nil {
@@ -663,6 +665,57 @@ func (gm *GameManager) GetRoleAvailabilityMap() map[models.Role]bool {
 	}
 }
 
+// getRoleAvailabilityMapInline calculates role availability without acquiring additional locks
+// This assumes the caller already holds the appropriate lock
+func (gm *GameManager) getRoleAvailabilityMapInline() map[models.Role]bool {
+	// Calculate distribution inline to avoid double locking
+	distribution := map[models.Role]int{
+		models.RoleArtEnthusiast: 0,
+		models.RoleDetective:     0,
+		models.RoleTourist:       0,
+		models.RoleJanitor:       0,
+	}
+
+	for _, player := range gm.players {
+		if player.Role != models.RoleNone {
+			// During setup phase, only count active players
+			// During other phases, count all players (including disconnected ones)
+			if gm.game.CurrentPhase == models.PhaseSetup {
+				if player.IsActive {
+					distribution[player.Role]++
+				}
+			} else {
+				distribution[player.Role]++
+			}
+		}
+	}
+
+	// Calculate maxPerRole based on active players during setup, all players otherwise
+	var playerCount int
+	if gm.game.CurrentPhase == models.PhaseSetup {
+		playerCount = 0
+		for _, player := range gm.players {
+			if player.IsActive {
+				playerCount++
+			}
+		}
+	} else {
+		playerCount = len(gm.players)
+	}
+
+	maxPerRole := (playerCount + 3) / 4
+	if maxPerRole < 1 {
+		maxPerRole = 1 // Ensure at least 1 player can select each role
+	}
+
+	return map[models.Role]bool{
+		models.RoleArtEnthusiast: distribution[models.RoleArtEnthusiast] < maxPerRole,
+		models.RoleDetective:     distribution[models.RoleDetective] < maxPerRole,
+		models.RoleTourist:       distribution[models.RoleTourist] < maxPerRole,
+		models.RoleJanitor:       distribution[models.RoleJanitor] < maxPerRole,
+	}
+}
+
 // CheckRoleAvailabilityChanged compares two role availability maps and returns true if any changed
 func (gm *GameManager) CheckRoleAvailabilityChanged(before, after map[models.Role]bool) bool {
 	roles := []models.Role{
@@ -697,7 +750,7 @@ func (gm *GameManager) CanStartGame() bool {
 }
 
 // StartGame starts the game
-func (gm *GameManager) StartGame() error {
+func (gm *GameManager) StartGame(difficulty string) error {
 	// Keep track of what to broadcast after unlocking
 	var shouldBroadcast bool
 
@@ -740,6 +793,16 @@ func (gm *GameManager) StartGame() error {
 		// Check if we can broadcast
 		shouldBroadcast = gm.broadcastSvc != nil
 
+		// Set the game difficulty
+		switch difficulty {
+		case "easy":
+			gm.game.Difficulty = models.DifficultyEasy
+		case "hard":
+			gm.game.Difficulty = models.DifficultyHard
+		default:
+			gm.game.Difficulty = models.DifficultyMedium
+		}
+
 		// Transition to resource gathering
 		gm.game.StartResourceGathering()
 
@@ -749,6 +812,11 @@ func (gm *GameManager) StartGame() error {
 
 	if err != nil {
 		return err
+	}
+
+	// Send game started confirmation to host first
+	if shouldBroadcast {
+		gm.sendGameStartedToHost()
 	}
 
 	// Broadcast phase transition after releasing lock
@@ -766,8 +834,43 @@ func (gm *GameManager) StartGame() error {
 	return nil
 }
 
+// sendGameStartedToHost sends SETUP_TO_HOST_GAME_STARTED event
+func (gm *GameManager) sendGameStartedToHost() {
+	gm.mu.RLock()
+	host := gm.host
+
+	// Count active players
+	totalPlayers := 0
+	for _, player := range gm.players {
+		if player.IsActive {
+			totalPlayers++
+		}
+	}
+	gm.mu.RUnlock()
+
+	if host != nil && host.Connection != nil {
+		payload := map[string]interface{}{
+			"phase":        "resource_gathering",
+			"totalPlayers": totalPlayers,
+			"initialTeamTokens": map[string]int{
+				"anchorTokens":  0,
+				"chronosTokens": 0,
+				"guideTokens":   0,
+				"clarityTokens": 0,
+			},
+		}
+
+		if gm.broadcastSvc != nil {
+			gm.broadcastSvc.SendToHost(host, config.EventSetupToHostGameStarted, payload)
+		}
+	}
+}
+
 // StartResourceRound starts a new resource gathering round
 func (gm *GameManager) StartResourceRound() {
+	// Add a small delay to reduce lock contention during rapid phase transitions
+	time.Sleep(50 * time.Millisecond)
+
 	gm.mu.Lock()
 
 	if gm.game.CurrentPhase != models.PhaseResourceGathering {
@@ -881,33 +984,54 @@ func (gm *GameManager) CompleteResourceGathering() {
 
 // StartPuzzleTimer starts the puzzle phase timer
 func (gm *GameManager) StartPuzzleTimer() error {
-	gm.mu.Lock()
-	defer gm.mu.Unlock()
+	var totalTime int
+	var previewTime int
+	var shouldBroadcast bool
+	var broadcastSvc *BroadcastService
 
-	if gm.game.CurrentPhase != models.PhasePuzzleAssembly {
-		return fmt.Errorf("not in puzzle phase")
+	// Do state changes under lock
+	err := func() error {
+		gm.mu.Lock()
+		defer gm.mu.Unlock()
+
+		if gm.game.CurrentPhase != models.PhasePuzzleAssembly {
+			return fmt.Errorf("not in puzzle phase")
+		}
+
+		if gm.game.PuzzleTimerStarted {
+			return fmt.Errorf("timer already started")
+		}
+
+		gm.game.StartPuzzleTimer()
+
+		totalTime = gm.game.GetTotalPuzzleTime()
+		previewTime = gm.game.GetClarityPreviewTime()
+		gm.puzzleTimer = utils.NewTimer(
+			time.Duration(totalTime)*time.Second,
+			func() {
+				go gm.PuzzleTimeout()
+			},
+		)
+		gm.puzzleTimer.Start()
+
+		log.Printf("Puzzle timer started - %d seconds", totalTime)
+
+		// Check if we can broadcast
+		shouldBroadcast = gm.broadcastSvc != nil
+		if shouldBroadcast {
+			broadcastSvc = gm.broadcastSvc
+		}
+
+		return nil
+	}()
+
+	if err != nil {
+		return err
 	}
 
-	if gm.game.PuzzleTimerStarted {
-		return fmt.Errorf("timer already started")
-	}
-
-	gm.game.StartPuzzleTimer()
-
-	totalTime := gm.game.GetTotalPuzzleTime()
-	gm.puzzleTimer = utils.NewTimer(
-		time.Duration(totalTime)*time.Second,
-		func() {
-			go gm.PuzzleTimeout()
-		},
-	)
-	gm.puzzleTimer.Start()
-
-	log.Printf("Puzzle timer started - %d seconds", totalTime)
-
-	// Broadcast timer start
-	if gm.broadcastSvc != nil {
-		gm.broadcastSvc.BroadcastPuzzlePhaseStart(totalTime, gm.game.GetClarityPreviewTime())
+	// Broadcast timer start outside of lock to avoid deadlock
+	if shouldBroadcast {
+		broadcastSvc.BroadcastPuzzlePhaseStart(totalTime, previewTime)
 	}
 
 	return nil
@@ -1277,29 +1401,29 @@ func (gm *GameManager) GetGame() *models.Game {
 }
 
 // GetBroadcastService returns the broadcast service
+// Note: This method doesn't use locking as the broadcast service is set once during initialization
+// and never changes during runtime, making it safe for concurrent access
 func (gm *GameManager) GetBroadcastService() *BroadcastService {
-	gm.mu.RLock()
-	defer gm.mu.RUnlock()
 	return gm.broadcastSvc
 }
 
 // GetTriviaService returns the trivia service
+// Note: This method doesn't use locking as the trivia service is set once during initialization
+// and never changes during runtime, making it safe for concurrent access
 func (gm *GameManager) GetTriviaService() *TriviaService {
-	gm.mu.RLock()
-	defer gm.mu.RUnlock()
 	return gm.triviaSvc
 }
 
 // GetPuzzleService returns the puzzle service
+// Note: This method doesn't use locking as the puzzle service is set once during initialization
+// and never changes during runtime, making it safe for concurrent access
 func (gm *GameManager) GetPuzzleService() *PuzzleService {
-	gm.mu.RLock()
-	defer gm.mu.RUnlock()
 	return gm.puzzleSvc
 }
 
 // GetAnalyticsService returns the analytics service
+// Note: This method doesn't use locking as the analytics service is set once during initialization
+// and never changes during runtime, making it safe for concurrent access
 func (gm *GameManager) GetAnalyticsService() *AnalyticsService {
-	gm.mu.RLock()
-	defer gm.mu.RUnlock()
 	return gm.analyticsSvc
 }

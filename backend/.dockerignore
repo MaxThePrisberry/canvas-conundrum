@@ -1,0 +1,11 @@
+# Build context lives at repo root, so this filters from there.
+.git
+.github
+**/node_modules
+frontend
+**/*.log
+**/dist
+**/build
+docker-compose*.yml
+*.md
+!backend/**/*.md

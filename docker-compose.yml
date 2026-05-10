@@ -1,0 +1,49 @@
+# Production-leaning baseline. Local dev overrides live in
+# docker-compose.override.yml (auto-merged by `docker compose`).
+#
+# Run prod-style:    docker compose -f docker-compose.yml up --build
+# Run dev (default): docker compose up --build
+
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    image: canvas-conundrum-backend:latest
+    environment:
+      ENVIRONMENT: production
+      PORT: "8080"
+      # Paths inside the container. Tiles are baked into the image at build
+      # time; trivia and game config are mounted so they can be tuned without
+      # a rebuild.
+      TILE_DIR: /app/puzzle-tiles
+      TRIVIA_DIR: /app/trivia
+      CONFIG_PATH: /app/game-config.json
+    volumes:
+      - ./trivia:/app/trivia:ro
+      - ./game-config.json:/app/game-config.json:ro
+    healthcheck:
+      test: ["CMD", "/app/server", "-health-check"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+    restart: unless-stopped
+    networks: [internal]
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    image: canvas-conundrum-frontend:latest
+    ports:
+      - "8080:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+    restart: unless-stopped
+    networks: [internal]
+
+networks:
+  internal:
+    driver: bridge

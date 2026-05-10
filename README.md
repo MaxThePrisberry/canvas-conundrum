@@ -1,22 +1,67 @@
-# The Canvas Conundrum
+# Canvas Conundrum
 
-# Setup
+Collaborative multiplayer puzzle game with educational trivia.
 
-## Install Golang
-See instructions in the [Golang Download and Install page](https://go.dev/doc/install). Get at least Golang 1.21 or higher.
+## Repo layout
 
-## Install `pre-commit`
-In Ubuntu, run:
 ```
-sudo apt update; sudo apt install pre-commit -y
-cd canvas-conundrum; pre-commit install
+canvas-conundrum/
+├── game-design.md            # Gameplay spec — the source of truth
+├── websocket-events.md       # WebSocket event protocol
+├── game-config.json          # Tunable game balance values (mounted at runtime)
+│
+├── backend/                  # Go WebSocket server (rebuild in progress)
+│   └── Dockerfile
+├── frontend/                 # SPA (rebuild in progress)
+│   ├── Dockerfile
+│   └── nginx.conf            # Reverse-proxies /ws and /api to backend
+│
+├── assets/
+│   └── puzzle-sources/       # Source puzzle images (committed)
+│       └── nature_image.png
+│
+├── trivia/                   # Open Trivia DB content (CC-BY-SA)
+│   └── {category}/{difficulty}.json
+│
+├── preprocess_puzzle_images.py   # Splits a source image into N×N tile grids
+├── docker-compose.yml            # Production
+└── docker-compose.override.yml   # Development (hot reload + bind mounts)
 ```
 
-Install Golang packages for pre-commit hooks:
-```
-go install golang.org/x/tools/cmd/goimports@latest
-go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
+## Image strategy
+
+Puzzle tiles are **generated at backend build time** and baked into the
+backend image — they are never committed and never served as static files.
+The Go server gates all tile/full-image requests behind session auth so a
+player can only fetch their own assigned segment, and the full-image preview
+is only available during the clarity-token reveal window.
+
+To add a new puzzle: drop a source image into `assets/puzzle-sources/` and
+rebuild the backend image. The `preprocess_puzzle_images.py` step in
+`backend/Dockerfile` will split it into 3×3 through 8×8 grids automatically.
+
+## Running
+
+```bash
+# Development (hot reload, source bind-mounted)
+docker compose up --build
+
+# Production-style (immutable images, no source mounts)
+docker compose -f docker-compose.yml up --build
 ```
 
-# Attribution
-Trivia provided by the [Open Trivia Database](https://opentdb.com/) under the [Creative Commons Attribution-ShareAlike 4.0 International License](https://creativecommons.org/licenses/by-sa/4.0/) with no changes made. Thank you!
+Frontend on `http://localhost:8080` (prod) or `http://localhost:5173` (dev).
+Backend exposed directly on `:8081` in dev for debugging.
+
+## Setup (host)
+
+```bash
+# Pre-commit
+sudo apt install pre-commit -y
+pre-commit install
+```
+
+## Attribution
+
+Trivia content from [Open Trivia Database](https://opentdb.com/) under
+[CC-BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/), unmodified.

@@ -6,4 +6,6 @@ repos:
       - id: end-of-file-fixer
       - id: check-yaml
       - id: check-added-large-files
-        args: ["--maxkb=1024"]
+        # Puzzle source images (assets/puzzle-sources/*) can be a few MB.
+        # Tiles are generated at build time and never committed.
+        args: ["--maxkb=5120"]

@@ -1,0 +1,37 @@
+# Local development overrides. Auto-merged with docker-compose.yml when you
+# run `docker compose up`. Adds bind mounts and hot reload so you can edit
+# code without rebuilding images.
+
+services:
+  backend:
+    build:
+      target: dev
+    environment:
+      ENVIRONMENT: development
+    volumes:
+      # Live-reload Go source. air (or reflex) watches the bind mount.
+      - ./backend:/src
+      - go-mod-cache:/go/pkg/mod
+      - go-build-cache:/root/.cache/go-build
+      # In dev, also bind-mount tile output so you can re-run the Python
+      # script without rebuilding the image.
+      - ./assets/puzzle-tiles:/app/puzzle-tiles:ro
+    ports:
+      - "8081:8080" # expose backend directly for curl/debugging
+    command: ["air", "-c", ".air.toml"]
+
+  frontend:
+    build:
+      target: dev
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules # anonymous volume so host node_modules doesn't shadow
+    environment:
+      VITE_BACKEND_URL: http://localhost:8081
+    command: ["npm", "run", "dev", "--", "--host", "0.0.0.0"]
+    ports:
+      - "5173:5173" # vite default
+
+volumes:
+  go-mod-cache:
+  go-build-cache:

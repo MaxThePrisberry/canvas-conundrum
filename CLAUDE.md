@@ -9,8 +9,8 @@ is under the owner "MaxThePrisberry" and is called "canvas-conundrum".
 
 - `backend/` — Go WebSocket server (Dockerized)
 - `frontend/` — SPA + nginx reverse proxy (Dockerized)
-- `assets/puzzle-sources/` — committed source images; split into tiles at
-  backend build time and baked into the backend image
+- `assets/puzzle-sources/` — committed source images; bind-mounted read-only
+  into the backend at runtime
 - `trivia/` — Open Trivia DB content, mounted into backend at runtime
 - `game-config.json` — tunable game balance values, mounted at runtime
 - `game-design.md`, `websocket-events.md` — gameplay and protocol specs
@@ -18,10 +18,10 @@ is under the owner "MaxThePrisberry" and is called "canvas-conundrum".
 # Development commands
 
 ```bash
-# Run the full stack with hot reload (source bind-mounted)
+# Run the full stack with hot reload (uses docker-compose.override.yml)
 docker compose up --build
 
-# Run production-style images
+# Run production-style images (no overrides)
 docker compose -f docker-compose.yml up --build
 
 # Pre-commit
@@ -32,16 +32,6 @@ pre-commit install
 
 Refer to `game-design.md` and `websocket-events.md` for any question about game
 design or what the code should look like. They are the source of truth — code
-should be derived from these specs, not the other way around.
-
-# Image strategy
-
-Puzzle tiles are generated **at runtime**, exactly once per game, when the
-resource-gathering phase ends. Source images live under
-`assets/puzzle-sources/` and are bind-mounted read-only into the backend.
-The Go server crops the chosen source into per-segment tiles using the
-standard library `image` package, caches them in memory, and serves them
-only through authenticated `/api/...` endpoints. Each client only ever
-receives its own assigned segment. The clarity-token full-image preview is
-similarly server-gated to a limited time window. Tiles are never written
-to disk and never committed to git.
+should be derived from these specs, not the other way around. Puzzle tiles are
+generated at runtime per game; see `game-design.md` § *Asset Delivery (Puzzle
+Images)* and `websocket-events.md` § *Asset Delivery (HTTP)* for the contract.

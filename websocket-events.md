@@ -507,27 +507,11 @@ When a player reconnects using the same token:
       "guideTokens": 28,
       "clarityTokens": 38
     },
-    "tokenThresholds": {
-      "anchor": {
-        "currentThreshold": 2,
-        "maxThresholds": 6,
-        "tokensPerThreshold": 25
-      },
-      "chronos": {
-        "currentThreshold": 1,
-        "maxThresholds": 6,
-        "tokensPerThreshold": 20
-      },
-      "guide": {
-        "currentThreshold": 1,
-        "maxThresholds": 6,
-        "tokensPerThreshold": 15
-      },
-      "clarity": {
-        "currentThreshold": 1,
-        "maxThresholds": 6,
-        "tokensPerThreshold": 30
-      }
+    "currentThresholds": {
+      "anchor": 2,
+      "chronos": 1,
+      "guide": 1,
+      "clarity": 1
     },
     "teamPerformance": {
       "averageAccuracy": 0.78,
@@ -613,12 +597,11 @@ When a player reconnects using the same token:
       "clarity": 2
     },
     "bonusEffects": {
-      "preSolvedPieces": 6,
-      "extraTime": 60,
-      "guideHighlights": 3,
-      "previewTime": 5
-    },
-    "transitionCountdown": 30
+      "anchorPreSolved": 6,
+      "chronosTimeBonus": 60,
+      "guideHighlightCount": 3,
+      "clarityPreviewDuration": 5
+    }
   },
   "timestamp": "2025-01-XX:XX:XX.XXXZ"
 }
@@ -668,6 +651,21 @@ When a player reconnects using the same token:
 
 ## Phase 2: Puzzle Assembly
 
+### Segment ID Convention
+
+Segment IDs are deterministic given the central grid size and follow the
+pattern `segment_{row}{col}` where `row` is a lowercase letter starting at
+`a` and `col` is a 1-based number. For a `centralGridSize` of N, valid IDs
+are `segment_a1` through `segment_{Nth letter}{N}`.
+
+For example, a 4×4 grid has segments `segment_a1`, `segment_a2`, …,
+`segment_a4`, `segment_b1`, …, `segment_d4`. An 8×8 grid has segments
+`segment_a1` through `segment_h8`.
+
+Clients and the host derive the full set of valid segment IDs from
+`centralGridSize` (delivered in `PUZZLE_TO_CLIENT_PHASE_LOAD` and
+`PUZZLE_TO_HOST_PHASE_LOAD`); the server never sends the enumeration.
+
 ### Puzzle Preparation
 
 When resource gathering ends, the server enters a brief "preparing puzzle" state during which it crops the chosen source image into per-segment tiles in memory. The host's `PUZZLE_TO_SERVER_PHASE_START` is rejected until preparation completes. This pause maps onto the natural physical-world delay while players gather in the puzzle room.
@@ -710,19 +708,13 @@ When resource gathering ends, the server enters a brief "preparing puzzle" state
   "payload": {
     "phase": "puzzle_assembly",
     "imageId": "masterpiece_001",
-    "assignedSegmentId": "segment_01",
+    "assignedSegmentId": "segment_a1",
     "individualPuzzleSize": 16,
     "anchorPreSolvedPieces": 6,
     "centralGridSize": 4,
     "totalCentralFragments": 16,
     "clarityPreviewDuration": 5,
-    "guideHighlightCount": 9,
-    "allSegmentIds": [
-      "segment_01", "segment_02", "segment_03", "segment_04",
-      "segment_05", "segment_06", "segment_07", "segment_08",
-      "segment_09", "segment_10", "segment_11", "segment_12",
-      "segment_13", "segment_14", "segment_15", "segment_16"
-    ]
+    "guideHighlightCount": 9
   },
   "timestamp": "2025-01-XX:XX:XX.XXXZ"
 }
@@ -748,16 +740,11 @@ When resource gathering ends, the server enters a brief "preparing puzzle" state
       "player4-uuid": "segment_a4",
       "player5-uuid": "segment_b1"
     },
-    "unassignedSegments": [
-      "segment_b2", "segment_b3", "segment_b4",
-      "segment_c1", "segment_c2", "segment_c3", "segment_c4",
-      "segment_d1", "segment_d2", "segment_d3", "segment_d4"
-    ],
     "bonusEffects": {
       "anchorPreSolved": 6,
       "chronosTimeBonus": 60,
-      "guideHighlights": 9,
-      "clarityPreview": 5
+      "guideHighlightCount": 9,
+      "clarityPreviewDuration": 5
     }
   },
   "timestamp": "2025-01-XX:XX:XX.XXXZ"
@@ -887,31 +874,18 @@ Outside the preview window, the server returns `403 Forbidden` regardless of tok
 {
   "event": "PUZZLE_TO_PLAYER_SEGMENT_ACKNOWLEDGED",
   "payload": {
-    "segmentId": "segment_01",
+    "segmentId": "segment_a1",
     "centralGridPosition": {"x": 2, "y": 3},
-    "fragmentId": "fragment_01",
-    "allSegmentCompletions": {
-      "segment_01": true,
-      "segment_02": false,
-      "segment_03": true,
-      "segment_04": true,
-      "segment_05": true,
-      "segment_06": false,
-      "segment_07": false,
-      "segment_08": false,
-      "segment_09": false,
-      "segment_10": false,
-      "segment_11": false,
-      "segment_12": false,
-      "segment_13": false,
-      "segment_14": false,
-      "segment_15": false,
-      "segment_16": false
-    }
+    "fragmentId": "fragment_01"
   },
   "timestamp": "2025-01-XX:XX:XX.XXXZ"
 }
 ```
+
+The completing player learns about other players' progress through subsequent
+`PUZZLE_TO_CLIENT_GRID_STATE` updates — every completed individual puzzle
+appears as a new fragment on the central grid. There is no separate
+team-completion-status payload.
 
 #### `PUZZLE_TO_HOST_SEGMENT_COMPLETED`
 **Direction**: Server → Host
@@ -923,7 +897,7 @@ Outside the preview window, the server returns `403 Forbidden` regardless of tok
   "payload": {
     "playerId": "player1-uuid",
     "playerName": "Alice",
-    "segmentId": "segment_01",
+    "segmentId": "segment_a1",
     "completionTime": 180,
     "centralGridPosition": {"x": 2, "y": 3},
     "fragmentId": "fragment_01",
@@ -997,16 +971,15 @@ Outside the preview window, the server returns `403 Forbidden` regardless of tok
   "event": "PUZZLE_TO_CLIENT_GRID_STATE",
   "payload": {
     "updateType": "periodic",
-    "gridSize": 4,
     "fragments": [
       {
         "fragmentId": "fragment_01",
-        "segmentId": "segment_01",
+        "segmentId": "segment_a1",
         "position": {"x": 1, "y": 1}
       },
       {
         "fragmentId": "fragment_02",
-        "segmentId": "segment_02",
+        "segmentId": "segment_a2",
         "position": {"x": 2, "y": 3}
       }
     ],
@@ -1025,13 +998,12 @@ Outside the preview window, the server returns `403 Forbidden` regardless of tok
   "event": "PUZZLE_TO_HOST_GRID_STATE",
   "payload": {
     "updateType": "immediate",
-    "gridSize": 4,
     "fragments": [
       {
         "fragmentId": "fragment_01",
         "playerId": "player1-uuid",
         "playerName": "Alice",
-        "segmentId": "segment_01",
+        "segmentId": "segment_a1",
         "position": {"x": 1, "y": 1},
         "lastMoved": "2025-01-XX:XX:XX.XXXZ",
         "moveCount": 3
@@ -1845,52 +1817,27 @@ Outside the preview window, the server returns `403 Forbidden` regardless of tok
 }
 ```
 
-### Phase Transitions
+### Phase Transition Sequences
 
-Phase transitions in Canvas Conundrum are handled through existing phase-specific events rather than dedicated transition packets. This approach eliminates redundancy and provides clearer signals for each transition:
+The events fired in order at each phase boundary. See each event's own subsection for trigger conditions and payload details.
 
-#### **Setup → Resource Gathering (Phase 0 → 1)**
-- **Transition Trigger**: Host sends `SETUP_TO_SERVER_START_GAME`
-- **Host Events**:
-  - Receives `SETUP_TO_HOST_GAME_STARTED` as immediate confirmation
-  - Receives `RESOURCE_TO_HOST_PHASE_START` to begin monitoring
-- **Client Events**:
-  - All players receive `RESOURCE_TO_CLIENT_PHASE_START` (marks the transition)
-  - Server waits one full round duration (60 seconds) before sending first `RESOURCE_TO_PLAYER_TRIVIA_QUESTION`
-- **Purpose of Delay**: Allows players time to physically move to resource stations and scan QR codes
+**Setup → Resource Gathering**
+1. Host sends `SETUP_TO_SERVER_START_GAME`
+2. Host receives `SETUP_TO_HOST_GAME_STARTED`, then `RESOURCE_TO_HOST_PHASE_START`
+3. All players receive `RESOURCE_TO_CLIENT_PHASE_START`
+4. Server waits one round duration before the first `RESOURCE_TO_PLAYER_TRIVIA_QUESTION`
 
-#### **Resource Gathering → Puzzle Assembly (Phase 1 → 2)**
-- **Transition Trigger**: All resource gathering rounds complete automatically
-- **Host Events**:
-  - Receives `RESOURCE_TO_HOST_PHASE_COMPLETE` when phase 1 ends
-  - Receives `PUZZLE_TO_HOST_PREPARING` immediately as the server begins tile generation
-  - Receives `PUZZLE_TO_HOST_READY` once tile generation completes
-  - Receives `PUZZLE_TO_HOST_PHASE_LOAD` immediately after `PUZZLE_TO_HOST_READY`
-  - May then send `PUZZLE_TO_SERVER_PHASE_START` to begin puzzle timer (rejected before `PUZZLE_TO_HOST_READY`)
-  - Receives `PUZZLE_TO_HOST_PHASE_START` when timer starts
-- **Client Events**:
-  - All players receive `RESOURCE_TO_CLIENT_PHASE_COMPLETE` when phase 1 ends
-  - All players receive `PUZZLE_TO_CLIENT_PHASE_LOAD` once tiles are ready (marks the transition)
-  - All players receive `PUZZLE_TO_CLIENT_PHASE_START` only after host triggers timer start
-- **Three-Stage Process**:
-  - **Preparation**: Server crops the chosen source image into per-segment tiles in memory. Clients have no visibility into this stage; the host sees a "preparing puzzle…" indicator driven by `PUZZLE_TO_HOST_PREPARING`.
-  - **Background Loading**: `PUZZLE_TO_CLIENT_PHASE_LOAD` triggers each client to fetch its own segment via `GET /api/segments/{segmentId}` and prepare puzzle assets. Pieces remain hidden until the timer starts.
-  - **Display Trigger**: Puzzle interface only becomes visible when `PUZZLE_TO_CLIENT_PHASE_START` is received.
-  - **Host Control**: Timer and puzzle display wait for explicit host trigger via `PUZZLE_TO_SERVER_PHASE_START`.
+**Resource Gathering → Puzzle Assembly**
+1. Final round completes automatically
+2. Host receives `RESOURCE_TO_HOST_PHASE_COMPLETE`; players receive `RESOURCE_TO_CLIENT_PHASE_COMPLETE`
+3. Host receives `PUZZLE_TO_HOST_PREPARING` while the server generates tiles in memory
+4. Host receives `PUZZLE_TO_HOST_READY`, then `PUZZLE_TO_HOST_PHASE_LOAD`
+5. Players receive `PUZZLE_TO_CLIENT_PHASE_LOAD` and begin fetching their segment from `GET /api/segments/{segmentId}` (puzzle UI stays hidden)
+6. Host sends `PUZZLE_TO_SERVER_PHASE_START` when ready (rejected before step 4)
+7. Host receives `PUZZLE_TO_HOST_PHASE_START`; players receive `PUZZLE_TO_CLIENT_PHASE_START` and reveal the puzzle UI
 
-#### **Puzzle Assembly → Analytics (Phase 2 → 3)**
-- **Transition Trigger**: Puzzle completes successfully or timer expires
-- **Host Events**:
-  - Receives `PUZZLE_TO_HOST_COMPLETION_ANALYTICS` when phase 2 ends
-  - Receives `ANALYTICS_TO_HOST_COMPLETE_REPORT` immediately (marks transition to phase 3)
-- **Client Events**:
-  - All players receive `PUZZLE_TO_CLIENT_COMPLETED_SUCCESS` or `PUZZLE_TO_CLIENT_COMPLETED_TIMEOUT`
-  - All players receive `ANALYTICS_TO_PLAYER_PERSONAL_REPORT` immediately
-  - All players receive `ANALYTICS_TO_CLIENT_TEAM_SUMMARY` immediately
-- **Immediate Transition**: Analytics phase begins automatically with no delays or host control needed
-
-This design ensures that:
-- Host maintains control over critical phase timing (game start, puzzle timer start)
-- Phase transitions are clearly indicated through functional phase-start events
-- Players receive appropriate context and timing for each phase
-- No redundant messaging reduces network overhead while maintaining clear communication
+**Puzzle Assembly → Analytics**
+1. Puzzle completes successfully or timer expires
+2. Players receive `PUZZLE_TO_CLIENT_COMPLETED_SUCCESS` or `PUZZLE_TO_CLIENT_COMPLETED_TIMEOUT`
+3. Host receives `PUZZLE_TO_HOST_COMPLETION_ANALYTICS`, then `ANALYTICS_TO_HOST_COMPLETE_REPORT`
+4. Each player receives `ANALYTICS_TO_PLAYER_PERSONAL_REPORT`, then `ANALYTICS_TO_CLIENT_TEAM_SUMMARY`

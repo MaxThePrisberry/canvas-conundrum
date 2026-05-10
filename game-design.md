@@ -3,6 +3,12 @@
 ## Game Concept
 A collaborative puzzle-solving game where players recover a stolen masterpiece by gathering resources, answering trivia, and assembling a fragmented artwork. The game uses a dedicated host system for reliable game management and real-time coordination.
 
+## Terminology
+- **Piece**: One of the 16 sub-tiles a player manipulates inside their *own* individual puzzle (Phase 2A). Pieces are private and never appear on the central grid.
+- **Segment**: The image one player is assigned to solve. A segment, once assembled by its owner, becomes a single **fragment** on the central grid.
+- **Fragment**: A completed segment occupying one cell of the central shared grid (Phase 2B). Fragments are public and can be moved within ownership rules.
+- **Central grid**: The N×N shared board where fragments are arranged to reconstruct the full image.
+
 ## Host vs Player System
 
 ### Host System
@@ -97,9 +103,9 @@ All communication after initial connection requires authentication using the sta
 - Players are immediately marked as ready upon successful specialty selection
 
 **Specialty Question Frequency:**
-- Easy Mode: `gameConfig.specialtyQFreqEasy`
-- Medium Mode: `gameConfig.specialtyQFreqMedium`
-- Hard Mode: `gameConfig.specialtyQFreqHard`
+- Easy Mode: `gameConfig.easySpecialtyProbability`
+- Medium Mode: `gameConfig.mediumSpecialtyProbability`
+- Hard Mode: `gameConfig.hardSpecialtyProbability`
 
 ## Game Phases
 
@@ -200,18 +206,15 @@ Players connect, select roles and specialties, host monitors readiness and start
 
 **Participants**: Players solve and collaborate (host monitors + shows big central grid for phase 2B)
 
-## CRITICAL: Dual-Puzzle System Architecture
+## Dual-Puzzle System Architecture
 
-**FUNDAMENTAL DESIGN PRINCIPLE**: Canvas Conundrum operates with two completely independent puzzle systems that remain entirely separate until a specific transition moment. Understanding this separation is crucial for proper implementation.
+Canvas Conundrum operates with two completely independent puzzle systems that remain entirely separate until a specific transition moment. The separation is the core of the game's design.
 
 ### System 1: Individual Player Puzzles (Private & Invisible) - Phase 2A
 
-**Complete Isolation Characteristics:**
-- **Zero Visibility**: Individual puzzle work is completely invisible to all other players, the host, and any shared displays
-- **No Grid Connection**: Individual puzzles have absolutely no relationship to the central shared puzzle grid
-- **No Space Reservation**: No position, placeholder, or reservation exists on the central grid during individual solving
-- **Isolated Processing**: Individual puzzle state is processed completely separately from shared game state
-- **Private Workspace**: Each player works in their own private puzzle-solving environment
+**Isolation Rules:**
+- Each player solves their assigned segment in a private workspace. Their progress is invisible to other players, the host, and any shared display.
+- No fragment, position, or placeholder exists on the central grid for an in-progress segment. Fragments only appear there after their owner completes the individual puzzle.
 
 **Individual Puzzle Mechanics:**
 - **Assignment**: Each player receives exactly one unique segment ID (e.g., `segment_a5`, `segment_b2`)
@@ -516,12 +519,9 @@ Individual Score =
 - **Central Grid Fragments**: Once a player completes their individual puzzle, their fragment becomes visible to all participants. The server then permits all authenticated session tokens to fetch that specific fragment's image — visibility expansion is a server-controlled state transition, not a client decision.
 
 ### Phase 1 → 2 Preparation
-The transition from resource gathering to puzzle assembly is gated on tile readiness:
+When resource gathering ends, the server enters a brief "preparing puzzle" state during which it crops the source image into per-segment tiles. This pause maps onto the natural physical-world delay while players gather in the puzzle room. The host cannot start the puzzle phase until preparation completes; the host UI surfaces a "preparing puzzle…" indicator while it waits.
 
-1. When the resource-gathering phase ends, the server immediately enters a "preparing puzzle" state and emits `PUZZLE_TO_HOST_PREPARING` so the host UI can show a "preparing puzzle…" indicator. This pause maps onto the natural physical-world delay while players gather in the puzzle room.
-2. The server selects the puzzle source image, computes the central grid size from the connected player count, and crops the source into per-segment images using Go's standard library. For typical games this completes in well under a second.
-3. Once all segment images are cached in memory, the server emits `PUZZLE_TO_HOST_READY` followed by `PUZZLE_TO_HOST_PHASE_LOAD` and `PUZZLE_TO_CLIENT_PHASE_LOAD`.
-4. The host's `PUZZLE_TO_SERVER_PHASE_START` message is rejected with an error if it arrives before tile preparation has completed.
+For the wire-level event sequence and rejection behavior, see *Resource Gathering → Puzzle Assembly* in `websocket-events.md`.
 
 ### State Management
 - **Game State**: Atomic transitions between phases.
@@ -642,38 +642,9 @@ All values below come from `game-config.json`, mounted into the backend containe
 
 ---
 
-## Implementation Summary: Individual vs Central Puzzle System
-
-**Critical Points for Development:**
-
-### Complete System Separation
-1. **Individual Puzzles**: Completely private, invisible, no grid interaction
-2. **Central Grid**: Collaborative space for completed fragments only
-3. **Zero Overlap**: No shared state between systems until completion trigger
-4. **Instant Transformation**: Individual completion immediately creates central fragment
-
-### State Management Requirements
-1. **Dual State Tracking**: Separate tracking systems for individual and central puzzles
-2. **Visibility Control**: Strict enforcement of individual puzzle invisibility
-3. **Transition Handling**: Reliable conversion from individual to central fragment
-4. **Broadcasting Logic**: Different message types for individual vs collaborative phases
-
-### User Experience Design
-1. **Clear Phase Distinction**: Players understand when they're in individual vs collaborative mode
-2. **Smooth Transition**: Seamless experience when individual puzzle becomes collaborative fragment
-3. **Visual Feedback**: Clear indicators of individual progress vs central grid participation
-4. **Collaborative Focus**: Central grid emphasizes teamwork and strategic coordination
-
-This dual-system architecture is fundamental to Canvas Conundrum's unique gameplay experience, ensuring both individual contribution and collaborative problem-solving while maintaining clear separation between private work and shared coordination.
-
 ## WebSocket Event Reference
 
-For complete technical specifications of all WebSocket events, message formats, and communication protocols, refer to the separate **websocket-events.md** document. That document contains:
-
-- Exact JSON message structures for all 50 game events
-- Authentication and message formatting requirements
-- Detailed payload specifications for each phase
-- Error handling and system event protocols
-- Comprehensive event flow documentation
-
-The websocket-events.md serves as the authoritative technical implementation guide, while this document focuses on game design, mechanics, and conceptual architecture.
+See `websocket-events.md` for the protocol specification — message formats,
+event sequencing, HTTP asset endpoints, and authorization rules. This
+document is the source of truth for game mechanics; `websocket-events.md`
+is the source of truth for the wire format.

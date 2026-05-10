@@ -27,26 +27,28 @@ canvas-conundrum/
 └── docker-compose.override.yml   # Development (hot reload + bind mounts)
 ```
 
+## Prerequisites
+
+Requires Docker with Compose v2 (`docker compose ...`, not the legacy
+`docker-compose`).
+
+```bash
+sudo apt install pre-commit -y
+pre-commit install
+```
+
 ## Running
 
 ```bash
-# Development (hot reload, source bind-mounted)
+# Development (hot reload)
 docker compose up --build
 
-# Production-style (immutable images, no source mounts)
+# Production
 docker compose -f docker-compose.yml up --build
 ```
 
 Frontend on `http://localhost:8080` (prod) or `http://localhost:5173` (dev).
 Backend exposed directly on `:8081` in dev for debugging.
-
-## Setup (host)
-
-```bash
-# Pre-commit
-sudo apt install pre-commit -y
-pre-commit install
-```
 
 ## Attribution
 

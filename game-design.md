@@ -85,11 +85,9 @@ All communication after initial connection requires authentication using the sta
 - Even distribution of roles enforced across players
 - Host does not select a role
 
-**Character Distribution Algorithm:**
-- Calculates max per role: `max(1, (playerCount + 3) / 4)`
-- Ensures representation of all roles in larger groups
-- As players join, more people are allowed to choose each role
-- Minimum of 1 player per role to ensure all roles are always available with small player counts
+**Distribution Goals:**
+- Roles should be evenly distributed across players, scaling with player count.
+- All four roles must remain selectable until at least one player has filled each, so that small-player-count games still see every role's bonus token type collected.
 
 **Race Resolution:**
 - Two players may submit `SETUP_TO_SERVER_PLAYER_CONFIGURATION` for the last available slot of a role at almost the same time. The server processes configuration messages serially: the first to land claims the slot.
@@ -170,24 +168,29 @@ Players connect, select roles and specialties, host monitors readiness and start
    - Only affects individual puzzle solving, NOT the central grid
 
 2. **Chronos Tokens** → Extended Puzzle Time
-   - 6 thresholds: `teamChronosTokens / gameConfig.chronosTokenThreshold`
-   - Effect: +20 seconds per threshold to puzzle assembly time
-   - Maximum +120 seconds (6 thresholds × 20 seconds)
+   - Threshold count: `gameConfig.maxThresholds`
+   - Threshold spacing: `teamChronosTokens / gameConfig.chronosTokenThreshold`
+   - Effect: `gameConfig.timeExtensionPerThreshold` seconds added per threshold to puzzle assembly time
+   - Maximum total bonus: `gameConfig.maxThresholds × gameConfig.timeExtensionPerThreshold` seconds
    - Base time: `gameConfig.puzzleBaseTime` seconds
    - Team-wide benefit applied to entire puzzle phase
 
 3. **Guide Tokens** → Fragment Placement Guidance on Central Grid
-   - Threshold count: `gameConfig.maxThresholds` (default 6)
+   - Threshold count: `gameConfig.maxThresholds`
    - Threshold spacing: `teamGuideTokens / gameConfig.guideTokenThreshold`
    - Effect: Highlights possible positions for the player's fragment on the central grid on the player's personal device
-   - **Highlight count formula**: After threshold *N* of *maxThresholds* is achieved, the highlight count is `max(1, ceil(gridSize² × (1 − N / maxThresholds)))`. At threshold 0 (none achieved) all `gridSize²` cells are highlighted; at full thresholds exactly one cell — the correct one — remains highlighted.
+   - **Highlight count formula**: When threshold *N* of `gameConfig.maxThresholds` has been achieved:
+     - If `N == 0`: no cells are highlighted (no guidance earned yet — showing every cell would be visual noise carrying no information).
+     - If `N ≥ 1`: `max(1, ceil(gridSize² × (1 − N / maxThresholds)))` cells are highlighted.
+     - At full thresholds the count converges to exactly one cell — the correct destination.
    - Individual hints visible only to each player for their own fragment
    - Only applies after individual puzzle completion
 
 4. **Clarity Tokens** → Complete Image Preview
-   - 6 thresholds: `teamClarityTokens / gameConfig.clarityTokenThreshold`
-   - Effect: +1 second per threshold of complete image display
-   - Maximum 6 seconds additional preview time
+   - Threshold count: `gameConfig.maxThresholds`
+   - Threshold spacing: `teamClarityTokens / gameConfig.clarityTokenThreshold`
+   - Effect: `gameConfig.previewTimePerThreshold` second(s) added per threshold to the full-image preview window
+   - Maximum total bonus: `gameConfig.maxThresholds × gameConfig.previewTimePerThreshold` seconds
    - Base preview time: `gameConfig.clarityBasePreviewTime` seconds
    - Shown automatically at puzzle phase start
    - Helps with spatial understanding and planning
@@ -214,7 +217,7 @@ Players connect, select roles and specialties, host monitors readiness and start
 
 ## Dual-Puzzle System Architecture
 
-Canvas Conundrum operates with two completely independent puzzle systems that remain entirely separate until a specific transition moment. The separation is the core of the game's design.
+Canvas Conundrum operates with two independent puzzle systems that remain separate until a specific transition moment.
 
 ### System 1: Individual Player Puzzles (Private & Invisible) - Phase 2A
 
@@ -315,8 +318,8 @@ Player Count → Grid Size → Total Fragments
    - Marked as `playerId: null` in system
 
 **Movement Mechanics (Switches/Swaps):**
-- **Movement Cooldown**: `gameConfig.fragmentMoveCooldown` ms enforced consistently for swapped pieces
-- **Terminology**: Also called fragment move requests, piece recommendations, or switch requests
+- **Movement Cooldown**: `gameConfig.fragmentMoveCooldown` ms enforced consistently between fragment swaps
+- **Terminology**: Also called fragment move requests, fragment recommendations, or switch requests
 - **Position Validation**: All swaps validated against grid boundaries (0 to gridSize-1)
 - **Collision Resolution**: Fragments swap positions or one fragment moves to open grid space
 - **Permission Checking**: Server validates ownership before allowing movement
@@ -327,10 +330,10 @@ Player Count → Grid Size → Total Fragments
 #### Fragment Visibility and State Management
 
 **Visibility Rules:**
-- **Invisible Until Completion**: Fragments only become visible after individual puzzle completion
-- **Immediate Visibility**: Once visible, fragments remain visible to all players and host
-- **Pre-Solved Visibility**: Anchor token pre-solved fragments are immediately visible at game start
-- **Personal View Consistency**: Each player sees identical central grid state
+- **Invisible Until Completion**: Fragments only become visible on the central grid after their owner completes their individual puzzle. Anchor tokens pre-solve *pieces inside individual puzzles* — they do not place fragments on the central grid (see *Anchor Token Pre-Solving*).
+- **Persistent Once Visible**: Once a fragment appears on the grid it remains visible to all players and the host for the rest of the puzzle phase.
+- **Personal View Consistency**: Each player sees identical central grid state.
+- **Public vs Private**: Fragment positions are fully public — both the host's big-screen display and every player's device show the same grid. Guide-token highlights are strictly private; each player sees only the highlights for their own fragment, never another player's.
 
 **State Broadcasting:**
 - **Central Puzzle State**: Complete grid state sent to all players every `gameConfig.gridUpdateInterval` seconds
@@ -352,31 +355,7 @@ Player Count → Grid Size → Total Fragments
 
 #### Token Effects in Puzzle Phase
 
-**Guide Token Implementation:**
-- **Central Grid Highlighting**: Shows highlighted squares on central grid where player's fragment should go
-- **Progressive Precision**: Highlight count shrinks per the formula `max(1, ceil(gridSize² × (1 − N / maxThresholds)))` (see *Guide Tokens* under Resource Token System). At full thresholds exactly one cell — the correct one — remains highlighted.
-- **Individual View**: Each player sees highlights only for their own fragment
-- **Always Active**: Highlights visible throughout puzzle phase after individual completion (Phase 2B)
-- **Public vs Private**: Fragment positions public on host screen, highlights private to player
-
-**Anchor Token Pre-Solving:**
-- **Individual Puzzle Only**: Pre-solves pieces in each player's individual puzzle (`gameConfig.individualPuzzlePieces` total per player)
-- **Visual Lock**: Pre-solved pieces marked as locked and unmovable
-- **No Central Grid Effect**: Does NOT pre-place fragments on central grid
-- **Progressive Unlock**: `piecesPreSolvedPerThreshold` pieces released per threshold, up to `maxPreSolvedPieces` total (both derived — see *Anchor Tokens* under Resource Token System)
-- **Balanced Challenge**: At least 25% of pieces always require manual solving (since `maxPreSolvedPieces ≤ floor(individualPuzzlePieces × 0.75)`)
-
-**Chronos Token Time Extension:**
-- **Base Time**: `gameConfig.puzzleBaseTime` seconds for puzzle assembly phase
-- **Threshold Bonuses**: +20 seconds per threshold level achieved
-- **Total Time Calculation**: Base + (thresholds × 20) + difficulty modifiers
-- **Team Benefit**: Extended time applies to entire team collaboration period
-
-**Clarity Token Preview:**
-- **Automatic Display**: Shows complete image automatically at puzzle phase start
-- **Duration Calculation**: `gameConfig.clarityBasePreviewTime` + (thresholds × 1) seconds
-- **Maximum Preview**: Up to 6 seconds additional preview time
-- **Strategic Value**: Helps players understand spatial relationships before solving
+The four token types and their puzzle-phase effects are fully defined under *Resource Token System* (Phase 1). One additional point not covered there: total puzzle-phase time is computed as `gameConfig.puzzleBaseTime + chronosBonus` and then scaled by the active difficulty's time multiplier (see *Difficulty Levels and Modifiers*).
 
 #### Puzzle Completion Logic
 
@@ -468,13 +447,13 @@ In all cases: complete game state is preserved for host reconnection, and player
 #### Advanced Scoring Algorithm
 ```
 Individual Score =
-  (Correct Answers × 10) +
-  (Specialty Bonus × 2) +
-  (Completion Bonus: 100) +
-  (Speed Bonus: max 300) +
-  (Successful Moves × 5) +
-  (Recommendations Sent × 3) +
-  (Recommendations Accepted × 8)
+  (Correct Answers × gameConfig.pointsPerCorrectAnswer) +
+  (Specialty Bonus × gameConfig.specialtyBonusPoints) +
+  (gameConfig.completionBonus, if puzzle completed) +
+  (Speed Bonus: scaled 0..gameConfig.maxSpeedBonus by completion time) +
+  (Successful Moves × gameConfig.pointsPerSuccessfulMove) +
+  (Recommendations Sent × gameConfig.pointsPerRecommendationSent) +
+  (Recommendations Accepted × gameConfig.pointsPerRecommendationAccepted)
 ```
 
 ## Difficulty Levels and Modifiers

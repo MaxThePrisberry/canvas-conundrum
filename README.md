@@ -10,9 +10,9 @@ canvas-conundrum/
 ├── websocket-events.md       # WebSocket event protocol
 ├── game-config.json          # Tunable game balance values (mounted at runtime)
 │
-├── backend/                  # Go WebSocket server (rebuild in progress)
+├── backend/                  # Go WebSocket server
 │   └── Dockerfile
-├── frontend/                 # SPA (rebuild in progress)
+├── frontend/                 # SPA
 │   ├── Dockerfile
 │   └── nginx.conf            # Reverse-proxies /ws and /api to backend
 │
@@ -29,13 +29,9 @@ canvas-conundrum/
 
 ## Prerequisites
 
-Requires Docker with Compose v2 (`docker compose ...`, not the legacy
-`docker-compose`).
-
-```bash
-sudo apt install pre-commit -y
-pre-commit install
-```
+- Docker with Compose v2 (`docker compose ...`, not the legacy `docker-compose`).
+- `pre-commit` (install via your package manager or `pip install pre-commit`),
+  then run `pre-commit install` once in the repo.
 
 ## Running
 
@@ -47,8 +43,11 @@ docker compose up --build
 docker compose -f docker-compose.yml up --build
 ```
 
-Frontend on `http://localhost:8080` (prod) or `http://localhost:5173` (dev).
-Backend exposed directly on `:8081` in dev for debugging.
+| URL | Purpose |
+|---|---|
+| `http://localhost:8080/` (prod) or `http://localhost:5173/` (dev) | Player frontend |
+| `http://localhost:8080/host` (prod) or `http://localhost:5173/host` (dev) | Host interface |
+| `http://localhost:8081/` (dev only) | Backend exposed directly for debugging |
 
 ## Attribution
 

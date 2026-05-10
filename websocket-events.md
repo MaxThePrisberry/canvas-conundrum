@@ -83,71 +83,28 @@ HTTP responses map status codes as follows: `400` for `MALFORMED_REQUEST`; `401`
 
 ## Reconnection Behavior
 
-### Host Reconnection
-When a host reconnects using the same UUID and token:
+Both host and players reconnect using the same WebSocket endpoint and token they used originally. The handshake event (`SETUP_TO_HOST_CONNECTION_CONFIRMED` for the host, `SETUP_TO_PLAYER_ROLES_AVAILABLE` for a player) carries `isReconnection: true` and `currentPhase`. The server then replays a phase-appropriate sequence of state-restoration events (defined under each event's own subsection — only the sequence is listed here).
 
-1. **Connection Confirmation**: Always receives `SETUP_TO_HOST_CONNECTION_CONFIRMED` with:
-   - `isReconnection: true`
-   - `currentPhase`: Current game phase
-   - Current game state appropriate to the phase
+### Host
 
-2. **Phase-Specific State Restoration Events**:
-   - **Setup Phase**:
-     - `SETUP_TO_HOST_PLAYER_ROSTER`
-   - **Resource Gathering Phase**:
-     - `RESOURCE_TO_HOST_PHASE_START`
-     - `RESOURCE_TO_HOST_ROUND_ANALYTICS` (if rounds are in progress)
-   - **Puzzle Assembly Phase**:
-     - `PUZZLE_TO_HOST_PHASE_LOAD`
-     - `PUZZLE_TO_HOST_GRID_STATE`
-     - `PUZZLE_TO_HOST_PHASE_START` (if phase is active)
-   - **Analytics Phase**:
-     - `ANALYTICS_TO_HOST_COMPLETE_REPORT`
+| Phase | Reconnect allowed? | State-restoration events sent after handshake |
+|---|---|---|
+| Setup | Yes | `SETUP_TO_HOST_PLAYER_ROSTER` |
+| Resource Gathering | Yes | `RESOURCE_TO_HOST_PHASE_START`; `RESOURCE_TO_HOST_ROUND_ANALYTICS` if a round is in progress |
+| Puzzle Preparation | Yes | `PUZZLE_TO_HOST_PREPARING` if tile generation is still running, otherwise `PUZZLE_TO_HOST_READY` then `PUZZLE_TO_HOST_PHASE_LOAD` |
+| Puzzle Assembly | Yes | `PUZZLE_TO_HOST_PHASE_LOAD`; `PUZZLE_TO_HOST_GRID_STATE`; `PUZZLE_TO_HOST_PHASE_START` if the timer is active |
+| Analytics | Yes | `ANALYTICS_TO_HOST_COMPLETE_REPORT` |
 
-3. **Reconnection Notification**: All players receive `SYSTEM_TO_CLIENT_HOST_RECONNECTED`
+All currently-connected players additionally receive `SYSTEM_TO_CLIENT_HOST_RECONNECTED`.
 
-### Player Reconnection
-When a player reconnects using the same token:
+### Player
 
-1. **Phase-Specific Behavior**:
-
-   **Setup Phase:**
-   - **Player Count Impact**: Player was removed from all counts during disconnection, now re-added
-   - Receives `SETUP_TO_PLAYER_ROLES_AVAILABLE` with `isReconnection: true`
-   - **Role Revalidation**: If previously selected role has filled up during disconnection, forced to reselect role
-   - **State Restoration**: If role still available, all previous selections restored (role, specialty, name)
-   - **Automatic Ready**: If previously ready and have role, automatically marked ready again
-   - All players receive `SETUP_TO_CLIENT_LOBBY_STATUS` with updated lobby state
-   - Host receives `SETUP_TO_HOST_PLAYER_ROSTER` update
-
-   **Resource Gathering Phase:**
-   - **Player Count Impact**: Player remained in game counts during disconnection
-   - Receives `SETUP_TO_PLAYER_ROLES_AVAILABLE` with `isReconnection: true`
-   - Followed by `RESOURCE_TO_CLIENT_PHASE_START`
-   - Followed by `RESOURCE_TO_CLIENT_TEAM_PROGRESS`
-   - If mid-round, receives current `RESOURCE_TO_PLAYER_TRIVIA_QUESTION`
-
-   **Puzzle Assembly Phase:**
-   - **HTTP 403 Forbidden** returned during WebSocket upgrade for ALL player connections
-   - Connection refused at the HTTP level before WebSocket establishment
-   - No distinction between new players and reconnecting players - all blocked
-
-   **Analytics Phase:**
-   - **Player Count Impact**: Player remained in game counts during disconnection
-   - Receives `SETUP_TO_PLAYER_ROLES_AVAILABLE` with `isReconnection: true`
-   - Followed by `ANALYTICS_TO_PLAYER_PERSONAL_REPORT`
-   - Followed by `ANALYTICS_TO_CLIENT_TEAM_SUMMARY`
-
-2. **Disconnection Impact by Phase**:
-   - **Setup Phase**: Player removed from connected count, ready count, role distribution during disconnection
-   - **Post-Setup Phases**: Player contributions remain active, tokens preserved, analytics maintained
-   - **Puzzle Phase Disconnection**: Individual puzzle auto-solved, fragment becomes unassigned for team use
-
-3. **Important Notes**:
-   - Player retains their authentication token and previous game state across all phases
-   - Host receives updated player roster showing reconnection (except during puzzle phase)
-   - All reconnection state restoration happens automatically after initial connection
-   - During puzzle assembly phase, NO player WebSocket connections are permitted regardless of reconnection status
+| Phase | Reconnect allowed? | State-restoration events sent after handshake | Disconnect impact |
+|---|---|---|---|
+| Setup | Yes | None beyond the handshake. Previously selected specialty and name are restored; previously selected role is restored only if the slot is still available, otherwise the player must reselect (see *Race Resolution* in `game-design.md`). All players receive an updated `SETUP_TO_CLIENT_LOBBY_STATUS`; host receives `SETUP_TO_HOST_PLAYER_ROSTER`. | Player removed from connected/ready counts and role distribution while disconnected; re-added on reconnect. |
+| Resource Gathering | Yes | `RESOURCE_TO_CLIENT_PHASE_START`; `RESOURCE_TO_CLIENT_TEAM_PROGRESS`; the current round's `RESOURCE_TO_PLAYER_TRIVIA_QUESTION` if mid-round. | Player remains in counts; tokens stay in team total. |
+| Puzzle Assembly | **No.** | The WebSocket upgrade is rejected at the HTTP layer with status `403` and close code `4003` before any WS frames are exchanged. | Disconnected player's individual puzzle is auto-solved into an unassigned fragment; remaining players control it as any unassigned fragment. |
+| Analytics | Yes | `ANALYTICS_TO_PLAYER_PERSONAL_REPORT`; `ANALYTICS_TO_CLIENT_TEAM_SUMMARY`. | Player remains in counts; analytics preserved. |
 
 ---
 
@@ -380,7 +337,7 @@ The server processes these messages serially; if two players race for the last s
 **Direction**: Server → All Players
 **Trigger**: Resource gathering phase begins (marks transition from Setup phase)
 
-**Important**: After sending this event, the server waits one full round duration (60 seconds) before starting Round 1 and sending the first `RESOURCE_TO_PLAYER_TRIVIA_QUESTION`. This gives players time to move to their initial resource stations and scan QR codes to switch resource types.
+**Important**: After sending this event, the server waits one full round duration (`gameConfig.resourceGatheringRoundDuration` seconds) before starting Round 1 and sending the first `RESOURCE_TO_PLAYER_TRIVIA_QUESTION`.
 
 ```json
 {
@@ -738,7 +695,7 @@ Clients and the host derive the full set of valid segment IDs from
 
 ### Puzzle Preparation
 
-When resource gathering ends, the server enters a brief "preparing puzzle" state during which it crops the chosen source image into per-segment tiles in memory. The host's `PUZZLE_TO_SERVER_PHASE_START` is rejected until preparation completes. This pause maps onto the natural physical-world delay while players gather in the puzzle room.
+When resource gathering ends, the server enters a brief "preparing puzzle" state during which it crops the chosen source image into per-segment tiles in memory. The host's `PUZZLE_TO_SERVER_PHASE_START` is rejected until preparation completes. (For the gameplay rationale of this pause, see `game-design.md` § *Phase 1 → 2 Preparation*.)
 
 #### `PUZZLE_TO_HOST_PREPARING`
 **Direction**: Server → Host
@@ -895,16 +852,17 @@ Outside the preview window, the server returns `FORBIDDEN_PREVIEW_WINDOW_CLOSED`
     "baseTime": 300,
     "chronosBonus": 60,
     "clarityPreviewActive": true,
-    "previewDuration": 5,
+    "clarityPreviewDuration": 5,
     "playerPhases": {
-      "phase2": ["player1-uuid", "player2-uuid", "player3-uuid", "player4-uuid", "player5-uuid"],
-      "phase3": []
-    },
-    "instructions": "Begin solving your individual puzzle segments"
+      "phase2a": ["player1-uuid", "player2-uuid", "player3-uuid", "player4-uuid", "player5-uuid"],
+      "phase2b": []
+    }
   },
   "timestamp": "2025-01-XX:XX:XX.XXXZ"
 }
 ```
+
+`playerPhases` partitions every connected player by current sub-phase: `phase2a` for those still solving their individual puzzle privately, `phase2b` for those who have completed it and are now collaborating on the central grid. At phase start every player is in `phase2a`. Subsequent transitions are reflected in `PUZZLE_TO_HOST_GRID_STATE.playerMetrics[*].phase`.
 
 #### `PUZZLE_TO_HOST_PHASE_START`
 **Direction**: Server → Host
@@ -918,9 +876,9 @@ Outside the preview window, the server returns `FORBIDDEN_PREVIEW_WINDOW_CLOSED`
     "startTimestamp": 1640995200000,
     "totalTime": 360,
     "baseTime": 300,
-    "bonusTime": 60,
-    "playersInPhase2": 5,
-    "playersInPhase3": 0
+    "chronosBonus": 60,
+    "playersInPhase2a": 5,
+    "playersInPhase2b": 0
   },
   "timestamp": "2025-01-XX:XX:XX.XXXZ"
 }
@@ -958,7 +916,7 @@ Outside the preview window, the server returns `FORBIDDEN_PREVIEW_WINDOW_CLOSED`
   "event": "PUZZLE_TO_PLAYER_SEGMENT_ACKNOWLEDGED",
   "payload": {
     "segmentId": "segment_a1",
-    "centralGridPosition": {"x": 2, "y": 3},
+    "position": {"x": 2, "y": 3},
     "fragmentId": "fragment_01"
   },
   "timestamp": "2025-01-XX:XX:XX.XXXZ"
@@ -982,11 +940,11 @@ team-completion-status payload.
     "playerName": "Alice",
     "segmentId": "segment_a1",
     "completionTime": 180,
-    "centralGridPosition": {"x": 2, "y": 3},
+    "position": {"x": 2, "y": 3},
     "fragmentId": "fragment_01",
     "phaseTransition": {
-      "playersInPhase2": 4,
-      "playersInPhase3": 1
+      "playersInPhase2a": 4,
+      "playersInPhase2b": 1
     },
     "completionStats": {
       "totalCompleted": 1,
@@ -1105,7 +1063,7 @@ The `fragments` array follows the same proportional-reveal rule as `PUZZLE_TO_CL
     ],
     "playerMetrics": {
       "player1-uuid": {
-        "phase": 3,
+        "phase": "phase2b",
         "fragmentsOwned": 1,
         "movesContributed": 3,
         "successfulMoves": 2,
@@ -1142,7 +1100,7 @@ The `guideHighlights` array carries the cells on the central grid currently high
 }
 ```
 
-`guideHighlights` may be an empty array if the team has not earned any guide-token thresholds (in which case nothing is highlighted on the player's view). This is the only client-visible delivery channel for guide highlights — they intentionally do not appear in the broadcast `PUZZLE_TO_CLIENT_GRID_STATE`.
+`guideHighlights` is an empty array until the team earns its first guide-token threshold; the client renders no highlights in that case. Once the first threshold is earned the array contains `ceil(gridSize² × (maxThresholds − 1) / maxThresholds)` cells and shrinks with each subsequent threshold, converging to exactly one cell at full thresholds — the correct destination. The full formula lives in `game-design.md` § *Guide Tokens*. This is the only client-visible delivery channel for guide highlights — they intentionally do not appear in the broadcast `PUZZLE_TO_CLIENT_GRID_STATE`.
 
 ### Strategic Collaboration
 

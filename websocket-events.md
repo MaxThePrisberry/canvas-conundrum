@@ -418,6 +418,8 @@ The server processes these messages serially; if two players race for the last s
 }
 ```
 
+`previousLocation` is **(optional)** — omitted on a player's first scan, when there is no prior station to report.
+
 On a recognized hash, the server replies with `RESOURCE_TO_PLAYER_LOCATION_CONFIRMED` (below). On an unrecognized hash, the server returns `SYSTEM_TO_CLIENT_ERROR` with `errorCode: "INVALID_STATION_HASH"` and the player's station is unchanged.
 
 #### `RESOURCE_TO_PLAYER_LOCATION_CONFIRMED`
@@ -814,11 +816,12 @@ Returns PNG bytes of the complete (un-cropped) puzzle source image, used for the
 
 1. The token must correspond to a known player or the host.
 2. The current phase must be `puzzle_assembly`.
-3. The current server time must fall inside the active clarity-preview window (calculated from `gameConfig.clarityBasePreviewTime` plus accumulated threshold bonuses, starting from `PUZZLE_TO_CLIENT_PHASE_START`).
+3. The team must have earned at least one clarity-token threshold during resource gathering (see `game-design.md` § *Clarity Tokens*).
+4. The current server time must fall inside the active clarity-preview window (`gameConfig.clarityBasePreviewTime + (N × gameConfig.previewTimePerThreshold)` seconds, starting from `PUZZLE_TO_CLIENT_PHASE_START`, where `N` is the number of clarity thresholds earned).
 
-Outside the preview window, the server returns `FORBIDDEN_PREVIEW_WINDOW_CLOSED` regardless of token validity. The window is server-clock authoritative; clients cannot extend it.
+If the team earned zero clarity thresholds, the endpoint returns `FORBIDDEN_PREVIEW_WINDOW_CLOSED` for the entire puzzle phase. Otherwise, requests outside the preview window return `FORBIDDEN_PREVIEW_WINDOW_CLOSED` regardless of token validity. The window is server-clock authoritative; clients cannot extend it.
 
-**Caching**: Segment responses include `Cache-Control: private, max-age=300` so clients don't refetch their own segment on reconnection within a single game. Tiles are regenerated on each new game and segment IDs are not durable across games, so cross-game cache reuse is impossible.
+**Caching**: Tile responses include `Cache-Control: no-cache` (clients revalidate on each request). Tiles are small enough that revalidation is cheap, and `no-cache` avoids the risk of a stale response surviving past `ANALYTICS_TO_CLIENT_GAME_RESET` within the cache's max-age window.
 
 **Lifecycle**: Tiles exist only between `PUZZLE_TO_HOST_READY` (server has finished generation) and `ANALYTICS_TO_CLIENT_GAME_RESET` (server clears the in-memory cache). Requests outside that window return `NOT_FOUND`.
 
@@ -864,6 +867,8 @@ Outside the preview window, the server returns `FORBIDDEN_PREVIEW_WINDOW_CLOSED`
 
 `playerPhases` partitions every connected player by current sub-phase: `phase2a` for those still solving their individual puzzle privately, `phase2b` for those who have completed it and are now collaborating on the central grid. At phase start every player is in `phase2a`. Subsequent transitions are reflected in `PUZZLE_TO_HOST_GRID_STATE.playerMetrics[*].phase`.
 
+`clarityPreviewActive` and `clarityPreviewDuration` are gated on whether the team earned at least one clarity-token threshold during resource gathering (see `game-design.md` § *Clarity Tokens*). If zero clarity thresholds were earned, `clarityPreviewActive: false` and `clarityPreviewDuration: 0`; clients render no preview overlay and the corresponding `PUZZLE_TO_CLIENT_PREVIEW_EXPIRED` event is not emitted.
+
 #### `PUZZLE_TO_HOST_PHASE_START`
 **Direction**: Server → Host
 **Trigger**: Puzzle phase started
@@ -880,6 +885,20 @@ Outside the preview window, the server returns `FORBIDDEN_PREVIEW_WINDOW_CLOSED`
     "playersInPhase2a": 5,
     "playersInPhase2b": 0
   },
+  "timestamp": "2025-01-XX:XX:XX.XXXZ"
+}
+```
+
+#### `PUZZLE_TO_CLIENT_PREVIEW_EXPIRED`
+**Direction**: Server → All Players
+**Trigger**: The clarity-token full-image preview window has elapsed. Sent at most once per game, `clarityPreviewDuration` seconds after `PUZZLE_TO_CLIENT_PHASE_START`, and **only** if the team earned at least one clarity-token threshold (i.e. `PUZZLE_TO_CLIENT_PHASE_START.clarityPreviewActive` was `true`). Games where no clarity thresholds were earned never see a preview window open and never receive this event. Clients should dismiss the preview overlay on receipt rather than relying on a locally-computed deadline (which can drift).
+
+After this event fires, `GET /api/preview/full` returns `403 FORBIDDEN_PREVIEW_WINDOW_CLOSED` for the rest of the game.
+
+```json
+{
+  "event": "PUZZLE_TO_CLIENT_PREVIEW_EXPIRED",
+  "payload": {},
   "timestamp": "2025-01-XX:XX:XX.XXXZ"
 }
 ```
@@ -987,7 +1006,11 @@ The server validates that `targetPosition` actually matches the requested mode (
 
 #### `PUZZLE_TO_PLAYER_MOVE_RESULT`
 **Direction**: Server → Individual Player
-**Trigger**: Server processes movement request
+**Trigger**: Server processes a movement request
+
+`status` is exactly `"success"` or `"rejected"`. On success the payload describes the resulting board state and the player's cooldown. On rejection the payload carries a `reason` enum and no state-change fields.
+
+**Success example:**
 
 ```json
 {
@@ -1007,6 +1030,38 @@ The server validates that `targetPosition` actually matches the requested mode (
   "timestamp": "2025-01-XX:XX:XX.XXXZ"
 }
 ```
+
+`swappedFragmentId` and `swappedFragmentNewPosition` are **(optional)** — present only when the move was a swap; absent when the move was into an empty cell.
+
+**Rejection example:**
+
+```json
+{
+  "event": "PUZZLE_TO_PLAYER_MOVE_RESULT",
+  "payload": {
+    "moveId": "move-uuid-12345",
+    "status": "rejected",
+    "fragmentId": "fragment_01",
+    "reason": "cooldown",
+    "cooldownInfo": {
+      "nextMoveAvailable": 1640995203000,
+      "cooldownRemaining": 1.2
+    }
+  },
+  "timestamp": "2025-01-XX:XX:XX.XXXZ"
+}
+```
+
+`reason` is one of:
+
+| Value | Meaning |
+|---|---|
+| `cooldown` | Target fragment is still in its `gameConfig.fragmentMoveCooldown` window from a prior move. `cooldownInfo` describes when it will be free. |
+| `not_owner` | Caller does not own the fragment they tried to move (and it is not unassigned). |
+| `target_invalid` | `targetPosition` is out of bounds, or the swap/empty-cell mode declared in the request does not match the actual occupant of `targetPosition`. |
+| `phase_invalid` | Move arrived outside the puzzle assembly phase, or before `PUZZLE_TO_CLIENT_PHASE_START`. |
+
+`cooldownInfo` is **(optional)** on rejection — present only when `reason` is `cooldown`.
 
 ### Grid State Updates
 
@@ -1208,19 +1263,20 @@ On reject, the swap is not executed and the recommender receives `PUZZLE_TO_PLAY
 
 #### `PUZZLE_TO_PLAYER_RECOMMENDATION_EXPIRED`
 **Direction**: Server → Both the original recommender and the target player
-**Trigger**: Recommendation becomes invalid due to grid changes (e.g. one of the involved fragments has since been moved). Sent to both parties so the target can clear the prompt UI and the recommender knows their suggestion is no longer pending.
+**Trigger**: Either of the two specific fragments named in the recommendation moves before the target responds. Other moves on the grid do not invalidate the recommendation. Sent to both parties so the target can clear the prompt UI and the recommender knows their suggestion is no longer pending.
 
 ```json
 {
   "event": "PUZZLE_TO_PLAYER_RECOMMENDATION_EXPIRED",
   "payload": {
     "moveId": "rec-uuid-67890",
-    "reason": "grid_state_changed",
-    "details": "One or more fragments involved in recommendation have moved"
+    "reason": "fragment_moved"
   },
   "timestamp": "2025-01-XX:XX:XX.XXXZ"
 }
 ```
+
+`reason` is currently always `"fragment_moved"` (the only expiry condition). The field is kept as a forward-compatible enum.
 
 ### Puzzle Completion
 
@@ -1768,9 +1824,10 @@ The `errorCode` field in both error events draws from the *Error code registry* 
     "hostStatus": "disconnected",
     "currentPhase": "puzzle_assembly",
     "gameImpact": {
-      "canContinue": true,
-      "affectedFeatures": ["host_monitoring", "phase_transitions"]
+      "canContinue": false,
+      "affectedFeatures": ["host_monitoring", "phase_transitions", "puzzle_timer"]
     },
+    "timerPausedAt": 1640995430000,
     "reconnectInfo": {
       "hostCanReconnect": true,
       "reconnectTimeLimit": 600
@@ -1779,6 +1836,10 @@ The `errorCode` field in both error events draws from the *Error code registry* 
   "timestamp": "2025-01-XX:XX:XX.XXXZ"
 }
 ```
+
+`gameImpact.canContinue` is phase-aware — see the host-disconnect rules in `game-design.md` § *Phase-Specific Disconnection Rules*. During Setup it is `false`; during Resource Gathering and Analytics it is `true`; during Puzzle Preparation and Puzzle Assembly it is `false` (the puzzle phase timer is paused, and the start trigger is gated on host input).
+
+`gameImpact.affectedFeatures` includes `"puzzle_timer"` only during Puzzle Assembly. `timerPausedAt` is **(optional)** — present only when the puzzle timer pauses (Puzzle Assembly host disconnect). The value is the server timestamp at which the timer was frozen; clients use it to display "paused at N seconds remaining" without drift.
 
 #### `SYSTEM_TO_CLIENT_HOST_RECONNECTED`
 **Direction**: Server → All Players
@@ -1790,11 +1851,14 @@ The `errorCode` field in both error events draws from the *Error code registry* 
   "payload": {
     "hostStatus": "reconnected",
     "currentPhase": "puzzle_assembly",
-    "restoredFeatures": ["host_monitoring", "phase_transitions", "analytics_tracking"]
+    "restoredFeatures": ["host_monitoring", "phase_transitions", "puzzle_timer"],
+    "timeRemaining": 215
   },
   "timestamp": "2025-01-XX:XX:XX.XXXZ"
 }
 ```
+
+`timeRemaining` is **(optional)** — present only when the puzzle timer resumes after a Puzzle Assembly host disconnect. It carries the new authoritative seconds-remaining value (deadline pushed forward by the disconnect duration). Clients should re-anchor their countdown to this value rather than to the original `PUZZLE_TO_CLIENT_PHASE_START.totalTime`.
 
 #### `SYSTEM_TO_HOST_PLAYER_DISCONNECTED`
 **Direction**: Server → Host

@@ -189,10 +189,10 @@ Players connect, select roles and specialties, host monitors readiness and start
 4. **Clarity Tokens** → Complete Image Preview
    - Threshold count: `gameConfig.maxThresholds`
    - Threshold spacing: `teamClarityTokens / gameConfig.clarityTokenThreshold`
-   - Effect: `gameConfig.previewTimePerThreshold` second(s) added per threshold to the full-image preview window
-   - Maximum total bonus: `gameConfig.maxThresholds × gameConfig.previewTimePerThreshold` seconds
-   - Base preview time: `gameConfig.clarityBasePreviewTime` seconds
-   - Shown automatically at puzzle phase start
+   - **Preview duration formula** (gated on threshold count, consistent with other token types):
+     - If `N == 0`: no preview window — the full-image overlay is never shown and `/api/preview/full` returns `403 FORBIDDEN_PREVIEW_WINDOW_CLOSED` for the entire puzzle phase.
+     - If `N ≥ 1`: preview window is `gameConfig.clarityBasePreviewTime + (N × gameConfig.previewTimePerThreshold)` seconds, starting from `PUZZLE_TO_CLIENT_PHASE_START`.
+   - Maximum window: `gameConfig.clarityBasePreviewTime + (gameConfig.maxThresholds × gameConfig.previewTimePerThreshold)` seconds (when all thresholds earned)
    - Helps with spatial understanding and planning
 
 #### Scoring System
@@ -318,7 +318,7 @@ Player Count → Grid Size → Total Fragments
    - Marked as `playerId: null` in system
 
 **Movement Mechanics (Switches/Swaps):**
-- **Movement Cooldown**: `gameConfig.fragmentMoveCooldown` ms enforced consistently between fragment swaps
+- **Movement Cooldown**: `gameConfig.fragmentMoveCooldown` ms is enforced **per fragment**, not per player. Each fragment has its own cooldown clock that starts when the fragment last moved (whether moved by its owner, an unassigned mover, or as the swap target of another move). A single player can chain rapid moves across different fragments. Two players who both want to move the same unassigned fragment serialize on its cooldown.
 - **Terminology**: Also called fragment move requests, fragment recommendations, or switch requests
 - **Position Validation**: All swaps validated against grid boundaries (0 to gridSize-1)
 - **Collision Resolution**: Fragments swap positions or one fragment moves to open grid space
@@ -364,10 +364,10 @@ The four token types and their puzzle-phase effects are fully defined under *Res
 2. **Correct Positioning**: All fragments positioned at their designated correct grid coordinates
 
 **Completion Validation:**
-- **Continuous Checking**: Server validates completion after every fragment movement
-- **Immediate Resolution**: Game ends instantly when both conditions satisfied
-- **Success Analytics**: Comprehensive performance tracking for successful completion
-- **Failure Handling**: Time-based failure if puzzle timer expires before completion
+- **Continuous Checking**: Server validates the victory conditions after every fragment movement.
+- **Immediate Resolution on Success**: The game ends instantly when both conditions are satisfied; the server emits `PUZZLE_TO_CLIENT_COMPLETED_SUCCESS`.
+- **Timer Expiry = Loss**: If the puzzle phase timer reaches zero before both victory conditions are met — for any reason — the team loses. This applies regardless of how many players are still in Phase 2A solving privately, how many fragments are unrevealed, or how many fragments are in incorrect positions. The server emits `PUZZLE_TO_CLIENT_COMPLETED_TIMEOUT` and transitions directly to the Analytics phase. There is no auto-solve fallback.
+- **Success Analytics**: Comprehensive performance tracking for the successful-completion case.
 
 ## Phase-Specific Disconnection Rules
 

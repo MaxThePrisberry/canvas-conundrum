@@ -1,4 +1,10 @@
-server/client/node_modules/
-server/client/package-lock.json
-server/host/node_modules/
-server/host/package-lock.json
+node_modules/
+package-lock.json
+
+# Generated puzzle assets (rebuilt from assets/puzzle-sources/ via preprocess_puzzle_images.py)
+assets/puzzle-tiles/
+
+# Build artifacts
+dist/
+build/
+*.exe

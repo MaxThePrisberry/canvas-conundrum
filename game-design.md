@@ -91,6 +91,10 @@ All communication after initial connection requires authentication using the sta
 - As players join, more people are allowed to choose each role
 - Minimum of 1 player per role to ensure all roles are always available with small player counts
 
+**Race Resolution:**
+- Two players may submit `SETUP_TO_SERVER_PLAYER_CONFIGURATION` for the last available slot of a role at almost the same time. The server processes configuration messages serially: the first to land claims the slot.
+- Losers receive `SYSTEM_TO_CLIENT_ERROR` with code `ROLE_FULL`. Their previously selected specialty and player name are preserved server-side; they must reselect a role and resubmit. The next `SETUP_TO_PLAYER_ROLES_AVAILABLE` broadcast reflects the updated availability so loser clients can immediately offer remaining roles.
+
 ### Trivia Specialty Selection (Players Only)
 **Available Categories:**
 - General Knowledge, Geography, History, Music, Science, Video Games
@@ -173,10 +177,10 @@ Players connect, select roles and specialties, host monitors readiness and start
    - Team-wide benefit applied to entire puzzle phase
 
 3. **Guide Tokens** → Fragment Placement Guidance on Central Grid
-   - 6 thresholds: `teamGuideTokens / gameConfig.guideTokenThreshold`
-   - Effect: Highlights possible positions for player's fragment on central grid on player's personal device
-   - Each threshold removes (gridSize × gridSize) / 7 highlighted squares
-   - Progression from many possible positions to precise guidance
+   - Threshold count: `gameConfig.maxThresholds` (default 6)
+   - Threshold spacing: `teamGuideTokens / gameConfig.guideTokenThreshold`
+   - Effect: Highlights possible positions for the player's fragment on the central grid on the player's personal device
+   - **Highlight count formula**: After threshold *N* of *maxThresholds* is achieved, the highlight count is `max(1, ceil(gridSize² × (1 − N / maxThresholds)))`. At threshold 0 (none achieved) all `gridSize²` cells are highlighted; at full thresholds exactly one cell — the correct one — remains highlighted.
    - Individual hints visible only to each player for their own fragment
    - Only applies after individual puzzle completion
 
@@ -350,9 +354,9 @@ Player Count → Grid Size → Total Fragments
 
 **Guide Token Implementation:**
 - **Central Grid Highlighting**: Shows highlighted squares on central grid where player's fragment should go
-- **Progressive Precision**: Each threshold removes (gridSize²) / 7 possible positions
+- **Progressive Precision**: Highlight count shrinks per the formula `max(1, ceil(gridSize² × (1 − N / maxThresholds)))` (see *Guide Tokens* under Resource Token System). At full thresholds exactly one cell — the correct one — remains highlighted.
 - **Individual View**: Each player sees highlights only for their own fragment
-- **Always Active**: Highlights visible throughout puzzle phase after individual completion (phase 2B)
+- **Always Active**: Highlights visible throughout puzzle phase after individual completion (Phase 2B)
 - **Public vs Private**: Fragment positions public on host screen, highlights private to player
 
 **Anchor Token Pre-Solving:**
@@ -631,7 +635,7 @@ All values below come from `game-config.json`, mounted into the backend containe
 - Resource Gathering Round Duration: `gameConfig.resourceGatheringRoundDuration` seconds
 - One trivia question per gathering round
 - Puzzle Base Time: `gameConfig.puzzleBaseTime` seconds
-- Post-Game Analytics: `gameConfig.postGameDuration` seconds
+- Post-Game Analytics: displays until the host sends `ANALYTICS_TO_SERVER_RESET_GAME`; no auto-expiry
 
 **Token Economics:**
 - Base Tokens Per Answer: `gameConfig.baseTokensPerCorrectAnswer`

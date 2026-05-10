@@ -31,6 +31,56 @@ All server-to-client messages use this format:
 
 ---
 
+## Conventions
+
+### Required vs optional fields
+
+Every payload field shown in this spec is **required** unless explicitly marked **(optional)** in prose following the JSON example. Optional fields may be omitted entirely or sent as JSON `null`; their absence has the meaning described per-event. A missing required field returns `SYSTEM_TO_CLIENT_ERROR` with code `MALFORMED_PAYLOAD`.
+
+### WebSocket close codes
+
+When the server closes a WebSocket connection it uses these codes:
+
+| Code | Meaning |
+|---|---|
+| `1000` | Normal closure (e.g. game reset, graceful client disconnect) |
+| `1001` | Server going away (planned shutdown) |
+| `4001` | Unauthorized (missing/malformed/unknown token at handshake) |
+| `4003` | Forbidden (player tried to connect during puzzle assembly phase) |
+| `4004` | Token invalid or expired (e.g. game reset since the token was issued) |
+
+Codes in the `4xxx` range are application-specific per RFC 6455 §7.4.2; clients should treat any unrecognized `4xxx` close as a terminal failure.
+
+### Client reconnection backoff
+
+After an unexpected close (any code other than `1000`), clients should attempt to reconnect using exponential backoff: start at 1 second, double each retry, cap at 30 seconds. Reset to 1 second on a successful connection. Connection attempts that close immediately with code `4001`, `4003`, or `4004` should not be retried — the failure is permanent for this game.
+
+### Error code registry
+
+Error codes form a single project-wide namespace shared by:
+- HTTP error responses (`error` field in the JSON body — see *Asset Delivery (HTTP)*)
+- `SYSTEM_TO_CLIENT_ERROR` and `SYSTEM_TO_HOST_ERROR` events (`errorCode` field)
+
+Codes are stable identifiers; new codes may be added over time, but existing codes will never be repurposed.
+
+| Code | Used in | Meaning |
+|---|---|---|
+| `UNAUTHORIZED` | HTTP, WS | Missing/malformed/unknown bearer token (HTTP) or unauthenticated WS action |
+| `MALFORMED_REQUEST` | HTTP | Path, header, or body unparsable |
+| `MALFORMED_PAYLOAD` | WS | Required WebSocket field missing or wrong type |
+| `INVALID_ROLE_SELECTION` | WS | Selected role is unknown |
+| `ROLE_FULL` | WS | All slots for the requested role are taken |
+| `INVALID_STATION_HASH` | WS | QR-code hash did not match any configured station |
+| `INSUFFICIENT_PLAYERS` | WS | Host tried to start the game before minimum players were ready |
+| `FORBIDDEN_PHASE` | HTTP, WS | Action not permitted in current game phase |
+| `FORBIDDEN_NOT_OWNER` | HTTP, WS | Caller is not the assigned owner of the resource |
+| `FORBIDDEN_PREVIEW_WINDOW_CLOSED` | HTTP | Full-image preview requested outside its active time window |
+| `NOT_FOUND` | HTTP | Resource does not currently exist (e.g. tiles before generation, or after game reset) |
+
+HTTP responses map status codes as follows: `400` for `MALFORMED_REQUEST`; `401` for `UNAUTHORIZED`; `403` for any `FORBIDDEN_*` code; `404` for `NOT_FOUND`.
+
+---
+
 ## Reconnection Behavior
 
 ### Host Reconnection
@@ -211,6 +261,8 @@ When a player reconnects using the same token:
   "timestamp": "2025-01-XX:XX:XX.XXXZ"
 }
 ```
+
+The server processes these messages serially; if two players race for the last slot of a role, the first to land wins. The loser receives `SYSTEM_TO_CLIENT_ERROR` with `errorCode: "ROLE_FULL"` and must reselect a role and resubmit. Their previously submitted specialty and player name are preserved server-side; the resubmission only needs a new `selectedRole`.
 
 #### `SETUP_TO_CLIENT_LOBBY_STATUS`
 **Direction**: Server → All Players
@@ -408,6 +460,24 @@ When a player reconnects using the same token:
   "timestamp": "2025-01-XX:XX:XX.XXXZ"
 }
 ```
+
+On a recognized hash, the server replies with `RESOURCE_TO_PLAYER_LOCATION_CONFIRMED` (below). On an unrecognized hash, the server returns `SYSTEM_TO_CLIENT_ERROR` with `errorCode: "INVALID_STATION_HASH"` and the player's station is unchanged.
+
+#### `RESOURCE_TO_PLAYER_LOCATION_CONFIRMED`
+**Direction**: Server → Individual Player
+**Trigger**: Server validates and applies a station change in response to `RESOURCE_TO_SERVER_LOCATION_VERIFIED`
+
+```json
+{
+  "event": "RESOURCE_TO_PLAYER_LOCATION_CONFIRMED",
+  "payload": {
+    "newLocation": "anchor"
+  },
+  "timestamp": "2025-01-XX:XX:XX.XXXZ"
+}
+```
+
+`newLocation` is one of `anchor`, `chronos`, `guide`, `clarity`. The same value will subsequently appear in the next `RESOURCE_TO_CLIENT_TEAM_PROGRESS` broadcast, but this event lets the player's UI confirm the scan immediately rather than wait for the next progress tick.
 
 ### Trivia Questions and Answers
 
@@ -755,7 +825,20 @@ When resource gathering ends, the server enters a brief "preparing puzzle" state
 
 Puzzle imagery is delivered over authenticated HTTP requests, **not** through WebSocket payloads. The `PUZZLE_TO_*_PHASE_LOAD` events tell each client which `segmentId` they own; the bytes themselves are fetched from the endpoints below. This keeps WebSocket frames small and centralizes server-side authorization on tile access.
 
-**Authentication**: All asset endpoints require the same session token used for WebSocket auth, passed via the `Authorization: Bearer {token}` header. Tokens in query strings are not accepted (they leak into proxy logs). Missing/malformed/unrecognized tokens receive `401 Unauthorized`.
+**Authentication**: All asset endpoints require an `Authorization: Bearer {token}` header. The token is the same session UUID used for WebSocket auth — for players this is the UUID issued at first connection; for the host it is the server-startup UUID embedded in the host WebSocket URL. Tokens in query strings are not accepted (they leak into proxy logs). Missing/malformed/unrecognized tokens receive `401 Unauthorized`.
+
+**Response content type**: Successful responses set `Content-Type: image/png`.
+
+**Error response shape**: Non-2xx responses return JSON with this shape:
+
+```json
+{
+  "error": "FORBIDDEN_NOT_OWNER",
+  "message": "Segment segment_a3 is not assigned to this player."
+}
+```
+
+The `error` field is a fixed machine-readable code from the *Error code registry* (Conventions section); `message` is human-readable and intended for logs and developer-facing UI, not end-user messaging.
 
 #### `GET /api/segments/{segmentId}`
 Returns PNG bytes of a single puzzle segment. The server enforces, in order:
@@ -767,7 +850,7 @@ Returns PNG bytes of a single puzzle segment. The server enforces, in order:
    - a fragment that has already been completed and is now visible to all players on the central grid, OR
    - any segment if the request comes from the host (read-only access for monitoring).
 
-Failures return `403 Forbidden`.
+Authorization failures return `FORBIDDEN_NOT_OWNER` or `FORBIDDEN_PHASE` as appropriate.
 
 #### `GET /api/preview/full`
 Returns PNG bytes of the complete (un-cropped) puzzle source image, used for the clarity-token preview. Server enforces:
@@ -776,11 +859,11 @@ Returns PNG bytes of the complete (un-cropped) puzzle source image, used for the
 2. The current phase must be `puzzle_assembly`.
 3. The current server time must fall inside the active clarity-preview window (calculated from `gameConfig.clarityBasePreviewTime` plus accumulated threshold bonuses, starting from `PUZZLE_TO_CLIENT_PHASE_START`).
 
-Outside the preview window, the server returns `403 Forbidden` regardless of token validity. The window is server-clock authoritative; clients cannot extend it.
+Outside the preview window, the server returns `FORBIDDEN_PREVIEW_WINDOW_CLOSED` regardless of token validity. The window is server-clock authoritative; clients cannot extend it.
 
 **Caching**: Segment responses include `Cache-Control: private, max-age=300` so clients don't refetch their own segment on reconnection within a single game. Tiles are regenerated on each new game and segment IDs are not durable across games, so cross-game cache reuse is impossible.
 
-**Lifecycle**: Tiles exist only between `PUZZLE_TO_HOST_READY` (server has finished generation) and `ANALYTICS_TO_CLIENT_GAME_RESET` (server clears the in-memory cache). Requests outside that window return `404 Not Found`.
+**Lifecycle**: Tiles exist only between `PUZZLE_TO_HOST_READY` (server has finished generation) and `ANALYTICS_TO_CLIENT_GAME_RESET` (server clears the in-memory cache). Requests outside that window return `NOT_FOUND`.
 
 ### Phase Start Management
 
@@ -919,7 +1002,7 @@ team-completion-status payload.
 
 #### `PUZZLE_TO_SERVER_FRAGMENT_MOVE`
 **Direction**: Player → Server
-**Trigger**: Player attempts to swap fragments on central grid
+**Trigger**: Player attempts to move or swap a fragment on the central grid
 
 ```json
 {
@@ -936,6 +1019,13 @@ team-completion-status payload.
   "timestamp": "2025-01-XX:XX:XX.XXXZ"
 }
 ```
+
+The event covers two move modes:
+
+- **Swap**: `swapWithFragmentId` is set. The fragment at `targetPosition` (which must be `swapWithFragmentId`) and the moving fragment exchange positions.
+- **Move to empty cell**: `swapWithFragmentId` is `null` or omitted **(optional)**. `targetPosition` must reference an unoccupied cell; the moving fragment relocates into it.
+
+The server validates that `targetPosition` actually matches the requested mode (swap target occupied by the named fragment, or empty cell unoccupied). Mismatches return `SYSTEM_TO_CLIENT_ERROR` with `errorCode: "FORBIDDEN_NOT_OWNER"` if the caller does not own the moving fragment, or `MALFORMED_PAYLOAD` if the position/fragment-ID combination is inconsistent.
 
 #### `PUZZLE_TO_PLAYER_MOVE_RESULT`
 **Direction**: Server → Individual Player
@@ -1033,6 +1123,27 @@ The `fragments` array follows the same proportional-reveal rule as `PUZZLE_TO_CL
 }
 ```
 
+#### `PUZZLE_TO_PLAYER_PERSONAL_STATE`
+**Direction**: Server → Individual Player
+**Trigger**: Same cadence as `PUZZLE_TO_CLIENT_GRID_STATE` (every `gameConfig.gridUpdateInterval` seconds), and additionally one snapshot sent immediately after the player's individual puzzle completes so the player's first set of guide highlights arrives without a delay. Sent only to players who have completed their individual puzzle (Phase 2B); Phase 2A players do not receive this event.
+
+The `guideHighlights` array carries the cells on the central grid currently highlighted as possible positions for *this specific player's* fragment. Highlight count follows the formula in `game-design.md` § *Guide Tokens*. The list is private — different players receive different `guideHighlights` arrays in the same tick.
+
+```json
+{
+  "event": "PUZZLE_TO_PLAYER_PERSONAL_STATE",
+  "payload": {
+    "guideHighlights": [
+      {"x": 1, "y": 2},
+      {"x": 3, "y": 0}
+    ]
+  },
+  "timestamp": "2025-01-XX:XX:XX.XXXZ"
+}
+```
+
+`guideHighlights` may be an empty array if the team has not earned any guide-token thresholds (in which case nothing is highlighted on the player's view). This is the only client-visible delivery channel for guide highlights — they intentionally do not appear in the broadcast `PUZZLE_TO_CLIENT_GRID_STATE`.
+
 ### Strategic Collaboration
 
 #### `PUZZLE_TO_SERVER_RECOMMEND_MOVE`
@@ -1099,6 +1210,17 @@ The `fragments` array follows the same proportional-reveal rule as `PUZZLE_TO_CL
 }
 ```
 
+`response` is exactly `"accept"` or `"reject"`. `responseReason` is **(optional)**; clients may send a short human-readable string for analytics or omit the field. Reject example payload:
+
+```json
+{
+  "moveId": "rec-uuid-67890",
+  "response": "reject"
+}
+```
+
+On reject, the swap is not executed and the recommender receives `PUZZLE_TO_PLAYER_RECOMMENDATION_RESULT` with `response: "reject"` and no `swapExecuted` field.
+
 #### `PUZZLE_TO_PLAYER_RECOMMENDATION_RESULT`
 **Direction**: Server → Original Player
 **Trigger**: Target player responds to recommendation
@@ -1127,8 +1249,8 @@ The `fragments` array follows the same proportional-reveal rule as `PUZZLE_TO_CL
 ```
 
 #### `PUZZLE_TO_PLAYER_RECOMMENDATION_EXPIRED`
-**Direction**: Server → Target Player
-**Trigger**: Recommendation becomes invalid due to grid changes
+**Direction**: Server → Both the original recommender and the target player
+**Trigger**: Recommendation becomes invalid due to grid changes (e.g. one of the involved fragments has since been moved). Sent to both parties so the target can clear the prompt UI and the recommender knows their suggestion is no longer pending.
 
 ```json
 {
@@ -1591,6 +1713,8 @@ The `fragments` array follows the same proportional-reveal rule as `PUZZLE_TO_CL
 ## System-Wide Events (Cross-Phase)
 
 ### Error Handling
+
+The `errorCode` field in both error events draws from the *Error code registry* (Conventions section, near the top of this document). The `errorType` field is a coarser category for log filtering — currently `auth_error`, `validation_error`, or `game_state_error`. The `details`, `context`, and `suggestedActions` fields are **(optional)**.
 
 #### `SYSTEM_TO_CLIENT_ERROR`
 **Direction**: Server → Client

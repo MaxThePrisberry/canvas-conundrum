@@ -6,7 +6,6 @@
   "triviaAnswerTime": 30,
   "triviaGraceTime": 30,
   "puzzleBaseTime": 300,
-  "postGameDuration": 300,
   "gridUpdateInterval": 3,
   "baseTokensPerCorrectAnswer": 20,
   "roleResourceMultiplier": 1.5,

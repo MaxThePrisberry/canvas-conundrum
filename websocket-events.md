@@ -668,13 +668,41 @@ When a player reconnects using the same token:
 
 ## Phase 2: Puzzle Assembly
 
+### Puzzle Preparation
+
+When resource gathering ends, the server enters a brief "preparing puzzle" state during which it crops the chosen source image into per-segment tiles in memory. The host's `PUZZLE_TO_SERVER_PHASE_START` is rejected until preparation completes. This pause maps onto the natural physical-world delay while players gather in the puzzle room.
+
+#### `PUZZLE_TO_HOST_PREPARING`
+**Direction**: Server → Host
+**Trigger**: Sent immediately after the final resource-gathering round completes, signalling that the server has begun tile generation. The host UI should display a "preparing puzzle…" indicator and disable any "start puzzle" controls until `PUZZLE_TO_HOST_READY` arrives.
+
+```json
+{
+  "event": "PUZZLE_TO_HOST_PREPARING",
+  "payload": {},
+  "timestamp": "2025-01-XX:XX:XX.XXXZ"
+}
+```
+
+#### `PUZZLE_TO_HOST_READY`
+**Direction**: Server → Host
+**Trigger**: All segment tiles are cached in memory and the server is ready to deliver them through `/api/segments/{segmentId}`. Sent immediately before `PUZZLE_TO_HOST_PHASE_LOAD` and the per-client `PUZZLE_TO_CLIENT_PHASE_LOAD` broadcast. Once received, the host may send `PUZZLE_TO_SERVER_PHASE_START` to begin the phase timer.
+
+```json
+{
+  "event": "PUZZLE_TO_HOST_READY",
+  "payload": {},
+  "timestamp": "2025-01-XX:XX:XX.XXXZ"
+}
+```
+
 ### Phase Initialization
 
 #### `PUZZLE_TO_CLIENT_PHASE_LOAD`
 **Direction**: Server → All Players
-**Trigger**: Resource gathering phase completes (marks transition to Puzzle Assembly phase)
+**Trigger**: Tile preparation completes (marks transition to Puzzle Assembly phase, emitted immediately after `PUZZLE_TO_HOST_READY`).
 
-**Important**: This event is sent immediately when resource gathering completes. However, the puzzle phase timer doesn't start until the host sends `PUZZLE_TO_SERVER_PHASE_START`. Players can load their puzzle segments but should wait for the host to officially begin the phase.
+**Important**: Players can load their puzzle segments via `GET /api/segments/{segmentId}` (see *Asset Delivery (HTTP)* below) and prepare the puzzle UI on receipt, but the puzzle phase timer doesn't start until the host sends `PUZZLE_TO_SERVER_PHASE_START`. Pieces should remain hidden until the host triggers the start.
 
 ```json
 {
@@ -736,11 +764,42 @@ When a player reconnects using the same token:
 }
 ```
 
+### Asset Delivery (HTTP)
+
+Puzzle imagery is delivered over authenticated HTTP requests, **not** through WebSocket payloads. The `PUZZLE_TO_*_PHASE_LOAD` events tell each client which `segmentId` they own; the bytes themselves are fetched from the endpoints below. This keeps WebSocket frames small and centralizes server-side authorization on tile access.
+
+**Authentication**: All asset endpoints require the same session token used for WebSocket auth, passed via the `Authorization: Bearer {token}` header. Tokens in query strings are not accepted (they leak into proxy logs). Missing/malformed/unrecognized tokens receive `401 Unauthorized`.
+
+#### `GET /api/segments/{segmentId}`
+Returns PNG bytes of a single puzzle segment. The server enforces, in order:
+
+1. The token must correspond to a known player or the host of the current game.
+2. The current phase must be `puzzle_assembly` and tile preparation must be complete (see `PUZZLE_TO_HOST_READY`).
+3. The requested `segmentId` must match either:
+   - the requesting player's own assigned segment, OR
+   - a fragment that has already been completed and is now visible to all players on the central grid, OR
+   - any segment if the request comes from the host (read-only access for monitoring).
+
+Failures return `403 Forbidden`.
+
+#### `GET /api/preview/full`
+Returns PNG bytes of the complete (un-cropped) puzzle source image, used for the clarity-token preview. Server enforces:
+
+1. The token must correspond to a known player or the host.
+2. The current phase must be `puzzle_assembly`.
+3. The current server time must fall inside the active clarity-preview window (calculated from `gameConfig.clarityBasePreviewTime` plus accumulated threshold bonuses, starting from `PUZZLE_TO_CLIENT_PHASE_START`).
+
+Outside the preview window, the server returns `403 Forbidden` regardless of token validity. The window is server-clock authoritative; clients cannot extend it.
+
+**Caching**: Segment responses include `Cache-Control: private, max-age=300` so clients don't refetch their own segment on reconnection within a single game. Tiles are regenerated on each new game and segment IDs are not durable across games, so cross-game cache reuse is impossible.
+
+**Lifecycle**: Tiles exist only between `PUZZLE_TO_HOST_READY` (server has finished generation) and `ANALYTICS_TO_CLIENT_GAME_RESET` (server clears the in-memory cache). Requests outside that window return `404 Not Found`.
+
 ### Phase Start Management
 
 #### `PUZZLE_TO_SERVER_PHASE_START`
 **Direction**: Host → Server
-**Trigger**: Host starts puzzle phase
+**Trigger**: Host starts puzzle phase. Rejected with `SYSTEM_TO_HOST_ERROR` if tile preparation has not yet completed (i.e. before `PUZZLE_TO_HOST_READY`).
 
 ```json
 {
@@ -1804,18 +1863,20 @@ Phase transitions in Canvas Conundrum are handled through existing phase-specifi
 - **Transition Trigger**: All resource gathering rounds complete automatically
 - **Host Events**:
   - Receives `RESOURCE_TO_HOST_PHASE_COMPLETE` when phase 1 ends
-  - Receives `PUZZLE_TO_HOST_PHASE_LOAD` immediately as phase 1 completes
-  - Must send `PUZZLE_TO_SERVER_PHASE_START` to begin puzzle timer
+  - Receives `PUZZLE_TO_HOST_PREPARING` immediately as the server begins tile generation
+  - Receives `PUZZLE_TO_HOST_READY` once tile generation completes
+  - Receives `PUZZLE_TO_HOST_PHASE_LOAD` immediately after `PUZZLE_TO_HOST_READY`
+  - May then send `PUZZLE_TO_SERVER_PHASE_START` to begin puzzle timer (rejected before `PUZZLE_TO_HOST_READY`)
   - Receives `PUZZLE_TO_HOST_PHASE_START` when timer starts
 - **Client Events**:
   - All players receive `RESOURCE_TO_CLIENT_PHASE_COMPLETE` when phase 1 ends
-  - All players receive `PUZZLE_TO_CLIENT_PHASE_LOAD` immediately (marks the transition)
+  - All players receive `PUZZLE_TO_CLIENT_PHASE_LOAD` once tiles are ready (marks the transition)
   - All players receive `PUZZLE_TO_CLIENT_PHASE_START` only after host triggers timer start
-- **Two-Stage Process**:
-  - **Background Loading**: `PUZZLE_TO_CLIENT_PHASE_LOAD` triggers background loading of all necessary puzzle pieces and assets
-  - **Hidden State**: Puzzle pieces are loaded but remain hidden until timer starts
-  - **Display Trigger**: Puzzle interface only becomes visible when `PUZZLE_TO_CLIENT_PHASE_START` is received
-  - **Host Control**: Timer and puzzle display wait for explicit host trigger via `PUZZLE_TO_SERVER_PHASE_START`
+- **Three-Stage Process**:
+  - **Preparation**: Server crops the chosen source image into per-segment tiles in memory. Clients have no visibility into this stage; the host sees a "preparing puzzle…" indicator driven by `PUZZLE_TO_HOST_PREPARING`.
+  - **Background Loading**: `PUZZLE_TO_CLIENT_PHASE_LOAD` triggers each client to fetch its own segment via `GET /api/segments/{segmentId}` and prepare puzzle assets. Pieces remain hidden until the timer starts.
+  - **Display Trigger**: Puzzle interface only becomes visible when `PUZZLE_TO_CLIENT_PHASE_START` is received.
+  - **Host Control**: Timer and puzzle display wait for explicit host trigger via `PUZZLE_TO_SERVER_PHASE_START`.
 
 #### **Puzzle Assembly → Analytics (Phase 2 → 3)**
 - **Transition Trigger**: Puzzle completes successfully or timer expires
@@ -1833,23 +1894,3 @@ This design ensures that:
 - Phase transitions are clearly indicated through functional phase-start events
 - Players receive appropriate context and timing for each phase
 - No redundant messaging reduces network overhead while maintaining clear communication
-
----
-
-## Event Summary
-
-**Total Events**: 50
-- **Setup Phase**: 7 events
-- **Resource Gathering Phase**: 10 events
-- **Puzzle Assembly Phase**: 20 events
-- **Post-Game Analytics**: 5 events
-- **System-Wide Events**: 8 events
-
-**By Direction**:
-- **Client to Server**: 8 events
-- **Host to Server**: 3 events
-- **Server to All Clients**: 13 events
-- **Server to Host Only**: 14 events
-- **Server to Individual Players**: 12 events
-
-This specification provides exact JSON structures for every WebSocket event in Canvas Conundrum, eliminating ambiguity about payload field names, data types, and message formats. Each event includes comprehensive context, making implementation straightforward for both client and server developers.

@@ -1,9 +1,6 @@
 node_modules/
 package-lock.json
 
-# Generated puzzle assets (rebuilt from assets/puzzle-sources/ via preprocess_puzzle_images.py)
-assets/puzzle-tiles/
-
 # Build artifacts
 dist/
 build/

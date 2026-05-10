@@ -45,5 +45,11 @@
   "pointsPerRecommendationAccepted": 8,
   "specialtyQFreqEasy": 0.2,
   "specialtyQFreqMedium": 0.3,
-  "specialtyQFreqHard": 0.4
+  "specialtyQFreqHard": 0.4,
+  "stationHashes": {
+    "anchor": "anchor",
+    "chronos": "chronos",
+    "guide": "guide",
+    "clarity": "clarity"
+  }
 }

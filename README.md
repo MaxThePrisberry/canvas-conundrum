@@ -23,22 +23,25 @@ canvas-conundrum/
 ├── trivia/                   # Open Trivia DB content (CC-BY-SA)
 │   └── {category}/{difficulty}.json
 │
-├── preprocess_puzzle_images.py   # Splits a source image into N×N tile grids
 ├── docker-compose.yml            # Production
 └── docker-compose.override.yml   # Development (hot reload + bind mounts)
 ```
 
 ## Image strategy
 
-Puzzle tiles are **generated at backend build time** and baked into the
-backend image — they are never committed and never served as static files.
-The Go server gates all tile/full-image requests behind session auth so a
-player can only fetch their own assigned segment, and the full-image preview
-is only available during the clarity-token reveal window.
+Puzzle tiles are **generated at runtime, exactly once per game**, when the
+resource-gathering phase ends and the server begins preparing the puzzle
+phase. The Go server crops the source image into per-segment tiles using
+the standard library, holds them in memory, and serves them only through
+authenticated `/api/...` endpoints. Players never receive segment images
+they do not own; the full-image clarity preview is bounded to a
+server-controlled time window.
 
-To add a new puzzle: drop a source image into `assets/puzzle-sources/` and
-rebuild the backend image. The `preprocess_puzzle_images.py` step in
-`backend/Dockerfile` will split it into 3×3 through 8×8 grids automatically.
+Source images live under `assets/puzzle-sources/` and are bind-mounted into
+the backend read-only at `/app/puzzle-sources/`. To add a new puzzle: drop
+a file in there and restart the container — no rebuild needed. The server
+validates the directory on startup and refuses to boot if no usable images
+are present.
 
 ## Running
 

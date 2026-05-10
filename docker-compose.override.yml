@@ -13,9 +13,6 @@ services:
       - ./backend:/src
       - go-mod-cache:/go/pkg/mod
       - go-build-cache:/root/.cache/go-build
-      # In dev, also bind-mount tile output so you can re-run the Python
-      # script without rebuilding the image.
-      - ./assets/puzzle-tiles:/app/puzzle-tiles:ro
     ports:
       - "8081:8080" # expose backend directly for curl/debugging
     command: ["air", "-c", ".air.toml"]

@@ -14,7 +14,6 @@ is under the owner "MaxThePrisberry" and is called "canvas-conundrum".
 - `trivia/` — Open Trivia DB content, mounted into backend at runtime
 - `game-config.json` — tunable game balance values, mounted at runtime
 - `game-design.md`, `websocket-events.md` — gameplay and protocol specs
-- `preprocess_puzzle_images.py` — splits a source image into 3×3–8×8 tile grids
 
 # Development commands
 
@@ -24,9 +23,6 @@ docker compose up --build
 
 # Run production-style images
 docker compose -f docker-compose.yml up --build
-
-# Re-split a puzzle source image locally without rebuilding the backend
-python preprocess_puzzle_images.py assets/puzzle-sources/nature_image.png
 
 # Pre-commit
 pre-commit install
@@ -40,8 +36,12 @@ should be derived from these specs, not the other way around.
 
 # Image strategy
 
-Puzzle tiles are generated at backend build time and baked into the backend
-image. They are never committed to git and never served as static files — the
-Go server gates all tile fetches behind session auth so each client only ever
+Puzzle tiles are generated **at runtime**, exactly once per game, when the
+resource-gathering phase ends. Source images live under
+`assets/puzzle-sources/` and are bind-mounted read-only into the backend.
+The Go server crops the chosen source into per-segment tiles using the
+standard library `image` package, caches them in memory, and serves them
+only through authenticated `/api/...` endpoints. Each client only ever
 receives its own assigned segment. The clarity-token full-image preview is
-similarly server-gated to a limited time window.
+similarly server-gated to a limited time window. Tiles are never written
+to disk and never committed to git.

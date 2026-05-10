@@ -62,7 +62,7 @@ All communication after initial connection requires authentication using the sta
 - Comprehensive input validation (8KB message limit)
 - UTF-8 text validation with length limits
 - Privilege verification (host vs player actions)
-- Rate limiting on fragment movements (`constants.FragmentMoveCooldown`)
+- Rate limiting on fragment movements (`gameConfig.fragmentMoveCooldown`)
 
 ## Player Setup and Character Selection
 
@@ -75,7 +75,7 @@ All communication after initial connection requires authentication using the sta
 
 **Role Mechanics:**
 - Each role provides bonus collection for specific token type
-- Bonus multiplier: `constants.RoleResourceMultiplier`
+- Bonus multiplier: `gameConfig.roleResourceMultiplier`
 - Even distribution of roles enforced across players
 - Host does not select a role
 
@@ -93,13 +93,13 @@ All communication after initial connection requires authentication using the sta
 - Players select 1 category as their specialty
 - Specialty questions are harder difficulty (+1 level)
 - Same time limits as regular questions (no extension)
-- Specialty bonus: `constants.SpecialtyPointMultiplier`
+- Specialty bonus: `gameConfig.specialtyPointMultiplier`
 - Players are immediately marked as ready upon successful specialty selection
 
 **Specialty Question Frequency:**
-- Easy Mode: `constants.SpecialtyQFreqEasy`
-- Medium Mode: `constants.SpecialtyQFreqMedium`
-- Hard Mode: `constants.SpecialtyQFreqHard`
+- Easy Mode: `gameConfig.specialtyQFreqEasy`
+- Medium Mode: `gameConfig.specialtyQFreqMedium`
+- Hard Mode: `gameConfig.specialtyQFreqHard`
 
 ## Game Phases
 
@@ -108,11 +108,11 @@ Players connect, select roles and specialties, host monitors readiness and start
 
 ### Phase 1: Resource Gathering
 **Duration**: Configurable rounds and duration per round
-- Number of rounds: `constants.ResourceGatheringRounds`
-- Round duration: `constants.ResourceGatheringRoundDuration` seconds per round
+- Number of rounds: `gameConfig.resourceGatheringRounds`
+- Round duration: `gameConfig.resourceGatheringRoundDuration` seconds per round
 - Each gathering round = one trivia round = one trivia question sent to all players
-- First part of round: Players select their answer from multiple choice options for `constants.TriviaAnswerTime` seconds
-- Second part of round: Answers locked in, marked right/wrong, grace period of `constants.TriviaGraceTime` seconds for location changes and team discussion
+- First part of round: Players select their answer from multiple choice options for `gameConfig.triviaAnswerTime` seconds
+- Second part of round: Answers locked in, marked right/wrong, grace period of `gameConfig.triviaGraceTime` seconds for location changes and team discussion
 
 **Location**: 4 QR code stations in physical spaces
 
@@ -124,10 +124,10 @@ Players connect, select roles and specialties, host monitors readiness and start
 - Each station corresponds to different token type
 - Location verification only required when changing stations
 - QR codes' text value is the hash sent to the server for validation
-- Station hashes stored as constants: `constants.HashAnchorStation`, `constants.HashChronosStation`, `constants.HashGuideStation`, `constants.HashClarityStation`
+- Station hashes stored as constants: `gameConfig.stationHashes.anchor`, `gameConfig.stationHashes.chronos`, `gameConfig.stationHashes.guide`, `gameConfig.stationHashes.clarity`
 
 **Trivia System:**
-- One question delivered per gathering round (every `constants.ResourceGatheringRoundDuration` seconds)
+- One question delivered per gathering round (every `gameConfig.resourceGatheringRoundDuration` seconds)
 - Questions presented as distinct multiple-choice options
 - No fuzzy matching - clear right/wrong based on selected option
 - Automatic question cycling prevents repetition
@@ -143,14 +143,14 @@ Players connect, select roles and specialties, host monitors readiness and start
 **Answer Validation:**
 - Multiple-choice selection with clear right/wrong determination
 - No fuzzy matching or partial credit
-- Answer selection locked and marked correct or incorrect after `constants.TriviaAnswerTime` seconds
+- Answer selection locked and marked correct or incorrect after `gameConfig.triviaAnswerTime` seconds
 - Comprehensive logging for debugging and analysis
 
 #### Resource Token System
 **Token Types & Effects:**
 
 1. **Anchor Tokens** → Pre-solved Individual Puzzle Pieces
-   - 6 thresholds: `teamAnchorTokens / constants.AnchorTokenThreshold`
+   - 6 thresholds: `teamAnchorTokens / gameConfig.anchorTokenThreshold`
    - Effect: Each threshold pre-solves 2 pieces of the 16-piece individual puzzle
    - Maximum 12 pieces pre-solved (6 thresholds × 2 pieces)
    - Pre-solved pieces are visually locked and unmovable
@@ -158,14 +158,14 @@ Players connect, select roles and specialties, host monitors readiness and start
    - Leaves minimum 4 pieces for manual solving
 
 2. **Chronos Tokens** → Extended Puzzle Time
-   - 6 thresholds: `teamChronosTokens / constants.ChronosTokenThreshold`
+   - 6 thresholds: `teamChronosTokens / gameConfig.chronosTokenThreshold`
    - Effect: +20 seconds per threshold to puzzle assembly time
    - Maximum +120 seconds (6 thresholds × 20 seconds)
-   - Base time: `constants.PuzzleBaseTime` seconds
+   - Base time: `gameConfig.puzzleBaseTime` seconds
    - Team-wide benefit applied to entire puzzle phase
 
 3. **Guide Tokens** → Fragment Placement Guidance on Central Grid
-   - 6 thresholds: `teamGuideTokens / constants.GuideTokenThreshold`
+   - 6 thresholds: `teamGuideTokens / gameConfig.guideTokenThreshold`
    - Effect: Highlights possible positions for player's fragment on central grid on player's personal device
    - Each threshold removes (gridSize × gridSize) / 7 highlighted squares
    - Progression from many possible positions to precise guidance
@@ -173,18 +173,18 @@ Players connect, select roles and specialties, host monitors readiness and start
    - Only applies after individual puzzle completion
 
 4. **Clarity Tokens** → Complete Image Preview
-   - 6 thresholds: `teamClarityTokens / constants.ClarityTokenThreshold`
+   - 6 thresholds: `teamClarityTokens / gameConfig.clarityTokenThreshold`
    - Effect: +1 second per threshold of complete image display
    - Maximum 6 seconds additional preview time
-   - Base preview time: `constants.ClarityBasePreviewTime` seconds
+   - Base preview time: `gameConfig.clarityBasePreviewTime` seconds
    - Shown automatically at puzzle phase start
    - Helps with spatial understanding and planning
 
 #### Scoring System
 **Base Scoring:**
-- Correct Answer: `constants.BaseTokensPerCorrectAnswer` tokens
-- Role Bonus: `constants.RoleResourceMultiplier` when at matching station
-- Specialty Bonus: `constants.SpecialtyPointMultiplier` for specialty questions
+- Correct Answer: `gameConfig.baseTokensPerCorrectAnswer` tokens
+- Role Bonus: `gameConfig.roleResourceMultiplier` when at matching station
+- Specialty Bonus: `gameConfig.specialtyPointMultiplier` for specialty questions
 - Difficulty Modifier: Applied to final token awards
 
 **Token Distribution:**
@@ -196,7 +196,7 @@ Players connect, select roles and specialties, host monitors readiness and start
 ### Phase 2: Puzzle Assembly
 **Location**: Large central room (gymnasium recommended)
 
-**Duration**: `constants.PuzzleBaseTime` seconds + chronos bonuses + difficulty modifiers
+**Duration**: `gameConfig.puzzleBaseTime` seconds + chronos bonuses + difficulty modifiers
 
 **Participants**: Players solve and collaborate (host monitors + shows big central grid for phase 2B)
 
@@ -306,14 +306,14 @@ Player Count → Grid Size → Total Fragments
    - Marked as `playerId: null` in system
 
 **Movement Mechanics (Switches/Swaps):**
-- **Movement Cooldown**: `constants.FragmentMoveCooldown` ms enforced consistently for swapped pieces
+- **Movement Cooldown**: `gameConfig.fragmentMoveCooldown` ms enforced consistently for swapped pieces
 - **Terminology**: Also called fragment move requests, piece recommendations, or switch requests
 - **Position Validation**: All swaps validated against grid boundaries (0 to gridSize-1)
 - **Collision Resolution**: Fragments swap positions or one fragment moves to open grid space
 - **Permission Checking**: Server validates ownership before allowing movement
 - **State Synchronization**:
   - Host: Immediate updates on all movements
-  - Players: Updates every `constants.GridUpdateInterval` seconds
+  - Players: Updates every `gameConfig.gridUpdateInterval` seconds
 
 #### Fragment Visibility and State Management
 
@@ -324,11 +324,11 @@ Player Count → Grid Size → Total Fragments
 - **Personal View Consistency**: Each player sees identical central grid state
 
 **State Broadcasting:**
-- **Central Puzzle State**: Complete grid state sent to all players every `constants.GridUpdateInterval` seconds
+- **Central Puzzle State**: Complete grid state sent to all players every `gameConfig.gridUpdateInterval` seconds
 - **Host Updates**: Receives immediate updates on all fragment movements and state changes
 - **Personal Puzzle State**: Individual view with guide highlighting (from guide tokens)
 - **Update Frequency**:
-  - Players: Periodic updates every `constants.GridUpdateInterval` seconds (default 3s)
+  - Players: Periodic updates every `gameConfig.gridUpdateInterval` seconds (default 3s)
   - Host: Immediate updates on all changes
 - **Phase Tracking**: Server implicitly tracks each player as Phase 2A (individual) or Phase 2B (collaborative)
 
@@ -358,14 +358,14 @@ Player Count → Grid Size → Total Fragments
 - **Balanced Challenge**: Minimum 4 pieces always require manual solving
 
 **Chronos Token Time Extension:**
-- **Base Time**: `constants.PuzzleBaseTime` seconds for puzzle assembly phase
+- **Base Time**: `gameConfig.puzzleBaseTime` seconds for puzzle assembly phase
 - **Threshold Bonuses**: +20 seconds per threshold level achieved
 - **Total Time Calculation**: Base + (thresholds × 20) + difficulty modifiers
 - **Team Benefit**: Extended time applies to entire team collaboration period
 
 **Clarity Token Preview:**
 - **Automatic Display**: Shows complete image automatically at puzzle phase start
-- **Duration Calculation**: `constants.ClarityBasePreviewTime` + (thresholds × 1) seconds
+- **Duration Calculation**: `gameConfig.clarityBasePreviewTime` + (thresholds × 1) seconds
 - **Maximum Preview**: Up to 6 seconds additional preview time
 - **Strategic Value**: Helps players understand spatial relationships before solving
 
@@ -465,21 +465,21 @@ Individual Score =
 ### Difficulty Settings Impact
 **Easy Mode:**
 - Easier trivia question selection
-- Time multiplier: `constants.EasyTimeMultiplier`
-- Token threshold multiplier: `constants.EasyThresholdMultiplier`
-- Specialty question probability: `constants.EasySpecialtyProbability`
+- Time multiplier: `gameConfig.easyTimeMultiplier`
+- Token threshold multiplier: `gameConfig.easyThresholdMultiplier`
+- Specialty question probability: `gameConfig.easySpecialtyProbability`
 
 **Medium Mode:**
 - Baseline difficulty for all aspects
-- Time multiplier: `constants.MediumTimeMultiplier`
-- Token threshold multiplier: `constants.MediumThresholdMultiplier`
-- Specialty question probability: `constants.MediumSpecialtyProbability`
+- Time multiplier: `gameConfig.mediumTimeMultiplier`
+- Token threshold multiplier: `gameConfig.mediumThresholdMultiplier`
+- Specialty question probability: `gameConfig.mediumSpecialtyProbability`
 
 **Hard Mode:**
 - Harder trivia questions prioritized
-- Time multiplier: `constants.HardTimeMultiplier`
-- Token threshold multiplier: `constants.HardThresholdMultiplier`
-- Specialty question probability: `constants.HardSpecialtyProbability`
+- Time multiplier: `gameConfig.hardTimeMultiplier`
+- Token threshold multiplier: `gameConfig.hardThresholdMultiplier`
+- Specialty question probability: `gameConfig.hardSpecialtyProbability`
 
 ### Dynamic Scaling Applications
 - Trivia question difficulty selection
@@ -489,28 +489,51 @@ Individual Score =
 
 ## Technical Architecture
 
+### Deployment
+- **Containerization**: Backend and frontend ship as separate Docker images, orchestrated by `docker-compose`.
+- **Single-Origin Topology**: Browser only ever talks to the frontend container; nginx reverse-proxies `/ws` and `/api` to the backend over an internal compose network. Eliminates CORS and means QR-code links and dev/prod URLs are identical.
+- **Runtime Configuration**: `game-config.json` and `trivia/` are bind-mounted into the backend at runtime (not baked into the image), so tuning values and refreshing trivia content does not require a rebuild.
+
 ### Backend Infrastructure
-- **Language**: Go with Gorilla WebSocket
-- **Concurrency**: Thread-safe operations with RWMutex
-- **Performance**: Connection pooling, efficient broadcasting
-- **Scalability**: Support for 4-64 players dynamically
+- **Language**: Go (with a WebSocket library — Gorilla WebSocket is a reasonable default).
+- **Concurrency**: Thread-safe operations with RWMutex.
+- **Performance**: Connection pooling, efficient broadcasting.
+- **Scalability**: Support for 4-64 players dynamically.
 
 ### Communication Protocol
-- **WebSocket**: Full-duplex real-time communication
-- **Authentication**: UUID-based session management with structured event format
-- **Validation**: Comprehensive input sanitization
-- **Error Handling**: Detailed error responses with context
+- **WebSocket**: Full-duplex real-time communication for game events.
+- **Authentication**: UUID-based session management with structured event format.
+- **Validation**: Comprehensive input sanitization.
+- **Error Handling**: Detailed error responses with context.
+
+### Asset Delivery (Puzzle Images)
+- **Source Images at Runtime**: Source images live under `assets/puzzle-sources/` and are bind-mounted into the backend container read-only at `/app/puzzle-sources/`. They are *not* baked into the image — adding a puzzle requires only a file drop and container restart.
+- **Startup Validation**: On boot, the server verifies that `puzzle-sources/` is non-empty and that every file decodes as a usable image (square or square-croppable). The server refuses to start if validation fails, so missing or corrupt sources are caught at deploy time rather than mid-game.
+- **Deferred Tile Generation**: Tiles are *not* generated at build time, on every connection, or on demand. Generation is triggered exactly once per game, at the resource-gathering → puzzle-assembly transition (see *Phase 1 → 2 Preparation* below), using the Go standard library's `image` package. Only the segments needed for the current player count and grid size are produced (e.g. 16 crops for a 16-player 4×4 game), not all six grid sizes.
+- **In-Memory Tile Cache**: Generated segment images live in an in-memory `map[segmentId][]byte` held by the game manager. They are never written to disk and are released when the game resets.
+- **Server-Gated Fetches**: The Go server is the sole holder of tile bytes. It exposes authenticated HTTP endpoints (under `/api/...`) that validate the requesting session token and check that the player is the assigned owner of the requested segment before streaming the bytes. Players never receive segment images they do not own.
+- **Time-Windowed Full-Image Preview**: The clarity-token preview is enforced server-side. The full assembled image is only available through an authenticated endpoint during the calculated preview window (`gameConfig.clarityBasePreviewTime` + threshold bonuses); requests outside the window return 403 regardless of token validity.
+- **Central Grid Fragments**: Once a player completes their individual puzzle, their fragment becomes visible to all participants. The server then permits all authenticated session tokens to fetch that specific fragment's image — visibility expansion is a server-controlled state transition, not a client decision.
+
+### Phase 1 → 2 Preparation
+The transition from resource gathering to puzzle assembly is gated on tile readiness:
+
+1. When the resource-gathering phase ends, the server immediately enters a "preparing puzzle" state and emits `PUZZLE_TO_HOST_PREPARING` so the host UI can show a "preparing puzzle…" indicator. This pause maps onto the natural physical-world delay while players gather in the puzzle room.
+2. The server selects the puzzle source image, computes the central grid size from the connected player count, and crops the source into per-segment images using Go's standard library. For typical games this completes in well under a second.
+3. Once all segment images are cached in memory, the server emits `PUZZLE_TO_HOST_READY` followed by `PUZZLE_TO_HOST_PHASE_LOAD` and `PUZZLE_TO_CLIENT_PHASE_LOAD`.
+4. The host's `PUZZLE_TO_SERVER_PHASE_START` message is rejected with an error if it arrives before tile preparation has completed.
 
 ### State Management
-- **Game State**: Atomic transitions between phases
-- **Player State**: Individual progress and analytics tracking
-- **Puzzle State**: Real-time grid synchronization with dual-system architecture
-- **Analytics**: Persistent tracking across reconnections
+- **Game State**: Atomic transitions between phases.
+- **Player State**: Individual progress and analytics tracking.
+- **Puzzle State**: Real-time grid synchronization with dual-system architecture.
+- **Analytics**: Persistent tracking across reconnections.
 
 ### Security Features
-- **Input Validation**: Size limits, format checking, UTF-8 validation
-- **Rate Limiting**: Fragment movement cooldown enforcement
-- **Privilege Checking**: Host vs player action authorization
+- **Input Validation**: Size limits, format checking, UTF-8 validation.
+- **Rate Limiting**: Fragment movement cooldown enforcement.
+- **Privilege Checking**: Host vs player action authorization.
+- **Asset Authorization**: All puzzle imagery served through authenticated, server-gated endpoints (see *Asset Delivery* above).
 
 ## Advanced Features
 
@@ -586,34 +609,36 @@ Individual Score =
 
 ## Configuration and Customization
 
-### Server Configuration (constants/game_balance.go)
+### Server Configuration (`game-config.json`)
+All values below come from `game-config.json`, mounted into the backend container at runtime so they can be tuned without a rebuild.
+
 **Player Limits:**
-- Minimum Players: 4 (excluding host)
-- Maximum Players: 64 (excluding host)
+- Minimum Players: `gameConfig.minPlayers` (excluding host)
+- Maximum Players: `gameConfig.maxPlayers` (excluding host)
 
 **Phase Timing:**
-- Resource Gathering Rounds: `constants.ResourceGatheringRounds`
-- Resource Gathering Round Duration: `constants.ResourceGatheringRoundDuration` seconds
+- Resource Gathering Rounds: `gameConfig.resourceGatheringRounds`
+- Resource Gathering Round Duration: `gameConfig.resourceGatheringRoundDuration` seconds
 - One trivia question per gathering round
-- Puzzle Base Time: `constants.PuzzleBaseTime` seconds
-- Post-Game Analytics: `constants.PostGameDuration` seconds
+- Puzzle Base Time: `gameConfig.puzzleBaseTime` seconds
+- Post-Game Analytics: `gameConfig.postGameDuration` seconds
 
 **Token Economics:**
-- Base Tokens Per Answer: `constants.BaseTokensPerCorrectAnswer`
-- Role Multiplier: `constants.RoleResourceMultiplier`
-- Specialty Multiplier: `constants.SpecialtyPointMultiplier`
-- Anchor Token Threshold: `constants.AnchorTokenThreshold`
-- Chronos Token Threshold: `constants.ChronosTokenThreshold`
-- Guide Token Threshold: `constants.GuideTokenThreshold`
-- Clarity Token Threshold: `constants.ClarityTokenThreshold`
+- Base Tokens Per Answer: `gameConfig.baseTokensPerCorrectAnswer`
+- Role Multiplier: `gameConfig.roleResourceMultiplier`
+- Specialty Multiplier: `gameConfig.specialtyPointMultiplier`
+- Anchor Token Threshold: `gameConfig.anchorTokenThreshold`
+- Chronos Token Threshold: `gameConfig.chronosTokenThreshold`
+- Guide Token Threshold: `gameConfig.guideTokenThreshold`
+- Clarity Token Threshold: `gameConfig.clarityTokenThreshold`
 
 **Game Balance:**
-- Fragment Movement Cooldown: `constants.FragmentMoveCooldown` ms
-- Individual Puzzle Pieces: `constants.IndividualPuzzlePieces` per player
-- Answer Selection Time: `constants.TriviaAnswerTime`
-- Grace Period Time: `constants.TriviaGraceTime`
-- Max Specialties Per Player: `constants.MaxSpecialtiesPerPlayer` (set to 1)
-- Grid Update Interval: `constants.GridUpdateInterval` seconds (default 3s)
+- Fragment Movement Cooldown: `gameConfig.fragmentMoveCooldown` ms
+- Individual Puzzle Pieces: `gameConfig.individualPuzzlePieces` per player
+- Answer Selection Time: `gameConfig.triviaAnswerTime`
+- Grace Period Time: `gameConfig.triviaGraceTime`
+- Max Specialties Per Player: `gameConfig.maxSpecialtiesPerPlayer` (set to 1)
+- Grid Update Interval: `gameConfig.gridUpdateInterval` seconds (default 3s)
 
 ---
 

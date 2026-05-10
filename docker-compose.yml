@@ -13,13 +13,13 @@ services:
     environment:
       ENVIRONMENT: production
       PORT: "8080"
-      # Paths inside the container. Tiles are baked into the image at build
-      # time; trivia and game config are mounted so they can be tuned without
-      # a rebuild.
-      TILE_DIR: /app/puzzle-tiles
+      # All content is mounted at runtime so the backend image stays
+      # immutable and content can be tuned without rebuilds.
+      PUZZLE_SOURCES_DIR: /app/puzzle-sources
       TRIVIA_DIR: /app/trivia
       CONFIG_PATH: /app/game-config.json
     volumes:
+      - ./assets/puzzle-sources:/app/puzzle-sources:ro
       - ./trivia:/app/trivia:ro
       - ./game-config.json:/app/game-config.json:ro
     healthcheck:

@@ -156,12 +156,14 @@ Players connect, select roles and specialties, host monitors readiness and start
 **Token Types & Effects:**
 
 1. **Anchor Tokens** → Pre-solved Individual Puzzle Pieces
-   - 6 thresholds: `teamAnchorTokens / gameConfig.anchorTokenThreshold`
-   - Effect: Each threshold pre-solves 2 pieces of the 16-piece individual puzzle
-   - Maximum 12 pieces pre-solved (6 thresholds × 2 pieces)
+   - Threshold count: `gameConfig.maxThresholds` (default 6)
+   - Threshold spacing: `teamAnchorTokens / gameConfig.anchorTokenThreshold`
+   - **Derived limits** (computed from `gameConfig.individualPuzzlePieces` and `gameConfig.maxThresholds`):
+     - `maxPreSolvedPieces = floor(individualPuzzlePieces × 0.75)` — caps total pieces an anchor effect can pre-solve
+     - `piecesPreSolvedPerThreshold = ceil(maxPreSolvedPieces / maxThresholds)` — pieces unlocked at each threshold (capped so the cumulative count never exceeds `maxPreSolvedPieces`)
+     - At default 16 pieces: 12 max pre-solved, 2 per threshold, minimum 4 pieces always require manual solving
    - Pre-solved pieces are visually locked and unmovable
    - Only affects individual puzzle solving, NOT the central grid
-   - Leaves minimum 4 pieces for manual solving
 
 2. **Chronos Tokens** → Extended Puzzle Time
    - 6 thresholds: `teamChronosTokens / gameConfig.chronosTokenThreshold`
@@ -241,11 +243,11 @@ Canvas Conundrum operates with two completely independent puzzle systems that re
 - **Real-Time Updates**: All movements are broadcast to all participants periodically
 
 **Central Grid Mechanics:**
-- **Dynamic Scaling**: Grid size automatically scales with player count
-- **Fragment Creation**: Each completed individual puzzle becomes one movable fragment
-- **Unassigned Fragments**: If more fragments in central puzzle than players, unassigned fragments appear gradually as players finish individual fragments
-- **Movement Rules**: Players can move their own fragments and unassigned fragments
-- **Collaboration Features**: Recommendation system for strategic coordination
+- **Dynamic Scaling**: Grid size automatically scales with player count.
+- **Fragment Creation**: Each completed individual puzzle becomes one movable fragment.
+- **Proportional Unassigned Fragment Reveal**: When more grid cells exist than players (i.e. `gridSize² > playerCount`), unassigned fragments appear gradually in lockstep with player completions. After *k* of *N* players have finished their individual puzzles, the grid shows a total of `ceil((k / N) × gridSize²)` fragments — *k* of which are the completed player-owned fragments, with the remainder filled in by randomly-selected unassigned fragments at random unoccupied positions. When `gridSize² == playerCount`, no unassigned fragments exist and the formula naturally yields zero.
+- **Movement Rules**: Players can move their own fragments and any unassigned fragments.
+- **Collaboration Features**: Recommendation system for strategic coordination.
 
 ### The Critical Transformation Moment
 
@@ -354,11 +356,11 @@ Player Count → Grid Size → Total Fragments
 - **Public vs Private**: Fragment positions public on host screen, highlights private to player
 
 **Anchor Token Pre-Solving:**
-- **Individual Puzzle Only**: Pre-solves pieces in 16-piece individual puzzles
+- **Individual Puzzle Only**: Pre-solves pieces in each player's individual puzzle (`gameConfig.individualPuzzlePieces` total per player)
 - **Visual Lock**: Pre-solved pieces marked as locked and unmovable
 - **No Central Grid Effect**: Does NOT pre-place fragments on central grid
-- **Progressive Unlock**: 2 pieces pre-solved per threshold (max 12 pieces)
-- **Balanced Challenge**: Minimum 4 pieces always require manual solving
+- **Progressive Unlock**: `piecesPreSolvedPerThreshold` pieces released per threshold, up to `maxPreSolvedPieces` total (both derived — see *Anchor Tokens* under Resource Token System)
+- **Balanced Challenge**: At least 25% of pieces always require manual solving (since `maxPreSolvedPieces ≤ floor(individualPuzzlePieces × 0.75)`)
 
 **Chronos Token Time Extension:**
 - **Base Time**: `gameConfig.puzzleBaseTime` seconds for puzzle assembly phase
@@ -416,10 +418,18 @@ Canvas Conundrum handles disconnections differently based on the game phase to b
 - **Limited Reconnection**: Cannot reconnect during puzzle assembly phase; can reconnect during resource gathering and analytics phases
 
 **Host Disconnection:**
-- **Game Continuation**: Game continues without interruption during puzzle phase
-- **Monitoring Loss**: Real-time host monitoring temporarily unavailable
-- **State Preservation**: Complete game state maintained for host reconnection
-- **Automatic Recovery**: Host can reconnect to resume monitoring at any time
+
+The general rule: a host disconnect should never block phases that don't require host input or a shared host-driven display. Where the host's role is purely monitoring, the game proceeds; where the host's screen is part of the gameplay artifact (the shared central grid display) or where host input is required to advance state, the game pauses.
+
+| Phase | Effect of host disconnect |
+|---|---|
+| Setup | **Pause.** Game cannot start without `SETUP_TO_SERVER_START_GAME` from the host. |
+| Resource Gathering | **No effect.** Trivia rounds proceed on schedule; tokens accumulate. Host loses real-time monitoring until reconnect. |
+| Puzzle Preparation (Phase 1 → 2 transition) | **Tile generation completes**, but the puzzle phase timer cannot start until the host reconnects and sends `PUZZLE_TO_SERVER_PHASE_START`. Game waits in a "ready, awaiting host" state. |
+| Puzzle Assembly | **Timer pauses, resumes on reconnect.** Players still solving their individual puzzles privately (Phase 2A) continue normally — they don't depend on the host's display. Phase 2B players retain access to the central grid on their own devices and may continue moving fragments, but the shared big-screen experience is unavailable until host reconnects. The puzzle phase deadline is extended by the disconnect duration. |
+| Analytics | **No effect.** Reports remain available on each player's device; reset still requires the host but there is no time pressure. |
+
+In all cases: complete game state is preserved for host reconnection, and players are notified of host disconnection and reconnection events. If the host never reconnects, the affected phase remains stalled — recovery requires a deployment-level restart.
 
 #### Disconnection and Error Handling
 
@@ -634,7 +644,7 @@ All values below come from `game-config.json`, mounted into the backend containe
 
 **Game Balance:**
 - Fragment Movement Cooldown: `gameConfig.fragmentMoveCooldown` ms
-- Individual Puzzle Pieces: `gameConfig.individualPuzzlePieces` per player
+- Individual Puzzle Pieces: `gameConfig.individualPuzzlePieces` per player — must be a perfect square (4, 9, 16, 25, 36, 49, 64) since it's manipulated as an N×N sub-grid; default 16. The server rejects startup if this value is not a perfect square.
 - Answer Selection Time: `gameConfig.triviaAnswerTime`
 - Grace Period Time: `gameConfig.triviaGraceTime`
 - Max Specialties Per Player: `gameConfig.maxSpecialtiesPerPlayer` (set to 1)

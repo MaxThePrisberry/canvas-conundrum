@@ -23,8 +23,6 @@
   "fragmentMoveCooldown": 2500,
   "maxSpecialtiesPerPlayer": 1,
   "clarityBasePreviewTime": 3,
-  "piecesPreSolvedPerThreshold": 2,
-  "maxPreSolvedPieces": 12,
   "timeExtensionPerThreshold": 20,
   "previewTimePerThreshold": 1,
   "easyTimeMultiplier": 1.2,

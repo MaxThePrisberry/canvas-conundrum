@@ -966,6 +966,8 @@ team-completion-status payload.
 **Direction**: Server → All Players
 **Trigger**: Periodic updates (every 3 seconds) or after movements
 
+The `fragments` array grows over time as players complete their individual puzzles. Per the *Proportional Unassigned Fragment Reveal* rule in `game-design.md`, after *k* of *N* players have completed their individual puzzles the array contains `ceil((k / N) × gridSize²)` entries — *k* player-owned fragments plus the rest randomly-selected unassigned fragments at random unoccupied positions.
+
 ```json
 {
   "event": "PUZZLE_TO_CLIENT_GRID_STATE",
@@ -992,6 +994,8 @@ team-completion-status payload.
 #### `PUZZLE_TO_HOST_GRID_STATE`
 **Direction**: Server → Host
 **Trigger**: Immediate updates on any change
+
+The `fragments` array follows the same proportional-reveal rule as `PUZZLE_TO_CLIENT_GRID_STATE` — only the fragments currently visible on the central grid are included.
 
 ```json
 {

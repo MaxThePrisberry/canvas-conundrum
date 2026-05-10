@@ -1,0 +1,13 @@
+# Applies to backend builds (context: . in docker-compose.yml).
+# The frontend has its own dockerignore at frontend/.dockerignore since
+# its build context is ./frontend.
+.git
+.github
+**/node_modules
+frontend
+**/*.log
+**/dist
+**/build
+docker-compose*.yml
+*.md
+!backend/**/*.md

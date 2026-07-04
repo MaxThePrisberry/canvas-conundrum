@@ -254,7 +254,7 @@ All currently-connected players additionally receive `SYSTEM_TO_CLIENT_HOST_RECO
 }
 ```
 
-The server processes these messages serially; if two players race for the last slot of a role, the first to land wins. The loser receives `SYSTEM_TO_CLIENT_ERROR` with `errorCode: "ROLE_FULL"` and must reselect a role and resubmit. Their previously submitted specialty and player name are preserved server-side; the resubmission only needs a new `selectedRole`.
+The server processes these messages serially; if two players race for the last slot of a role, the first to land wins and the loser receives `SYSTEM_TO_CLIENT_ERROR` with `errorCode: "ROLE_FULL"` (see *Race Resolution* in `game-design.md`). The resubmission only needs a new `selectedRole` — specialty and name are preserved server-side.
 
 #### `SETUP_TO_CLIENT_LOBBY_STATUS`
 **Direction**: Server → All Players
@@ -560,7 +560,7 @@ The server determines which token type an answer earns from its own station trac
 
 #### `RESOURCE_TO_CLIENT_TEAM_PROGRESS`
 **Direction**: Server → All Players
-**Trigger**: After each round or significant progress
+**Trigger**: End of each round's answer window, after answers are marked and tokens awarded
 
 ```json
 {
@@ -1191,7 +1191,7 @@ The `guideHighlights` array carries the cells on the central grid currently high
 }
 ```
 
-`guideHighlights` is an empty array until the team earns its first guide-token threshold; the client renders no highlights in that case. Once the first threshold is earned the array contains `ceil(gridSize² × (maxThresholds − 1) / maxThresholds)` cells and shrinks with each subsequent threshold, converging to exactly one cell at full thresholds — the correct destination. The full formula lives in `game-design.md` § *Guide Tokens*. This is the only client-visible delivery channel for guide highlights — they intentionally do not appear in the broadcast `PUZZLE_TO_CLIENT_GRID_STATE`.
+`guideHighlights` is an empty array until the team earns its first guide-token threshold. This is the only client-visible delivery channel for guide highlights — they intentionally do not appear in the broadcast `PUZZLE_TO_CLIENT_GRID_STATE`.
 
 ### Strategic Collaboration
 
@@ -1773,32 +1773,6 @@ The `errorCode` field in both error events draws from the *Error code registry* 
 
 ### Connection Management
 
-#### `SYSTEM_TO_CLIENT_DISCONNECTION_WARNING`
-**Direction**: Server → Client
-**Trigger**: Connection issues detected
-
-```json
-{
-  "event": "SYSTEM_TO_CLIENT_DISCONNECTION_WARNING",
-  "payload": {
-    "warning": "connection_unstable",
-    "message": "Connection quality degraded, monitoring for disconnection",
-    "reconnectInstructions": "If disconnected, reconnect using the same browser session",
-    "statePreservation": {
-      "phase": "resource_gathering",
-      "progress": "saved",
-      "canReconnect": true
-    },
-    "connectionMetrics": {
-      "latency": 250,
-      "packetLoss": 0.05,
-      "lastPong": "2025-01-XX:XX:XX.XXXZ"
-    }
-  },
-  "timestamp": "2025-01-XX:XX:XX.XXXZ"
-}
-```
-
 #### `SYSTEM_TO_CLIENT_HOST_DISCONNECTED`
 **Direction**: Server → All Players
 **Trigger**: Host disconnects
@@ -1916,12 +1890,7 @@ The `errorCode` field in both error events draws from the *Error code registry* 
   "event": "SYSTEM_PING",
   "payload": {
     "clientTimestamp": "2025-01-XX:XX:XX.XXXZ",
-    "sequenceNumber": 42,
-    "connectionQuality": {
-      "latency": 45,
-      "messagesReceived": 156,
-      "messagesSent": 23
-    }
+    "sequenceNumber": 42
   },
   "timestamp": "2025-01-XX:XX:XX.XXXZ"
 }
@@ -1937,17 +1906,13 @@ The `errorCode` field in both error events draws from the *Error code registry* 
   "payload": {
     "serverTimestamp": "2025-01-XX:XX:XX.XXXZ",
     "clientTimestamp": "2025-01-XX:XX:XX.XXXZ",
-    "sequenceNumber": 42,
-    "serverHealth": {
-      "activeConnections": 6,
-      "serverLoad": 0.15,
-      "gamePhase": "puzzle_assembly"
-    },
-    "roundTripTime": 47
+    "sequenceNumber": 42
   },
   "timestamp": "2025-01-XX:XX:XX.XXXZ"
 }
 ```
+
+`clientTimestamp` echoes the ping's value so the client can compute round-trip time itself.
 
 ### Phase Transition Sequences
 

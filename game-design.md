@@ -69,6 +69,7 @@ All communication after initial connection requires authentication using the sta
 - UTF-8 text validation with length limits
 - Privilege verification (host vs player actions)
 - Rate limiting on fragment movements (`gameConfig.fragmentMoveCooldown`)
+- Asset authorization: all puzzle imagery served through authenticated, server-gated HTTP endpoints (see *Asset Delivery (Puzzle Images)*)
 
 ## Player Setup and Character Selection
 
@@ -136,23 +137,14 @@ Players connect, select roles and specialties, host monitors readiness and start
 
 **Trivia System:**
 - One question delivered per gathering round
-- Questions presented as distinct multiple-choice options
-- No fuzzy matching - clear right/wrong based on selected option
-- Automatic question cycling prevents repetition
-- All questions have same time limit regardless of specialty status
+- Distinct multiple-choice options; no fuzzy matching — clear right/wrong on the selected option, no partial credit
+- Answers lock and are marked correct/incorrect after `gameConfig.triviaAnswerTime` seconds
+- All questions have the same time limit regardless of specialty status
 
-#### Enhanced Trivia Features
-**Question Management:**
-- 6 categories × 3 difficulties = 18 question pools
-- Automatic pool cycling when exhausted
-- Question history tracking prevents immediate repeats
-- Support for HTML entity decoding and text normalization
-
-**Answer Validation:**
-- Multiple-choice selection with clear right/wrong determination
-- No fuzzy matching or partial credit
-- Answer selection locked and marked correct or incorrect after `gameConfig.triviaAnswerTime` seconds
-- Comprehensive logging for debugging and analysis
+#### Question Management
+- 6 categories × 3 difficulties = 18 question pools (JSON files under `trivia/{category}/{difficulty}.json`)
+- Automatic pool cycling when exhausted, with randomized order; history tracking prevents immediate repeats
+- HTML entity decoding and text normalization
 
 #### Resource Token System
 **Threshold formula (all four token types):**
@@ -320,14 +312,10 @@ Player Count → Grid Size → Total Fragments
 
 **Movement Mechanics (Switches/Swaps):**
 - **Movement Cooldown**: `gameConfig.fragmentMoveCooldown` ms is enforced **per fragment**, not per player. Each fragment has its own cooldown clock that starts when the fragment last moved (whether moved by its owner, an unassigned mover, or as the swap target of another move). A single player can chain rapid moves across different fragments. Two players who both want to move the same unassigned fragment serialize on its cooldown.
-- **Terminology**: Also called fragment move requests, fragment recommendations, or switch requests
 - **Position Validation**: All swaps validated against grid boundaries (0 to gridSize-1)
 - **Collision Resolution**: Fragments swap positions or one fragment moves to open grid space
 - **Permission Checking**: A direct move may only involve fragments the mover controls (their own fragment or unassigned ones). A swap that would displace another player's owned fragment is rejected with `not_owner` — propose it through the recommendation system instead.
 - **Phase 2A Lockout**: Players still solving their individual puzzle cannot move fragments or use recommendations; they receive grid broadcasts read-only. Violations are rejected with `phase_invalid`.
-- **State Synchronization**:
-  - Host: Immediate updates on all movements
-  - Players: Updates every `gameConfig.gridUpdateInterval` seconds
 
 #### Fragment Visibility and State Management
 
@@ -338,12 +326,9 @@ Player Count → Grid Size → Total Fragments
 - **Public vs Private**: Fragment positions are fully public — both the host's big-screen display and every player's device show the same grid. Guide-token highlights are strictly private; each player sees only the highlights for their own fragment, never another player's.
 
 **State Broadcasting:**
-- **Central Puzzle State**: Complete grid state sent to all players every `gameConfig.gridUpdateInterval` seconds
-- **Host Updates**: Receives immediate updates on all fragment movements and state changes
+- **Central Puzzle State**: Complete grid state sent to all players every `gameConfig.gridUpdateInterval` seconds (default 3s)
+- **Host Updates**: Immediate updates on all fragment movements and state changes
 - **Personal Puzzle State**: Individual view with guide highlighting (from guide tokens)
-- **Update Frequency**:
-  - Players: Periodic updates every `gameConfig.gridUpdateInterval` seconds (default 3s)
-  - Host: Immediate updates on all changes
 - **Phase Tracking**: Server implicitly tracks each player as Phase 2A (individual) or Phase 2B (collaborative)
 
 #### Strategic Collaboration System
@@ -371,7 +356,6 @@ The four token types and their puzzle-phase effects are fully defined under *Res
 - **Continuous Checking**: Server validates the victory conditions after every fragment movement.
 - **Immediate Resolution on Success**: The game ends instantly when both conditions are satisfied; the server emits `PUZZLE_TO_CLIENT_COMPLETED_SUCCESS`.
 - **Timer Expiry = Loss**: If the puzzle phase timer reaches zero before both victory conditions are met — for any reason — the team loses. This applies regardless of how many players are still in Phase 2A solving privately, how many fragments are unrevealed, or how many fragments are in incorrect positions. The server emits `PUZZLE_TO_CLIENT_COMPLETED_TIMEOUT` and transitions directly to the Analytics phase. There is no auto-solve fallback.
-- **Success Analytics**: Comprehensive performance tracking for the successful-completion case.
 
 ## Phase-Specific Disconnection Rules
 
@@ -400,7 +384,7 @@ Canvas Conundrum handles disconnections differently based on the game phase to b
 **Player Disconnection:**
 - **Maintained Presence**: Player remains in game counts and their contributions continue to matter
 - **Resource Phase**: Collected tokens remain in team totals
-- **Puzzle Phase**: Individual puzzle auto-solved, fragment becomes unassigned for team use
+- **Puzzle Phase**: If still solving (Phase 2A), the individual puzzle is immediately auto-solved into an unassigned fragment at a random unoccupied grid position; if already collaborating (Phase 2B), their existing fragment becomes unassigned. Either way, any remaining player can move it, and the disconnection is broadcast to all remaining players.
 - **Analytics Phase**: Personal analytics preserved for viewing upon reconnection
 - **Limited Reconnection**: Cannot reconnect during puzzle assembly phase; can reconnect during resource gathering, puzzle preparation, and analytics phases
 
@@ -418,24 +402,13 @@ The general rule: setup and resource gathering proceed without a host — the ho
 
 In all cases: complete game state is preserved for host reconnection, and players are notified of host disconnection and reconnection events. If the host never reconnects, the affected phase remains stalled — recovery requires a deployment-level restart.
 
-#### Disconnection and Error Handling
+### Reconnection
 
-**Player Disconnection During Individual Solving:**
-- **Auto-Solve Trigger**: Disconnected player's individual puzzle immediately auto-solved
-- **Fragment Creation**: Auto-solved puzzle converts to unassigned fragment on central grid
-- **Random Placement**: Fragment placed at random grid position to maintain puzzle integrity
-- **Ownership Transfer**: Fragment becomes movable by any remaining player (becomes an unassigned fragment)
-- **No Reconnection**: No reconnection permitted during puzzle assembly phase
-
-**Player Disconnection During Collaboration:**
-- **Fragment Status Change**: Player's fragment becomes unassigned immediately
-- **Movement Permission**: Any player can now move the disconnected player's fragment
-- **State Broadcasting**: Disconnection status broadcast to all remaining players
-- **No Reconnection**: No reconnection permitted during puzzle assembly phase
+Both host and players reconnect with their original tokens (host: the server-startup UUID; players: the UUID issued at first connection). The host may reconnect during any phase. Players may reconnect during every phase except puzzle assembly; phase-specific effects are described above, and the wire-level handshake and state-restoration sequences are specified in `websocket-events.md` § *Reconnection Behavior*.
 
 ### Phase 3: Post-Game Analytics
-**Duration**: Game result and all analytics display until the host manually resets the game
-**Comprehensive Performance Tracking:**
+**Duration**: Game result and analytics display until the host sends `ANALYTICS_TO_SERVER_RESET_GAME`; no auto-expiry
+**Performance Tracking:**
 
 #### Individual Player Analytics
 - **Token Collection**: Total tokens by type, role bonuses earned
@@ -486,14 +459,6 @@ The time multiplier scales total puzzle-phase time (`(puzzleBaseTime + chronosBo
 ### Backend Infrastructure
 - **Language**: Go (with a WebSocket library — Gorilla WebSocket is a reasonable default).
 - **Concurrency**: Thread-safe operations with RWMutex.
-- **Performance**: Connection pooling, efficient broadcasting.
-- **Scalability**: Support for 4-64 players dynamically.
-
-### Communication Protocol
-- **WebSocket**: Full-duplex real-time communication for game events.
-- **Authentication**: UUID-based session management with structured event format.
-- **Validation**: Comprehensive input sanitization.
-- **Error Handling**: Detailed error responses with context.
 
 ### Asset Delivery (Puzzle Images)
 - **Source Images at Runtime**: Source images live under `assets/puzzle-sources/` and are bind-mounted into the backend container read-only at `/app/puzzle-sources/`. They are *not* baked into the image — adding a puzzle requires only a file drop and container restart.
@@ -508,91 +473,6 @@ The time multiplier scales total puzzle-phase time (`(puzzleBaseTime + chronosBo
 When resource gathering ends, the game enters `puzzle_preparation` — a first-class phase with its own rules (player reconnection allowed; host-disconnect handling per the table above). It covers both tile generation and the subsequent wait for the host to start the puzzle timer; `puzzle_assembly` begins only when the host sends `PUZZLE_TO_SERVER_PHASE_START`. The pause maps onto the natural physical-world delay while players gather in the puzzle room. The host cannot start the puzzle phase until tile generation completes; the host UI surfaces a "preparing puzzle…" indicator while it waits. Players still disconnected when the timer starts have their segments auto-solved into unassigned fragments at that moment.
 
 For the wire-level event sequence and rejection behavior, see *Resource Gathering → Puzzle Assembly* in `websocket-events.md`.
-
-### State Management
-- **Game State**: Atomic transitions between phases.
-- **Player State**: Individual progress and analytics tracking.
-- **Puzzle State**: Real-time grid synchronization with dual-system architecture.
-- **Analytics**: Persistent tracking across reconnections.
-
-### Security Features
-- **Input Validation**: Size limits, format checking, UTF-8 validation.
-- **Rate Limiting**: Fragment movement cooldown enforcement.
-- **Privilege Checking**: Host vs player action authorization.
-- **Asset Authorization**: All puzzle imagery served through authenticated, server-gated endpoints (see *Asset Delivery* above).
-
-## Advanced Features
-
-### Reconnection System
-
-#### Authentication Requirements
-**Both host and players reconnect using their original authentication tokens:**
-- **Host**: Uses the same UUID provided at server startup
-- **Players**: Use the UUID generated when they first connected
-
-#### Player Reconnection
-**Permitted Phases:**
-- ✅ **Setup Phase**: Full reconnection with state restoration and role revalidation
-- ✅ **Resource Gathering Phase**: Rejoin current round with preserved progress
-- ✅ **Puzzle Preparation Phase**: Rejoin while tiles are generated or the host readies the start; a player still disconnected when the puzzle timer starts is auto-solved at that moment
-- ❌ **Puzzle Assembly Phase**: Reconnection explicitly forbidden
-- ✅ **Analytics Phase**: View personal performance report
-
-**Phase-Specific Reconnection Behavior:**
-
-**Setup Phase Reconnection:**
-1. **Authentication**: Player reconnects with original UUID token
-2. **Phase Detection**: Server identifies current phase as setup
-3. **State Restoration**: Player removed from all counts during disconnection, now re-added
-4. **Role Revalidation**: Check if previously selected role is still available
-   - If role available: Restore all previous selections (role, specialty, name)
-   - If role full: Force new role selection, preserve specialty and name
-5. **Ready State**: Automatically marked ready if they were ready before disconnection
-6. **Count Updates**: Player re-added to connected count, ready count, and role distribution
-
-**Post-Setup Phase Reconnection:**
-1. **Authentication**: Player reconnects with original UUID token
-2. **Phase Detection**: Server identifies current game phase
-3. **Configuration Recovery**: Restore previously selected role and specialty (no revalidation needed)
-4. **Context Restoration**: Receive phase-appropriate game state and progress
-5. **Maintained Presence**: Player was never removed from game counts during disconnection
-
-#### Host Reconnection
-**Permitted Phases:**
-- ✅ **All Phases**: Host can reconnect during any phase
-
-**State Restoration Process:**
-1. **Authentication**: Host reconnects with original UUID
-2. **Phase Context**: Receive current phase and appropriate monitoring interface
-3. **Control Recovery**: Regain access to phase-specific host controls
-4. **State Synchronization**: Get complete game state for monitoring dashboard
-5. **Player Notification**: All players notified of host reconnection
-
-#### Technical Implementation
-- **Connection Events**: The handshake events `SETUP_TO_HOST_CONNECTION_CONFIRMED` and `SETUP_TO_PLAYER_CONNECTION_CONFIRMED` include current phase and reconnection status
-- **Token Validation**: Strict authentication prevents unauthorized reconnections
-- **Phase Enforcement**: Puzzle phase reconnection block maintained for game integrity
-- **State Synchronization**: Complete context restoration ensures seamless experience
-- **Error Handling**: Clear feedback when reconnection is not permitted
-
-### Question Management System
-**Automatic Cycling:**
-- Question pools reset when exhausted
-- Randomized order prevents predictable patterns
-- History tracking prevents immediate repetition
-- Support for thousands of questions per category
-
-**Content Management:**
-- JSON-based question format with validation
-- HTML entity decoding for special characters
-- Comprehensive answer normalization
-- Category and difficulty organization
-
-### Performance Optimizations
-- **Broadcasting**: Efficient message distribution with filtering
-- **Memory Management**: Cleanup routines for stale data
-- **Connection Monitoring**: Ping/pong heartbeat system
-- **Resource Usage**: Optimized data structures and algorithms
 
 ## Configuration and Customization
 
@@ -612,7 +492,6 @@ All values below come from `game-config.json`, mounted into the backend containe
 - Round duration is derived: `gameConfig.triviaAnswerTime + gameConfig.triviaGraceTime` seconds
 - One trivia question per gathering round
 - Puzzle Base Time: `gameConfig.puzzleBaseTime` seconds
-- Post-Game Analytics: displays until the host sends `ANALYTICS_TO_SERVER_RESET_GAME`; no auto-expiry
 
 **Token Economics:**
 - Base Tokens Per Answer: `gameConfig.baseTokensPerCorrectAnswer`

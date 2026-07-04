@@ -7,5 +7,5 @@ repos:
       - id: check-yaml
       - id: check-added-large-files
         # Puzzle source images (assets/puzzle-sources/*) can be a few MB.
-        # Tiles are generated at build time and never committed.
+        # Tiles are generated at runtime in memory and never committed.
         args: ["--maxkb=5120"]

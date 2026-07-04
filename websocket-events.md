@@ -37,6 +37,10 @@ All server-to-client messages use this format:
 
 Every payload field shown in this spec is **required** unless explicitly marked **(optional)** in prose following the JSON example. Optional fields may be omitted entirely or sent as JSON `null`; their absence has the meaning described per-event. A missing required field returns `SYSTEM_TO_CLIENT_ERROR` with code `MALFORMED_PAYLOAD`.
 
+### Message limits
+
+WebSocket messages are limited to **8 KB**. All text fields must be valid UTF-8 and are subject to per-field length limits. Violations are rejected with `SYSTEM_TO_CLIENT_ERROR` / `MALFORMED_PAYLOAD`.
+
 ### Timestamps
 
 All timestamp fields are ISO 8601 UTC strings — the envelope `timestamp` and payload fields like `startTimestamp`, `completionTimestamp`, `nextMoveAvailable`, and `timerPausedAt` alike. Durations and countdowns are plain numeric seconds (milliseconds only where a config value says so, e.g. `fragmentMoveCooldown`).
@@ -85,9 +89,9 @@ Codes are stable identifiers; new codes may be added over time, but existing cod
 | `INVALID_ROLE_SELECTION` | WS | Selected role is unknown |
 | `ROLE_FULL` | WS | All slots for the requested role are taken |
 | `INVALID_STATION_HASH` | WS | QR-code hash did not match any configured station |
-| `INSUFFICIENT_PLAYERS` | WS | Host tried to start the game before minimum players were ready |
+| `INSUFFICIENT_PLAYERS` | WS | Host tried to start the game before every connected player was ready and at least `minPlayers` were ready |
 | `COOLDOWN_ACTIVE` | WS | Recommendation created or accepted while an involved fragment is on its move cooldown |
-| `FORBIDDEN_PHASE` | HTTP, WS | Action not permitted in current game phase |
+| `FORBIDDEN_PHASE` | HTTP, WS | Action not permitted in the current game phase or phase state (e.g. puzzle start before tile generation completes) |
 | `FORBIDDEN_NOT_OWNER` | HTTP, WS | Caller is not the assigned owner of the resource |
 | `FORBIDDEN_PREVIEW_WINDOW_CLOSED` | HTTP | Full-image preview requested outside its active time window |
 | `NOT_FOUND` | HTTP | Resource does not currently exist (e.g. tiles before generation, or after game reset) |
@@ -98,7 +102,7 @@ HTTP responses map status codes as follows: `400` for `MALFORMED_REQUEST`; `401`
 
 ## Event Index
 
-Every event in this spec, in protocol order. Directions: H = host, P = player, S = server; "all P" = broadcast to all players.
+Every event in this spec, in protocol order. Directions: H = host, P = player, S = server; "all P" = broadcast to all players; "all" = every connected client (all players **and** the host).
 
 | Event | Direction | When |
 |---|---|---|
@@ -198,10 +202,12 @@ Both host and players reconnect using the same WebSocket endpoint and token they
 | Setup | Yes | `SETUP_TO_HOST_PLAYER_ROSTER` |
 | Resource Gathering | Yes | `RESOURCE_TO_HOST_PHASE_START`; `RESOURCE_TO_HOST_ROUND_ANALYTICS` if a round is in progress |
 | Puzzle Preparation | Yes | `PUZZLE_TO_HOST_PREPARING` if tile generation is still running, otherwise `PUZZLE_TO_HOST_READY` then `PUZZLE_TO_HOST_PHASE_LOAD` |
-| Puzzle Assembly | Yes | `PUZZLE_TO_HOST_PHASE_LOAD`; `PUZZLE_TO_HOST_GRID_STATE`; `PUZZLE_TO_HOST_PHASE_START` if the timer is active |
+| Puzzle Assembly | Yes | `PUZZLE_TO_HOST_PHASE_LOAD`; `PUZZLE_TO_HOST_GRID_STATE`; `PUZZLE_TO_HOST_PHASE_START` re-anchored to the resume (`startTimestamp` = resume time, `totalTime` = seconds remaining after the pause extension) |
 | Analytics | Yes | `ANALYTICS_TO_HOST_COMPLETE_REPORT` |
 
 All currently-connected players additionally receive `SYSTEM_TO_CLIENT_HOST_RECONNECTED`.
+
+If a host socket is already open, a new connection presenting the valid host UUID supersedes it: the older socket is closed with code `1000` and the new connection receives the normal reconnection handshake.
 
 ### Player
 
@@ -482,12 +488,6 @@ The server processes these messages serially; if two players race for the last s
     "roundDuration": 60,
     "answerTime": 30,
     "graceTime": 30,
-    "resourceStationHashes": {
-      "anchor": "hash_anchor_station_constant",
-      "chronos": "hash_chronos_station_constant",
-      "guide": "hash_guide_station_constant",
-      "clarity": "hash_clarity_station_constant"
-    },
     "tokenThresholds": {
       "anchor": 25,
       "chronos": 20,
@@ -504,6 +504,8 @@ The server processes these messages serially; if two players race for the last s
   "timestamp": "2025-06-15T14:23:05.000Z"
 }
 ```
+
+Station QR hashes are deliberately **never sent to clients**. A client only relays the raw text of a QR code it physically scanned (`RESOURCE_TO_SERVER_LOCATION_VERIFIED`); the server alone maps hashes to stations. Broadcasting the hashes would let players change stations without moving.
 
 #### `RESOURCE_TO_HOST_PHASE_START`
 **Direction**: Server → Host
@@ -605,7 +607,7 @@ On a recognized hash, the server replies with `RESOURCE_TO_PLAYER_LOCATION_CONFI
 
 #### `RESOURCE_TO_SERVER_TRIVIA_ANSWER`
 **Direction**: Player → Server
-**Trigger**: Player selects answer or time expires
+**Trigger**: Player selects an answer. If the player never selects one, the client sends nothing; at the answer deadline the server marks the question incorrect for that player.
 
 ```json
 {
@@ -682,7 +684,7 @@ The server determines which token type an answer earns from its own station trac
     },
     "teamPerformance": {
       "averageAccuracy": 0.78,
-      "roundTimeRemaining": 42
+      "roundTimeRemaining": 28
     }
   },
   "timestamp": "2025-06-15T14:23:05.000Z"
@@ -970,7 +972,7 @@ If the team earned zero clarity thresholds, the endpoint returns `FORBIDDEN_PREV
 
 #### `PUZZLE_TO_SERVER_PHASE_START`
 **Direction**: Host → Server
-**Trigger**: Host starts puzzle phase. Rejected with `SYSTEM_TO_HOST_ERROR` if tile preparation has not yet completed (i.e. before `PUZZLE_TO_HOST_READY`).
+**Trigger**: Host starts puzzle phase. Rejected with `SYSTEM_TO_HOST_ERROR` / `FORBIDDEN_PHASE` if tile preparation has not yet completed (i.e. before `PUZZLE_TO_HOST_READY`).
 
 ```json
 {
@@ -1130,7 +1132,6 @@ team-completion-status payload.
   },
   "payload": {
     "segmentId": "segment_a1",
-    "currentPosition": {"x": 2, "y": 1},
     "targetPosition": {"x": 0, "y": 0},
     "swapWithSegmentId": "segment_b3"
   },
@@ -1143,7 +1144,7 @@ The event covers two move modes:
 - **Swap**: `swapWithSegmentId` is set. The fragment at `targetPosition` (which must be `swapWithSegmentId`) and the moving fragment exchange positions. Both fragments must be controllable by the caller (their own fragment or unassigned ones — in the example, `segment_b3` is unassigned); a swap that would displace another player's owned fragment is rejected with reason `not_owner` — propose it via `PUZZLE_TO_SERVER_RECOMMEND_MOVE` instead.
 - **Move to empty cell**: `swapWithSegmentId` is `null` or omitted **(optional)**. `targetPosition` must reference an unoccupied cell; the moving fragment relocates into it.
 
-The server validates that `targetPosition` actually matches the requested mode (swap target occupied by the named fragment, or empty cell unoccupied). Mismatches return `SYSTEM_TO_CLIENT_ERROR` with `errorCode: "FORBIDDEN_NOT_OWNER"` if the caller does not control an involved fragment, or `MALFORMED_PAYLOAD` if the position/fragment-ID combination is inconsistent.
+The moving fragment is identified by `segmentId` alone; the server always uses its own authoritative position for it. All game-rule violations are reported through `PUZZLE_TO_PLAYER_MOVE_RESULT` with `status: "rejected"` and the matching `reason` (`not_owner`, `target_invalid`, `cooldown`, `phase_invalid`); `SYSTEM_TO_CLIENT_ERROR` / `MALFORMED_PAYLOAD` is reserved for structurally invalid payloads (missing fields, wrong types).
 
 #### `PUZZLE_TO_PLAYER_MOVE_RESULT`
 **Direction**: Server → Individual Player
@@ -1208,22 +1209,27 @@ The server validates that `targetPosition` actually matches the requested mode (
 
 #### `PUZZLE_TO_CLIENT_GRID_STATE`
 **Direction**: Server → All Players
-**Trigger**: Periodic updates (every 3 seconds) or after movements
+**Trigger**: Every `gameConfig.gridUpdateInterval` seconds
 
 The `fragments` array grows over time as players complete their individual puzzles. Per the *Proportional Unassigned Fragment Reveal* rule in `game-design.md`, after *k* of *N* players have completed their individual puzzles the array contains `ceil((k / N) × gridSize²)` entries — *k* player-owned fragments plus the rest randomly-selected unassigned fragments at random unoccupied positions.
+
+`playerId` and `playerName` identify each fragment's owner; both are `null` for unassigned fragments. Clients need this to apply the movement rules locally (own + unassigned fragments are movable) and to address recommendations (`targetPlayerId`).
 
 ```json
 {
   "event": "PUZZLE_TO_CLIENT_GRID_STATE",
   "payload": {
-    "updateType": "periodic",
     "fragments": [
       {
         "segmentId": "segment_a1",
+        "playerId": "player1-uuid",
+        "playerName": "Alice",
         "position": {"x": 0, "y": 0}
       },
       {
         "segmentId": "segment_b3",
+        "playerId": null,
+        "playerName": null,
         "position": {"x": 2, "y": 1}
       }
     ],
@@ -1243,7 +1249,6 @@ The `fragments` array follows the same proportional-reveal rule as `PUZZLE_TO_CL
 {
   "event": "PUZZLE_TO_HOST_GRID_STATE",
   "payload": {
-    "updateType": "immediate",
     "fragments": [
       {
         "playerId": "player1-uuid",
@@ -1329,7 +1334,7 @@ Validation: the sender must be in Phase 2B and control `fromSegmentId` (their ow
     "moveId": "rec-uuid-67890",
     "fromPlayerId": "player1-uuid",
     "fromPlayerName": "Alice",
-    "toPlayerId": "player2-uuid",
+    "targetPlayerId": "player2-uuid",
     "fromSegmentId": "segment_a1",
     "toSegmentId": "segment_a2",
     "reasoning": "This swap would place both fragments closer to correct positions",
@@ -1585,7 +1590,7 @@ The swap exchanges the fragments' positions at execution time, and both fragment
     "gameSuccess": true,
     "totalScore": 830,
     "totalPlayers": 5,
-    "gameTime": 735,
+    "totalGameTime": 795,
     "teamPerformance": {
       "overallAccuracy": 0.76,
       "totalTokensCollected": 281,
@@ -1649,7 +1654,7 @@ The swap exchanges the fragments' positions at execution time, and both fragment
   "payload": {
     "gameId": "game-uuid-12345",
     "gameSuccess": true,
-    "totalGameTime": 735,
+    "totalGameTime": 795,
     "totalPlayers": 5,
     "difficultyMode": "medium",
     "overallPerformance": {
@@ -1751,7 +1756,7 @@ The swap exchanges the fragments' positions at execution time, and both fragment
     },
     "timelineAnalysis": {
       "setupPhase": 120,
-      "resourcePhase": 300,
+      "resourcePhase": 360,
       "preparationPhase": 30,
       "puzzlePhase": 285
     }
@@ -1760,7 +1765,7 @@ The swap exchanges the fragments' positions at execution time, and both fragment
 }
 ```
 
-`timelineAnalysis` values are phase durations in seconds.
+`timelineAnalysis` values are phase durations in seconds; they sum to `totalGameTime`. `resourcePhase` includes the one-round wait before Round 1 (here 6 × 60s).
 
 ### Game Reset
 
@@ -2002,3 +2007,5 @@ The `errorCode` field in both error events draws from the *Error code registry* 
 ```
 
 `clientTimestamp` echoes the ping's value so the client can compute round-trip time itself.
+
+The server treats a client as disconnected when its WebSocket closes or when no `SYSTEM_PING` has arrived for 90 seconds (three missed heartbeats); disconnect handling then follows `game-design.md` § *Disconnections and Reconnection*.

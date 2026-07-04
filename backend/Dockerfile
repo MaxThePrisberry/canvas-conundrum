@@ -3,7 +3,7 @@
 # Puzzle source images are NOT baked into this image. They are bind-mounted
 # at runtime from ./assets/puzzle-sources/ into /app/puzzle-sources/ so new
 # puzzles can be added without a rebuild. The Go server splits sources into
-# per-segment tiles in memory at the resource→puzzle-assembly transition,
+# per-segment tiles in memory at the start of the puzzle preparation phase,
 # and serves them only through authenticated /api/... endpoints.
 #
 # Stage 1 (deps):    Cache Go module downloads.

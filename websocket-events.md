@@ -37,6 +37,10 @@ All server-to-client messages use this format:
 
 Every payload field shown in this spec is **required** unless explicitly marked **(optional)** in prose following the JSON example. Optional fields may be omitted entirely or sent as JSON `null`; their absence has the meaning described per-event. A missing required field returns `SYSTEM_TO_CLIENT_ERROR` with code `MALFORMED_PAYLOAD`.
 
+### Game phases
+
+`currentPhase` / `phase` fields take exactly these values: `setup`, `resource_gathering`, `puzzle_preparation`, `puzzle_assembly`, `analytics`. `puzzle_preparation` is a first-class phase: it begins when the final resource-gathering round completes and ends when the host sends `PUZZLE_TO_SERVER_PHASE_START` — it covers both tile generation and the wait for the host to start the timer. `puzzle_assembly` begins at that start signal.
+
 ### WebSocket close codes
 
 When the server closes a WebSocket connection it uses these codes:
@@ -50,6 +54,8 @@ When the server closes a WebSocket connection it uses these codes:
 | `4004` | Token invalid or expired (e.g. game reset since the token was issued) |
 
 Codes in the `4xxx` range are application-specific per RFC 6455 §7.4.2; clients should treat any unrecognized `4xxx` close as a terminal failure.
+
+Handshake-time rejections (`4001`, `4003`, `4004`) are delivered by completing the WebSocket upgrade and immediately closing with the code, without exchanging application frames. Rejecting at the HTTP layer instead would leave browser clients — which cannot read the HTTP status of a failed upgrade — unable to distinguish a permanent rejection from a transient network failure (both surface as a `1006` close).
 
 ### Client reconnection backoff
 
@@ -72,6 +78,7 @@ Codes are stable identifiers; new codes may be added over time, but existing cod
 | `ROLE_FULL` | WS | All slots for the requested role are taken |
 | `INVALID_STATION_HASH` | WS | QR-code hash did not match any configured station |
 | `INSUFFICIENT_PLAYERS` | WS | Host tried to start the game before minimum players were ready |
+| `COOLDOWN_ACTIVE` | WS | Recommendation created or accepted while an involved fragment is on its move cooldown |
 | `FORBIDDEN_PHASE` | HTTP, WS | Action not permitted in current game phase |
 | `FORBIDDEN_NOT_OWNER` | HTTP, WS | Caller is not the assigned owner of the resource |
 | `FORBIDDEN_PREVIEW_WINDOW_CLOSED` | HTTP | Full-image preview requested outside its active time window |
@@ -83,7 +90,7 @@ HTTP responses map status codes as follows: `400` for `MALFORMED_REQUEST`; `401`
 
 ## Reconnection Behavior
 
-Both host and players reconnect using the same WebSocket endpoint and token they used originally. The handshake event (`SETUP_TO_HOST_CONNECTION_CONFIRMED` for the host, `SETUP_TO_PLAYER_ROLES_AVAILABLE` for a player) carries `isReconnection: true` and `currentPhase`. The server then replays a phase-appropriate sequence of state-restoration events (defined under each event's own subsection — only the sequence is listed here).
+Both host and players reconnect using the same WebSocket endpoint and token they used originally. The handshake event (`SETUP_TO_HOST_CONNECTION_CONFIRMED` for the host, `SETUP_TO_PLAYER_CONNECTION_CONFIRMED` for a player) carries `isReconnection: true` and `currentPhase`. The server then replays a phase-appropriate sequence of state-restoration events (defined under each event's own subsection — only the sequence is listed here).
 
 ### Host
 
@@ -101,9 +108,10 @@ All currently-connected players additionally receive `SYSTEM_TO_CLIENT_HOST_RECO
 
 | Phase | Reconnect allowed? | State-restoration events sent after handshake | Disconnect impact |
 |---|---|---|---|
-| Setup | Yes | None beyond the handshake. Previously selected specialty and name are restored; previously selected role is restored only if the slot is still available, otherwise the player must reselect (see *Race Resolution* in `game-design.md`). All players receive an updated `SETUP_TO_CLIENT_LOBBY_STATUS`; host receives `SETUP_TO_HOST_PLAYER_ROSTER`. | Player removed from connected/ready counts and role distribution while disconnected; re-added on reconnect. |
+| Setup | Yes | `SETUP_TO_PLAYER_ROLES_AVAILABLE` (unless the player is ready). The handshake's `existingConfiguration` restores specialty and name; the role is restored only if a slot is still available, otherwise the player must reselect (see *Race Resolution* in `game-design.md`). All players receive an updated `SETUP_TO_CLIENT_LOBBY_STATUS`; host receives `SETUP_TO_HOST_PLAYER_ROSTER`. | Player removed from connected/ready counts and role distribution while disconnected; re-added on reconnect. |
 | Resource Gathering | Yes | `RESOURCE_TO_CLIENT_PHASE_START`; `RESOURCE_TO_CLIENT_TEAM_PROGRESS`; the current round's `RESOURCE_TO_PLAYER_TRIVIA_QUESTION` if mid-round. | Player remains in counts; tokens stay in team total. |
-| Puzzle Assembly | **No.** | The WebSocket upgrade is rejected at the HTTP layer with status `403` and close code `4003` before any WS frames are exchanged. | Disconnected player's individual puzzle is auto-solved into an unassigned fragment; remaining players control it as any unassigned fragment. |
+| Puzzle Preparation | Yes | `PUZZLE_TO_CLIENT_PHASE_LOAD` if tile generation has already finished; otherwise nothing further (the load event arrives with the normal broadcast). | Player remains in counts; if still disconnected when the host starts the puzzle timer, their segment is auto-solved into an unassigned fragment at that moment. |
+| Puzzle Assembly | **No.** | The server completes the WebSocket upgrade and immediately closes it with code `4003`; no application frames are exchanged. | Disconnected player's individual puzzle is auto-solved into an unassigned fragment; remaining players control it as any unassigned fragment. |
 | Analytics | Yes | `ANALYTICS_TO_PLAYER_PERSONAL_REPORT`; `ANALYTICS_TO_CLIENT_TEAM_SUMMARY`. | Player remains in counts; analytics preserved. |
 
 ---
@@ -127,7 +135,8 @@ All currently-connected players additionally receive `SYSTEM_TO_CLIENT_HOST_RECO
       "minPlayers": 4,
       "maxPlayers": 64,
       "resourceGatheringRounds": 5,
-      "resourceGatheringRoundDuration": 60,
+      "triviaAnswerTime": 30,
+      "triviaGraceTime": 30,
       "puzzleBaseTime": 300,
       "difficultyMode": "medium"
     }
@@ -136,20 +145,46 @@ All currently-connected players additionally receive `SYSTEM_TO_CLIENT_HOST_RECO
 }
 ```
 
+#### `SETUP_TO_PLAYER_CONNECTION_CONFIRMED`
+**Direction**: Server → Player
+**Trigger**: Player connects to `/ws` (initial connection or reconnection). This is the player handshake event, mirroring `SETUP_TO_HOST_CONNECTION_CONFIRMED`, and is sent in every phase that permits player connections.
+
+```json
+{
+  "event": "SETUP_TO_PLAYER_CONNECTION_CONFIRMED",
+  "payload": {
+    "playerId": "uuid-generated-by-server",
+    "currentPhase": "setup",
+    "isReconnection": false,
+    "existingConfiguration": null
+  },
+  "timestamp": "2025-01-XX:XX:XX.XXXZ"
+}
+```
+
+`existingConfiguration` is `null` on first connection. On reconnection it carries the player's preserved state:
+
+```json
+"existingConfiguration": {
+  "selectedRole": "detective",
+  "selectedSpecialties": ["science"],
+  "playerName": "Alice",
+  "ready": true
+}
+```
+
+`selectedRole` is `null` if the previously held role lost its slot while the player was disconnected (setup phase only); the player must reselect a role and resubmit. After the handshake, the server sends the phase-appropriate state-restoration events listed under *Reconnection Behavior*.
+
 #### `SETUP_TO_PLAYER_ROLES_AVAILABLE`
 **Direction**: Server → Player
-**Trigger**: Player connects to `/ws` (initial connection or reconnection) or when role availability changes due to more players joining
+**Trigger**: Sent immediately after `SETUP_TO_PLAYER_CONNECTION_CONFIRMED` during setup, and again whenever role availability changes (players joining/leaving, role slots filling or freeing).
 
-**Important**: This event is only sent to players who have not yet marked themselves as ready. Once a player is ready (has completed role and specialty selection), they no longer receive role availability updates since they cannot change their configuration.
+**Important**: This event is only sent to players who have not yet marked themselves as ready — a ready player's configuration is locked, so availability updates are irrelevant to them. (A ready player who reconnects still receives the connection handshake above; they simply don't receive this event.)
 
 ```json
 {
   "event": "SETUP_TO_PLAYER_ROLES_AVAILABLE",
   "payload": {
-    "playerId": "uuid-generated-by-server",
-    "currentPhase": "setup",
-    "isReconnection": false,
-    "existingConfiguration": null,
     "roles": [
       {
         "roleType": "art_enthusiast",
@@ -337,7 +372,7 @@ The server processes these messages serially; if two players race for the last s
 **Direction**: Server → All Players
 **Trigger**: Resource gathering phase begins (marks transition from Setup phase)
 
-**Important**: After sending this event, the server waits one full round duration (`gameConfig.resourceGatheringRoundDuration` seconds) before starting Round 1 and sending the first `RESOURCE_TO_PLAYER_TRIVIA_QUESTION`.
+**Important**: After sending this event, the server waits one full round duration (`gameConfig.triviaAnswerTime + gameConfig.triviaGraceTime` seconds) before starting Round 1 and sending the first `RESOURCE_TO_PLAYER_TRIVIA_QUESTION`. The `roundDuration` payload field is that derived sum, echoed for display convenience.
 
 ```json
 {
@@ -467,6 +502,8 @@ On a recognized hash, the server replies with `RESOURCE_TO_PLAYER_LOCATION_CONFI
 }
 ```
 
+`difficulty` is `gameConfig.difficultyMode` for regular questions and one level higher (capped at hard) for specialty questions.
+
 #### `RESOURCE_TO_SERVER_TRIVIA_ANSWER`
 **Direction**: Player → Server
 **Trigger**: Player selects answer or time expires
@@ -481,12 +518,13 @@ On a recognized hash, the server replies with `RESOURCE_TO_PLAYER_LOCATION_CONFI
     "questionId": "general_medium_42_1234567",
     "selectedAnswer": "Paris",
     "answerIndex": 0,
-    "timeElapsed": 18.5,
-    "currentLocation": "clarity"
+    "timeElapsed": 18.5
   },
   "timestamp": "2025-01-XX:XX:XX.XXXZ"
 }
 ```
+
+The server determines which token type an answer earns from its own station tracking (QR scans), never from the client. Answers submitted while the player's station is `unknown` (no successful scan yet this game) earn no tokens.
 
 #### `RESOURCE_TO_PLAYER_ANSWER_RESULT`
 **Direction**: Server → Individual Player
@@ -515,6 +553,8 @@ On a recognized hash, the server replies with `RESOURCE_TO_PLAYER_LOCATION_CONFI
   "timestamp": "2025-01-XX:XX:XX.XXXZ"
 }
 ```
+
+`currentLocation` is the server-tracked station — `"unknown"` if the player has never scanned one, in which case `tokensEarned` is `0` even for a correct answer.
 
 ### Progress Updates
 
@@ -612,7 +652,7 @@ On a recognized hash, the server replies with `RESOURCE_TO_PLAYER_LOCATION_CONFI
   "event": "RESOURCE_TO_CLIENT_PHASE_COMPLETE",
   "payload": {
     "phase": "resource_gathering",
-    "nextPhase": "puzzle_assembly",
+    "nextPhase": "puzzle_preparation",
     "finalTokenTotals": {
       "anchorTokens": 87,
       "chronosTokens": 64,
@@ -697,7 +737,7 @@ Clients and the host derive the full set of valid segment IDs from
 
 ### Puzzle Preparation
 
-When resource gathering ends, the server enters a brief "preparing puzzle" state during which it crops the chosen source image into per-segment tiles in memory. The host's `PUZZLE_TO_SERVER_PHASE_START` is rejected until preparation completes. (For the gameplay rationale of this pause, see `game-design.md` § *Phase 1 → 2 Preparation*.)
+When resource gathering ends, the game enters the `puzzle_preparation` phase, during which the server crops the configured source image into per-segment tiles in memory. The host's `PUZZLE_TO_SERVER_PHASE_START` is rejected until tile generation completes. (For the gameplay rationale of this pause, see `game-design.md` § *Puzzle Preparation Phase*.)
 
 #### `PUZZLE_TO_HOST_PREPARING`
 **Direction**: Server → Host
@@ -727,16 +767,16 @@ When resource gathering ends, the server enters a brief "preparing puzzle" state
 
 #### `PUZZLE_TO_CLIENT_PHASE_LOAD`
 **Direction**: Server → All Players
-**Trigger**: Tile preparation completes (marks transition to Puzzle Assembly phase, emitted immediately after `PUZZLE_TO_HOST_READY`).
+**Trigger**: Tile preparation completes (still within the `puzzle_preparation` phase, emitted immediately after `PUZZLE_TO_HOST_READY`).
 
-**Important**: Players can load their puzzle segments via `GET /api/segments/{segmentId}` (see *Asset Delivery (HTTP)* below) and prepare the puzzle UI on receipt, but the puzzle phase timer doesn't start until the host sends `PUZZLE_TO_SERVER_PHASE_START`. Pieces should remain hidden until the host triggers the start.
+**Important**: Players can load their puzzle segments via `GET /api/segments/{segmentId}` (see *Asset Delivery (HTTP)* below) and prepare the puzzle UI on receipt, but the puzzle phase timer doesn't start until the host sends `PUZZLE_TO_SERVER_PHASE_START`. Pieces should remain hidden until the host triggers the start. `imageId` is the configured `gameConfig.puzzleImage` filename.
 
 ```json
 {
   "event": "PUZZLE_TO_CLIENT_PHASE_LOAD",
   "payload": {
-    "phase": "puzzle_assembly",
-    "imageId": "masterpiece_001",
+    "phase": "puzzle_preparation",
+    "imageId": "nature_image.png",
     "assignedSegmentId": "segment_a1",
     "individualPuzzleSize": 16,
     "anchorPreSolvedPieces": 6,
@@ -751,14 +791,14 @@ When resource gathering ends, the server enters a brief "preparing puzzle" state
 
 #### `PUZZLE_TO_HOST_PHASE_LOAD`
 **Direction**: Server → Host
-**Trigger**: Puzzle phase begins
+**Trigger**: Tile preparation completes (sent immediately after `PUZZLE_TO_HOST_READY`)
 
 ```json
 {
   "event": "PUZZLE_TO_HOST_PHASE_LOAD",
   "payload": {
-    "phase": "puzzle_assembly",
-    "imageId": "masterpiece_001",
+    "phase": "puzzle_preparation",
+    "imageId": "nature_image.png",
     "centralGridSize": 4,
     "totalFragments": 16,
     "playerCount": 5,
@@ -803,7 +843,7 @@ The `error` field is a fixed machine-readable code from the *Error code registry
 Returns PNG bytes of a single puzzle segment. The server enforces, in order:
 
 1. The token must correspond to a known player or the host of the current game.
-2. The current phase must be `puzzle_assembly` and tile preparation must be complete (see `PUZZLE_TO_HOST_READY`).
+2. The current phase must be `puzzle_preparation` with tile generation complete (see `PUZZLE_TO_HOST_READY`), or `puzzle_assembly`.
 3. The requested `segmentId` must match either:
    - the requesting player's own assigned segment, OR
    - a fragment that has already been completed and is now visible to all players on the central grid, OR
@@ -907,7 +947,7 @@ After this event fires, `GET /api/preview/full` returns `403 FORBIDDEN_PREVIEW_W
 
 #### `PUZZLE_TO_SERVER_SEGMENT_COMPLETED`
 **Direction**: Player → Server
-**Trigger**: Player completes their 16-piece individual puzzle
+**Trigger**: Player completes their individual puzzle
 
 ```json
 {
@@ -999,16 +1039,16 @@ team-completion-status payload.
 
 The event covers two move modes:
 
-- **Swap**: `swapWithFragmentId` is set. The fragment at `targetPosition` (which must be `swapWithFragmentId`) and the moving fragment exchange positions.
+- **Swap**: `swapWithFragmentId` is set. The fragment at `targetPosition` (which must be `swapWithFragmentId`) and the moving fragment exchange positions. Both fragments must be controllable by the caller (their own fragment or unassigned ones); a swap that would displace another player's owned fragment is rejected with reason `not_owner` — propose it via `PUZZLE_TO_SERVER_RECOMMEND_MOVE` instead.
 - **Move to empty cell**: `swapWithFragmentId` is `null` or omitted **(optional)**. `targetPosition` must reference an unoccupied cell; the moving fragment relocates into it.
 
-The server validates that `targetPosition` actually matches the requested mode (swap target occupied by the named fragment, or empty cell unoccupied). Mismatches return `SYSTEM_TO_CLIENT_ERROR` with `errorCode: "FORBIDDEN_NOT_OWNER"` if the caller does not own the moving fragment, or `MALFORMED_PAYLOAD` if the position/fragment-ID combination is inconsistent.
+The server validates that `targetPosition` actually matches the requested mode (swap target occupied by the named fragment, or empty cell unoccupied). Mismatches return `SYSTEM_TO_CLIENT_ERROR` with `errorCode: "FORBIDDEN_NOT_OWNER"` if the caller does not control an involved fragment, or `MALFORMED_PAYLOAD` if the position/fragment-ID combination is inconsistent.
 
 #### `PUZZLE_TO_PLAYER_MOVE_RESULT`
 **Direction**: Server → Individual Player
 **Trigger**: Server processes a movement request
 
-`status` is exactly `"success"` or `"rejected"`. On success the payload describes the resulting board state and the player's cooldown. On rejection the payload carries a `reason` enum and no state-change fields.
+`status` is exactly `"success"` or `"rejected"`. On success the payload describes the resulting board state and the moved fragment's cooldown (cooldowns are per fragment; on a swap, both fragments' cooldowns restart — `cooldownInfo` describes the moving fragment). On rejection the payload carries a `reason` enum and no state-change fields.
 
 **Success example:**
 
@@ -1057,9 +1097,9 @@ The server validates that `targetPosition` actually matches the requested mode (
 | Value | Meaning |
 |---|---|
 | `cooldown` | Target fragment is still in its `gameConfig.fragmentMoveCooldown` window from a prior move. `cooldownInfo` describes when it will be free. |
-| `not_owner` | Caller does not own the fragment they tried to move (and it is not unassigned). |
+| `not_owner` | Caller does not control the moving fragment (not theirs and not unassigned), or the swap would displace another player's owned fragment. |
 | `target_invalid` | `targetPosition` is out of bounds, or the swap/empty-cell mode declared in the request does not match the actual occupant of `targetPosition`. |
-| `phase_invalid` | Move arrived outside the puzzle assembly phase, or before `PUZZLE_TO_CLIENT_PHASE_START`. |
+| `phase_invalid` | Move arrived outside the puzzle assembly phase, before `PUZZLE_TO_CLIENT_PHASE_START`, while the game is paused by a host disconnect, or from a player still in Phase 2A. |
 
 `cooldownInfo` is **(optional)** on rejection — present only when `reason` is `cooldown`.
 
@@ -1125,11 +1165,7 @@ The `fragments` array follows the same proportional-reveal rule as `PUZZLE_TO_CL
         "lastActivity": "2025-01-XX:XX:XX.XXXZ"
       }
     },
-    "collaborationActivity": {
-      "recentMoves": 5,
-      "activeRecommendations": 2,
-      "moveFrequency": 1.2
-    },
+    "activeRecommendations": 2,
     "timeRemaining": 285
   },
   "timestamp": "2025-01-XX:XX:XX.XXXZ"
@@ -1163,6 +1199,8 @@ The `guideHighlights` array carries the cells on the central grid currently high
 **Direction**: Player → Server
 **Trigger**: Player sends recommendation to another player
 
+Validation: the sender must be in Phase 2B and control `fromFragmentId` (their own or unassigned); `toFragmentId` must be owned by `targetPlayerId` (recommendations exist precisely for the swaps a player cannot execute directly); and both fragments must be off cooldown, otherwise the request is rejected with `SYSTEM_TO_CLIENT_ERROR` / `COOLDOWN_ACTIVE`.
+
 ```json
 {
   "event": "PUZZLE_TO_SERVER_RECOMMEND_MOVE",
@@ -1194,15 +1232,13 @@ The `guideHighlights` array carries the cells on the central grid currently high
     "fromFragmentId": "fragment_01",
     "toFragmentId": "fragment_02",
     "reasoning": "This swap would place both fragments closer to correct positions",
-    "expiresAt": "2025-01-XX:XX:XX.XXXZ",
-    "currentPositions": {
-      "fromFragment": {"x": 1, "y": 1},
-      "toFragment": {"x": 3, "y": 3}
-    }
+    "expiresAt": "2025-01-XX:XX:XX.XXXZ"
   },
   "timestamp": "2025-01-XX:XX:XX.XXXZ"
 }
 ```
+
+`expiresAt` is creation time plus `gameConfig.recommendationTimeout` seconds. Fragment positions are intentionally not included — a recommendation names fragments, not positions, and survives fragment moves; the target reads current positions from grid state.
 
 #### `PUZZLE_TO_SERVER_RECOMMENDATION_RESPONSE`
 **Direction**: Player → Server
@@ -1223,7 +1259,9 @@ The `guideHighlights` array carries the cells on the central grid currently high
 }
 ```
 
-`response` is exactly `"accept"` or `"reject"`. `responseReason` is **(optional)**; clients may send a short human-readable string for analytics or omit the field. Reject example payload:
+`response` is exactly `"accept"` or `"reject"`. `responseReason` is **(optional)**; clients may send a short human-readable string for analytics or omit the field.
+
+An `accept` executes only if both fragments are still off cooldown; otherwise the responder receives `SYSTEM_TO_CLIENT_ERROR` / `COOLDOWN_ACTIVE` and the recommendation stays pending — it can be accepted again once the cooldown passes (or it times out). Reject example payload:
 
 ```json
 {
@@ -1247,7 +1285,6 @@ On reject, the swap is not executed and the recommender receives `PUZZLE_TO_PLAY
     "targetPlayerName": "Bob",
     "response": "accept",
     "responseReason": "Good strategic move",
-    "executionStatus": "success",
     "swapExecuted": {
       "fragment1Id": "fragment_01",
       "fragment1OldPosition": {"x": 1, "y": 1},
@@ -1261,22 +1298,24 @@ On reject, the swap is not executed and the recommender receives `PUZZLE_TO_PLAY
 }
 ```
 
+The swap exchanges the fragments' positions at execution time, and both fragments' cooldowns restart.
+
 #### `PUZZLE_TO_PLAYER_RECOMMENDATION_EXPIRED`
 **Direction**: Server → Both the original recommender and the target player
-**Trigger**: Either of the two specific fragments named in the recommendation moves before the target responds. Other moves on the grid do not invalidate the recommendation. Sent to both parties so the target can clear the prompt UI and the recommender knows their suggestion is no longer pending.
+**Trigger**: The recommendation timed out (`expiresAt` passed without a response) or either involved player disconnected. Fragment moves do **not** expire pending recommendations. Sent to both parties so the target can clear the prompt UI and the recommender knows their suggestion is no longer pending. Timeout clocks pause while the game is paused by a host disconnect.
 
 ```json
 {
   "event": "PUZZLE_TO_PLAYER_RECOMMENDATION_EXPIRED",
   "payload": {
     "moveId": "rec-uuid-67890",
-    "reason": "fragment_moved"
+    "reason": "timeout"
   },
   "timestamp": "2025-01-XX:XX:XX.XXXZ"
 }
 ```
 
-`reason` is currently always `"fragment_moved"` (the only expiry condition). The field is kept as a forward-compatible enum.
+`reason` is `"timeout"` or `"player_disconnected"`.
 
 ### Puzzle Completion
 
@@ -1296,12 +1335,7 @@ On reject, the swap is not executed and the recommender receives `PUZZLE_TO_PLAY
       "allFragmentsCorrect": true,
       "totalFragments": 16,
       "correctFragments": 16
-    },
-    "teamAchievements": [
-      "Perfect Collaboration",
-      "Strategic Masters",
-      "Time Efficient"
-    ]
+    }
   },
   "timestamp": "2025-01-XX:XX:XX.XXXZ"
 }
@@ -1324,11 +1358,7 @@ On reject, the swap is not executed and the recommender receives `PUZZLE_TO_PLAY
       "totalFragments": 16,
       "correctlyPlaced": 10,
       "completionPercentage": 62.5
-    },
-    "partialAchievements": [
-      "Team Effort",
-      "Good Communication"
-    ]
+    }
   },
   "timestamp": "2025-01-XX:XX:XX.XXXZ"
 }
@@ -1345,7 +1375,6 @@ On reject, the swap is not executed and the recommender receives `PUZZLE_TO_PLAY
     "puzzleSuccess": true,
     "completionTime": 285,
     "totalTime": 360,
-    "efficiency": 0.79,
     "playerContributions": {
       "player1-uuid": {
         "individualSolveTime": 180,
@@ -1362,8 +1391,7 @@ On reject, the swap is not executed and the recommender receives `PUZZLE_TO_PLAY
       "successfulMoves": 28,
       "totalRecommendations": 12,
       "acceptedRecommendations": 7,
-      "averageResponseTime": 15.2,
-      "communicationScore": 0.85
+      "averageResponseTime": 15.2
     },
     "phaseTransitions": {
       "playersCompletedIndividual": 5,
@@ -1393,7 +1421,7 @@ On reject, the swap is not executed and the recommender receives `PUZZLE_TO_PLAY
     "playerId": "player1-uuid",
     "playerName": "Alice",
     "gameSuccess": true,
-    "personalScore": 1850,
+    "personalScore": 320,
     "rank": 1,
     "totalPlayers": 5,
     "tokenCollection": {
@@ -1428,26 +1456,22 @@ On reject, the swap is not executed and the recommender receives `PUZZLE_TO_PLAY
       "moveAccuracy": 0.875,
       "recommendationsSent": 3,
       "recommendationsReceived": 2,
-      "recommendationsAccepted": 1,
-      "collaborationScore": 0.82
+      "recommendationsAccepted": 1
     },
-    "achievements": [
-      "Trivia Master",
-      "Strategic Thinker",
-      "Team Player"
-    ],
     "scoreBreakdown": {
-      "triviaPoints": 960,
-      "specialtyBonus": 240,
-      "puzzlePoints": 350,
-      "collaborationBonus": 180,
-      "speedBonus": 120,
-      "totalScore": 1850
+      "triviaPoints": 160,
+      "specialtyBonus": 8,
+      "completionBonus": 100,
+      "movePoints": 35,
+      "recommendationPoints": 17,
+      "totalScore": 320
     }
   },
   "timestamp": "2025-01-XX:XX:XX.XXXZ"
 }
 ```
+
+`scoreBreakdown` terms mirror the *Scoring Algorithm* in `game-design.md`; `recommendationPoints` combines the recommendations-sent and recommendations-accepted terms.
 
 #### `ANALYTICS_TO_CLIENT_TEAM_SUMMARY`
 **Direction**: Server → All Players
@@ -1470,10 +1494,9 @@ On reject, the swap is not executed and the recommender receives `PUZZLE_TO_PLAY
         "guide": 3,
         "clarity": 2
       },
-      "puzzleCompletionTime": 285,
-      "collaborationEfficiency": 0.85
+      "puzzleCompletionTime": 285
     },
-    "globalLeaderboard": [
+    "leaderboard": [
       {
         "playerId": "player1-uuid",
         "playerName": "Alice",
@@ -1509,18 +1532,7 @@ On reject, the swap is not executed and the recommender receives `PUZZLE_TO_PLAY
         "rank": 5,
         "role": "art_enthusiast"
       }
-    ],
-    "teamAchievements": [
-      "Perfect Collaboration",
-      "Token Masters",
-      "Puzzle Champions"
-    ],
-    "notableStats": {
-      "fastestAnswerer": "Alice",
-      "mostTokens": "Charlie",
-      "bestCollaborator": "Bob",
-      "puzzleMVP": "Diana"
-    }
+    ]
   },
   "timestamp": "2025-01-XX:XX:XX.XXXZ"
 }
@@ -1542,8 +1554,7 @@ On reject, the swap is not executed and the recommender receives `PUZZLE_TO_PLAY
     "overallPerformance": {
       "totalScore": 8250,
       "averageScore": 1650,
-      "completionRate": 1.0,
-      "efficiency": 0.82
+      "completionRate": 1.0
     },
     "resourceGatheringAnalytics": {
       "totalRounds": 5,
@@ -1601,25 +1612,8 @@ On reject, the swap is not executed and the recommender receives `PUZZLE_TO_PLAY
           "successfulMoves": 7,
           "recommendationsSent": 3,
           "recommendationsReceived": 2,
-          "recommendationsAccepted": 1,
-          "collaborationScore": 0.82
+          "recommendationsAccepted": 1
         }
-      }
-    },
-    "collaborationAnalysis": {
-      "communicationScore": 0.85,
-      "coordinationScore": 0.80,
-      "averageResponseTime": 15.2,
-      "recommendationNetwork": {
-        "totalRecommendations": 12,
-        "acceptedRecommendations": 7,
-        "mostActiveRecommender": "player1-uuid",
-        "bestCollaborator": "player2-uuid"
-      },
-      "teamworkMetrics": {
-        "mutualAssistanceScore": 0.78,
-        "strategicCoordination": 0.85,
-        "conflictResolution": 0.92
       }
     },
     "categoryPerformance": {
@@ -1673,13 +1667,7 @@ On reject, the swap is not executed and the recommender receives `PUZZLE_TO_PLAY
           "duration": 30
         }
       ]
-    },
-    "recommendationsForImprovement": [
-      "Consider increasing difficulty for geography category",
-      "Player communication was excellent",
-      "Puzzle phase could benefit from additional time",
-      "Team showed strong strategic coordination"
-    ]
+    }
   },
   "timestamp": "2025-01-XX:XX:XX.XXXZ"
 }
@@ -1698,8 +1686,7 @@ On reject, the swap is not executed and the recommender receives `PUZZLE_TO_PLAY
     "token": "host-uuid"
   },
   "payload": {
-    "confirmReset": true,
-    "saveAnalytics": true
+    "confirmReset": true
   },
   "timestamp": "2025-01-XX:XX:XX.XXXZ"
 }
@@ -1800,8 +1787,7 @@ The `errorCode` field in both error events draws from the *Error code registry* 
     "statePreservation": {
       "phase": "resource_gathering",
       "progress": "saved",
-      "canReconnect": true,
-      "reconnectTimeLimit": 300
+      "canReconnect": true
     },
     "connectionMetrics": {
       "latency": 250,
@@ -1827,17 +1813,13 @@ The `errorCode` field in both error events draws from the *Error code registry* 
       "canContinue": false,
       "affectedFeatures": ["host_monitoring", "phase_transitions", "puzzle_timer"]
     },
-    "timerPausedAt": 1640995430000,
-    "reconnectInfo": {
-      "hostCanReconnect": true,
-      "reconnectTimeLimit": 600
-    }
+    "timerPausedAt": 1640995430000
   },
   "timestamp": "2025-01-XX:XX:XX.XXXZ"
 }
 ```
 
-`gameImpact.canContinue` is phase-aware — see the host-disconnect rules in `game-design.md` § *Phase-Specific Disconnection Rules*. During Setup it is `false`; during Resource Gathering and Analytics it is `true`; during Puzzle Preparation and Puzzle Assembly it is `false` (the puzzle phase timer is paused, and the start trigger is gated on host input).
+`gameImpact.canContinue` is phase-aware — see the host-disconnect rules in `game-design.md` § *Phase-Specific Disconnection Rules*. It is `false` only during `puzzle_assembly`, where the timer pauses and the server rejects all puzzle actions (segment completions, fragment moves, recommendation creation and responses) until the host reconnects. In every other phase it is `true`: setup activity and trivia rounds proceed, but host-gated transitions (game start, puzzle start) remain blocked.
 
 `gameImpact.affectedFeatures` includes `"puzzle_timer"` only during Puzzle Assembly. `timerPausedAt` is **(optional)** — present only when the puzzle timer pauses (Puzzle Assembly host disconnect). The value is the server timestamp at which the timer was frozen; clients use it to display "paused at N seconds remaining" without drift.
 
@@ -1978,13 +1960,13 @@ The events fired in order at each phase boundary. See each event's own subsectio
 4. Server waits one round duration before the first `RESOURCE_TO_PLAYER_TRIVIA_QUESTION`
 
 **Resource Gathering → Puzzle Assembly**
-1. Final round completes automatically
+1. Final round completes automatically; the game enters `puzzle_preparation`
 2. Host receives `RESOURCE_TO_HOST_PHASE_COMPLETE`; players receive `RESOURCE_TO_CLIENT_PHASE_COMPLETE`
 3. Host receives `PUZZLE_TO_HOST_PREPARING` while the server generates tiles in memory
 4. Host receives `PUZZLE_TO_HOST_READY`, then `PUZZLE_TO_HOST_PHASE_LOAD`
 5. Players receive `PUZZLE_TO_CLIENT_PHASE_LOAD` and begin fetching their segment from `GET /api/segments/{segmentId}` (puzzle UI stays hidden)
 6. Host sends `PUZZLE_TO_SERVER_PHASE_START` when ready (rejected before step 4)
-7. Host receives `PUZZLE_TO_HOST_PHASE_START`; players receive `PUZZLE_TO_CLIENT_PHASE_START` and reveal the puzzle UI
+7. Host receives `PUZZLE_TO_HOST_PHASE_START`; players receive `PUZZLE_TO_CLIENT_PHASE_START` and reveal the puzzle UI; the game enters `puzzle_assembly`
 
 **Puzzle Assembly → Analytics**
 1. Puzzle completes successfully or timer expires

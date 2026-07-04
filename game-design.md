@@ -4,7 +4,7 @@
 A collaborative puzzle-solving game where players recover a stolen masterpiece by gathering resources, answering trivia, and assembling a fragmented artwork. The game uses a dedicated host system for reliable game management and real-time coordination.
 
 ## Terminology
-- **Piece**: One of the 16 sub-tiles a player manipulates inside their *own* individual puzzle (Phase 2A). Pieces are private and never appear on the central grid.
+- **Piece**: One of the `gameConfig.individualPuzzlePieces` (default 16) sub-tiles a player manipulates inside their *own* individual puzzle (Phase 2A). Pieces are private and never appear on the central grid.
 - **Segment**: The image one player is assigned to solve. A segment, once assembled by its owner, becomes a single **fragment** on the central grid.
 - **Fragment**: A completed segment occupying one cell of the central shared grid (Phase 2B). Fragments are public and can be moved within ownership rules.
 - **Central grid**: The N×N shared board where fragments are arranged to reconstruct the full image.
@@ -82,12 +82,12 @@ All communication after initial connection requires authentication using the sta
 **Role Mechanics:**
 - Each role provides bonus collection for specific token type
 - Bonus multiplier: `gameConfig.roleResourceMultiplier`
-- Even distribution of roles enforced across players
 - Host does not select a role
 
-**Distribution Goals:**
-- Roles should be evenly distributed across players, scaling with player count.
-- All four roles must remain selectable until at least one player has filled each, so that small-player-count games still see every role's bonus token type collected.
+**Slot Capacity:**
+- Each role has capacity `max(1, ceil(connectedPlayers / 4))`; a role is selectable while its selected count is below capacity. This keeps roles evenly distributed, and because capacity is never below 1, a role only becomes unselectable after at least one player holds it — so small games still see every role's bonus token type collectible.
+- Capacity is recomputed whenever a player connects or disconnects during setup; availability changes reach unready players via `SETUP_TO_PLAYER_ROLES_AVAILABLE`.
+- If a disconnect shrinks capacity below a role's current count, existing selections are never revoked; the role is simply unselectable until capacity rises again.
 
 **Race Resolution:**
 - Two players may submit `SETUP_TO_SERVER_PLAYER_CONFIGURATION` for the last available slot of a role at almost the same time. The server processes configuration messages serially: the first to land claims the slot.
@@ -99,7 +99,7 @@ All communication after initial connection requires authentication using the sta
 
 **Specialty Mechanics:**
 - Players select 1 category as their specialty
-- Specialty questions are harder difficulty (+1 level)
+- Specialty questions are one difficulty level harder than the game's base difficulty (`gameConfig.difficultyMode`), capped at hard — in a hard game, specialty and regular questions are both drawn from the hard pool
 - Same time limits as regular questions (no extension)
 - Specialty bonus: `gameConfig.specialtyPointMultiplier`
 - Players are immediately marked as ready upon successful specialty selection
@@ -115,9 +115,8 @@ All communication after initial connection requires authentication using the sta
 Players connect, select roles and specialties, host monitors readiness and starts the game when minimum players are ready.
 
 ### Phase 1: Resource Gathering
-**Duration**: Configurable rounds and duration per round
+**Duration**: Configurable rounds; each round lasts `gameConfig.triviaAnswerTime + gameConfig.triviaGraceTime` seconds (round duration is derived, not separately configurable)
 - Number of rounds: `gameConfig.resourceGatheringRounds`
-- Round duration: `gameConfig.resourceGatheringRoundDuration` seconds per round
 - Each gathering round = one trivia round = one trivia question sent to all players
 - First part of round: Players select their answer from multiple choice options for `gameConfig.triviaAnswerTime` seconds
 - Second part of round: Answers locked in, marked right/wrong, grace period of `gameConfig.triviaGraceTime` seconds for location changes and team discussion
@@ -131,11 +130,12 @@ Players connect, select roles and specialties, host monitors readiness and start
 - Players physically move between 4 QR code stations
 - Each station corresponds to different token type
 - Location verification only required when changing stations
+- Players start each game with no verified station (`unknown`); correct answers earn no tokens until the player's first successful QR scan
 - QR codes' text value is the hash sent to the server for validation
 - Station hashes stored as constants: `gameConfig.stationHashes.anchor`, `gameConfig.stationHashes.chronos`, `gameConfig.stationHashes.guide`, `gameConfig.stationHashes.clarity`
 
 **Trivia System:**
-- One question delivered per gathering round (every `gameConfig.resourceGatheringRoundDuration` seconds)
+- One question delivered per gathering round
 - Questions presented as distinct multiple-choice options
 - No fuzzy matching - clear right/wrong based on selected option
 - Automatic question cycling prevents repetition
@@ -155,11 +155,18 @@ Players connect, select roles and specialties, host monitors readiness and start
 - Comprehensive logging for debugging and analysis
 
 #### Resource Token System
+**Threshold formula (all four token types):**
+
+```
+thresholdsAchieved = min(gameConfig.maxThresholds,
+                         floor(teamTokens / (tokenThreshold × thresholdMultiplier)))
+```
+
+where `tokenThreshold` is the per-type config value (`gameConfig.anchorTokenThreshold`, `gameConfig.chronosTokenThreshold`, `gameConfig.guideTokenThreshold`, `gameConfig.clarityTokenThreshold`) and `thresholdMultiplier` comes from the active difficulty mode (see *Difficulty Levels and Modifiers*). `gameConfig.maxThresholds` defaults to 6.
+
 **Token Types & Effects:**
 
 1. **Anchor Tokens** → Pre-solved Individual Puzzle Pieces
-   - Threshold count: `gameConfig.maxThresholds` (default 6)
-   - Threshold spacing: `teamAnchorTokens / gameConfig.anchorTokenThreshold`
    - **Derived limits** (computed from `gameConfig.individualPuzzlePieces` and `gameConfig.maxThresholds`):
      - `maxPreSolvedPieces = floor(individualPuzzlePieces × 0.75)` — caps total pieces an anchor effect can pre-solve
      - `piecesPreSolvedPerThreshold = ceil(maxPreSolvedPieces / maxThresholds)` — pieces unlocked at each threshold (capped so the cumulative count never exceeds `maxPreSolvedPieces`)
@@ -168,16 +175,12 @@ Players connect, select roles and specialties, host monitors readiness and start
    - Only affects individual puzzle solving, NOT the central grid
 
 2. **Chronos Tokens** → Extended Puzzle Time
-   - Threshold count: `gameConfig.maxThresholds`
-   - Threshold spacing: `teamChronosTokens / gameConfig.chronosTokenThreshold`
    - Effect: `gameConfig.timeExtensionPerThreshold` seconds added per threshold to puzzle assembly time
    - Maximum total bonus: `gameConfig.maxThresholds × gameConfig.timeExtensionPerThreshold` seconds
    - Base time: `gameConfig.puzzleBaseTime` seconds
    - Team-wide benefit applied to entire puzzle phase
 
 3. **Guide Tokens** → Fragment Placement Guidance on Central Grid
-   - Threshold count: `gameConfig.maxThresholds`
-   - Threshold spacing: `teamGuideTokens / gameConfig.guideTokenThreshold`
    - Effect: Highlights possible positions for the player's fragment on the central grid on the player's personal device
    - **Highlight count formula**: When threshold *N* of `gameConfig.maxThresholds` has been achieved:
      - If `N == 0`: no cells are highlighted (no guidance earned yet — showing every cell would be visual noise carrying no information).
@@ -187,8 +190,6 @@ Players connect, select roles and specialties, host monitors readiness and start
    - Only applies after individual puzzle completion
 
 4. **Clarity Tokens** → Complete Image Preview
-   - Threshold count: `gameConfig.maxThresholds`
-   - Threshold spacing: `teamClarityTokens / gameConfig.clarityTokenThreshold`
    - **Preview duration formula** (gated on threshold count, consistent with other token types):
      - If `N == 0`: no preview window — the full-image overlay is never shown and `/api/preview/full` returns `403 FORBIDDEN_PREVIEW_WINDOW_CLOSED` for the entire puzzle phase.
      - If `N ≥ 1`: preview window is `gameConfig.clarityBasePreviewTime + (N × gameConfig.previewTimePerThreshold)` seconds, starting from `PUZZLE_TO_CLIENT_PHASE_START`.
@@ -229,14 +230,14 @@ Canvas Conundrum operates with two independent puzzle systems that remain separa
 - **Assignment**: Each player receives exactly one unique segment ID (e.g., `segment_a5`, `segment_b2`)
 - **Client Responsibilities**:
   - Load segment image using provided ID
-  - Split segment into 16 individual jigsaw pieces
+  - Split segment into `gameConfig.individualPuzzlePieces` (default 16) jigsaw pieces
   - Shuffle pieces randomly for puzzle challenge
   - Choose which pieces to pre-solve based on anchor token count
   - Mark pre-solved pieces as locked and unmovable
   - Handle all piece movement and swapping logic
   - Validate when puzzle is correctly assembled
-- **Solving Process**: Players arrange these 16 pieces into the correct configuration privately
-- **Pre-solving Effects**: Anchor tokens provide count of pieces to pre-solve (up to 12), client chooses which pieces
+- **Solving Process**: Players arrange these pieces into the correct configuration privately
+- **Pre-solving Effects**: Anchor tokens provide count of pieces to pre-solve (up to `maxPreSolvedPieces`), client chooses which pieces
 - **No Interaction**: Other players cannot see, help with, or influence individual puzzle progress
 - **Host Blindness**: Host cannot monitor or view individual puzzle progress in real-time
 
@@ -252,7 +253,7 @@ Canvas Conundrum operates with two independent puzzle systems that remain separa
 **Central Grid Mechanics:**
 - **Dynamic Scaling**: Grid size automatically scales with player count.
 - **Fragment Creation**: Each completed individual puzzle becomes one movable fragment.
-- **Proportional Unassigned Fragment Reveal**: When more grid cells exist than players (i.e. `gridSize² > playerCount`), unassigned fragments appear gradually in lockstep with player completions. After *k* of *N* players have finished their individual puzzles, the grid shows a total of `ceil((k / N) × gridSize²)` fragments — *k* of which are the completed player-owned fragments, with the remainder filled in by randomly-selected unassigned fragments at random unoccupied positions. When `gridSize² == playerCount`, no unassigned fragments exist and the formula naturally yields zero.
+- **Proportional Unassigned Fragment Reveal**: When more grid cells exist than players (i.e. `gridSize² > playerCount`), unassigned fragments appear gradually in lockstep with player completions. After *k* of *N* players have finished their individual puzzles, the grid shows a total of `ceil((k / N) × gridSize²)` fragments — *k* of which are the completed player-owned fragments, with the remainder filled in by randomly-selected unassigned fragments at random unoccupied positions. When `gridSize² == playerCount`, no unassigned fragments exist and the formula naturally yields zero. Auto-solved fragments from disconnected players count toward *k*; *N* is fixed when the puzzle phase starts and never shrinks.
 - **Movement Rules**: Players can move their own fragments and any unassigned fragments.
 - **Collaboration Features**: Recommendation system for strategic coordination.
 
@@ -269,12 +270,12 @@ This is the single most important transition in the entire game system:
    - Host displays show no fragment for this player
 
 2. **Completion Trigger**:
-   - Player arranges final pieces of their 16-piece puzzle
+   - Player arranges final pieces of their individual puzzle
    - Player sends `PUZZLE_TO_SERVER_SEGMENT_COMPLETED` message with `segmentId` and timestamp
-   - Server validates completion and assigns grid position
+   - Server accepts the completion claim — the client is authoritative for its own private puzzle — and assigns a grid position
 
 3. **Instant Transformation**:
-   - Individual 16-piece puzzle instantly becomes one single fragment
+   - Individual puzzle instantly becomes one single fragment
    - Server places fragment at random unoccupied position on central shared grid
    - Fragment becomes visible to all players and host immediately
    - Fragment becomes movable according to ownership rules
@@ -322,7 +323,8 @@ Player Count → Grid Size → Total Fragments
 - **Terminology**: Also called fragment move requests, fragment recommendations, or switch requests
 - **Position Validation**: All swaps validated against grid boundaries (0 to gridSize-1)
 - **Collision Resolution**: Fragments swap positions or one fragment moves to open grid space
-- **Permission Checking**: Server validates ownership before allowing movement
+- **Permission Checking**: A direct move may only involve fragments the mover controls (their own fragment or unassigned ones). A swap that would displace another player's owned fragment is rejected with `not_owner` — propose it through the recommendation system instead.
+- **Phase 2A Lockout**: Players still solving their individual puzzle cannot move fragments or use recommendations; they receive grid broadcasts read-only. Violations are rejected with `phase_invalid`.
 - **State Synchronization**:
   - Host: Immediate updates on all movements
   - Players: Updates every `gameConfig.gridUpdateInterval` seconds
@@ -347,10 +349,11 @@ Player Count → Grid Size → Total Fragments
 #### Strategic Collaboration System
 
 **Piece Recommendation Protocol:**
-- **Strategic Communication**: Players can suggest optimal fragment switches between a segment they control (their own or unassigned) and any other fragment
-- **Accept/Reject Mechanism**: If the other fragment is controlled by another player (not unassigned) the other player chooses whether to allow/reject the suggested switch
-- **Analytics Tracking**: All recommendations tracked for collaboration scoring
-- **No Auto-Execution**: Recommendations require explicit acceptance to take effect
+- **Scope**: A recommendation proposes a swap between a fragment the sender controls (own or unassigned) and another player's owned fragment. The owner must explicitly accept before the swap executes. Swaps involving no other player's fragment never need a recommendation — they are executed directly as fragment moves.
+- **Cooldown Gating**: Creating a recommendation and accepting one both require both named fragments to be off cooldown; otherwise the request is rejected with `COOLDOWN_ACTIVE`. A blocked acceptance leaves the recommendation pending — it can be retried once the cooldown passes.
+- **Fragment-Based, Not Position-Based**: Pending recommendations are not invalidated when fragments move; an accepted swap exchanges the fragments' *current* positions. Both fragments' cooldowns restart when the swap executes.
+- **Expiry**: A recommendation is cleared only by acceptance, rejection, timeout (`gameConfig.recommendationTimeout` seconds after creation), or either involved player disconnecting.
+- **Analytics Tracking**: Recommendations sent/received/accepted are tracked for scoring.
 - **Verbal Coordination**: Players encouraged to communicate during collaboration
 
 #### Token Effects in Puzzle Phase
@@ -364,6 +367,7 @@ The four token types and their puzzle-phase effects are fully defined under *Res
 2. **Correct Positioning**: All fragments positioned at their designated correct grid coordinates
 
 **Completion Validation:**
+- **Authority Split**: Each client is authoritative for completing its own individual segment (see *The Critical Transformation Moment*); the server is authoritative for the central grid and the victory conditions.
 - **Continuous Checking**: Server validates the victory conditions after every fragment movement.
 - **Immediate Resolution on Success**: The game ends instantly when both conditions are satisfied; the server emits `PUZZLE_TO_CLIENT_COMPLETED_SUCCESS`.
 - **Timer Expiry = Loss**: If the puzzle phase timer reaches zero before both victory conditions are met — for any reason — the team loses. This applies regardless of how many players are still in Phase 2A solving privately, how many fragments are unrevealed, or how many fragments are in incorrect positions. The server emits `PUZZLE_TO_CLIENT_COMPLETED_TIMEOUT` and transitions directly to the Analytics phase. There is no auto-solve fallback.
@@ -398,18 +402,18 @@ Canvas Conundrum handles disconnections differently based on the game phase to b
 - **Resource Phase**: Collected tokens remain in team totals
 - **Puzzle Phase**: Individual puzzle auto-solved, fragment becomes unassigned for team use
 - **Analytics Phase**: Personal analytics preserved for viewing upon reconnection
-- **Limited Reconnection**: Cannot reconnect during puzzle assembly phase; can reconnect during resource gathering and analytics phases
+- **Limited Reconnection**: Cannot reconnect during puzzle assembly phase; can reconnect during resource gathering, puzzle preparation, and analytics phases
 
 **Host Disconnection:**
 
-The general rule: a host disconnect should never block phases that don't require host input or a shared host-driven display. Where the host's role is purely monitoring, the game proceeds; where the host's screen is part of the gameplay artifact (the shared central grid display) or where host input is required to advance state, the game pauses.
+The general rule: setup and resource gathering proceed without a host — the host is only needed to *start* the game and to *start* the puzzle phase. Puzzle assembly, whose shared big-screen display is part of the gameplay artifact, pauses entirely.
 
 | Phase | Effect of host disconnect |
 |---|---|
-| Setup | **Pause.** Game cannot start without `SETUP_TO_SERVER_START_GAME` from the host. |
+| Setup | **Continues, but the game cannot start.** Players keep connecting, configuring, and readying up; `SETUP_TO_SERVER_START_GAME` requires the host. |
 | Resource Gathering | **No effect.** Trivia rounds proceed on schedule; tokens accumulate. Host loses real-time monitoring until reconnect. |
-| Puzzle Preparation (Phase 1 → 2 transition) | **Tile generation completes**, but the puzzle phase timer cannot start until the host reconnects and sends `PUZZLE_TO_SERVER_PHASE_START`. Game waits in a "ready, awaiting host" state. |
-| Puzzle Assembly | **Timer pauses, resumes on reconnect.** Players still solving their individual puzzles privately (Phase 2A) continue normally — they don't depend on the host's display. Phase 2B players retain access to the central grid on their own devices and may continue moving fragments, but the shared big-screen experience is unavailable until host reconnects. The puzzle phase deadline is extended by the disconnect duration. |
+| Puzzle Preparation | **Tile generation completes**, but the puzzle phase timer cannot start until the host reconnects and sends `PUZZLE_TO_SERVER_PHASE_START`. Game waits in a "ready, awaiting host" state. |
+| Puzzle Assembly | **Full pause.** The phase timer stops and the server rejects every puzzle action — segment completions, fragment moves, recommendation creation and responses — with `FORBIDDEN_PHASE`/`phase_invalid` until the host reconnects. Pending recommendation timeout clocks pause as well. The puzzle deadline is extended by the disconnect duration. |
 | Analytics | **No effect.** Reports remain available on each player's device; reset still requires the host but there is no time pressure. |
 
 In all cases: complete game state is preserved for host reconnection, and players are notified of host disconnection and reconnection events. If the host never reconnects, the affected phase remains stalled — recovery requires a deployment-level restart.
@@ -435,53 +439,42 @@ In all cases: complete game state is preserved for host reconnection, and player
 
 #### Individual Player Analytics
 - **Token Collection**: Total tokens by type, role bonuses earned
-- **Trivia Performance**: Accuracy by category, specialty bonus points
-- **Puzzle Solving Metrics**: Individual solve time, fragment moves, recommendations sent/received/accepted
+- **Trivia Performance**: Accuracy by category, specialty accuracy and bonus tokens
+- **Puzzle Solving Metrics**: Individual solve time, fragment moves and success rate, recommendations sent/received/accepted
 
 #### Team Performance Metrics
-- **Overall Performance**: Completion rate, total time, team score
-- **Collaboration Analysis**: Communication effectiveness, coordination scores
+- **Overall Performance**: Puzzle outcome, completion time, team score
 - **Resource Efficiency**: Token distribution, threshold achievements
-- **Strategic Analysis**: Recommendation acceptance rates, move efficiency
+- **Collaboration**: Move counts and success rate, recommendation acceptance rate
 
-#### Advanced Scoring Algorithm
+All reported metrics are direct counters or ratios of tracked events; the game does not compute synthetic scores (communication effectiveness, coordination ratings, etc.).
+
+#### Scoring Algorithm
 ```
 Individual Score =
-  (Correct Answers × gameConfig.pointsPerCorrectAnswer) +
-  (Specialty Bonus × gameConfig.specialtyBonusPoints) +
+  (correctAnswers × gameConfig.pointsPerCorrectAnswer) +
+  (specialtyCorrectAnswers × gameConfig.specialtyBonusPoints) +
   (gameConfig.completionBonus, if puzzle completed) +
-  (Speed Bonus: scaled 0..gameConfig.maxSpeedBonus by completion time) +
-  (Successful Moves × gameConfig.pointsPerSuccessfulMove) +
-  (Recommendations Sent × gameConfig.pointsPerRecommendationSent) +
-  (Recommendations Accepted × gameConfig.pointsPerRecommendationAccepted)
+  (successfulMoves × gameConfig.pointsPerSuccessfulMove) +
+  (recommendationsSent × gameConfig.pointsPerRecommendationSent) +
+  (recommendationsAccepted × gameConfig.pointsPerRecommendationAccepted)
 ```
 
 ## Difficulty Levels and Modifiers
 
-### Difficulty Settings Impact
-**Easy Mode:**
-- Easier trivia question selection
-- Time multiplier: `gameConfig.easyTimeMultiplier`
-- Token threshold multiplier: `gameConfig.easyThresholdMultiplier`
-- Specialty question probability: `gameConfig.easySpecialtyProbability`
+The game difficulty is set by `gameConfig.difficultyMode` (`easy` | `medium` | `hard`), loaded at startup like every other config value. It has two kinds of effect:
 
-**Medium Mode:**
-- Baseline difficulty for all aspects
-- Time multiplier: `gameConfig.mediumTimeMultiplier`
-- Token threshold multiplier: `gameConfig.mediumThresholdMultiplier`
-- Specialty question probability: `gameConfig.mediumSpecialtyProbability`
+**Trivia base difficulty** — regular questions are drawn from the pool matching the game difficulty. Specialty questions are one level harder, capped at hard (see *Trivia Specialty Selection*), so a hard game serves only hard questions.
 
-**Hard Mode:**
-- Harder trivia questions prioritized
-- Time multiplier: `gameConfig.hardTimeMultiplier`
-- Token threshold multiplier: `gameConfig.hardThresholdMultiplier`
-- Specialty question probability: `gameConfig.hardSpecialtyProbability`
+**Gameplay modifiers** — each mode selects a multiplier set:
 
-### Dynamic Scaling Applications
-- Trivia question difficulty selection
-- Time limits for resource gathering and puzzle phases
-- Token threshold calculations for all bonus effects
-- Specialty question probability adjustments
+| Mode | Time multiplier | Threshold multiplier | Specialty probability |
+|---|---|---|---|
+| Easy | `gameConfig.easyTimeMultiplier` | `gameConfig.easyThresholdMultiplier` | `gameConfig.easySpecialtyProbability` |
+| Medium | `gameConfig.mediumTimeMultiplier` | `gameConfig.mediumThresholdMultiplier` | `gameConfig.mediumSpecialtyProbability` |
+| Hard | `gameConfig.hardTimeMultiplier` | `gameConfig.hardThresholdMultiplier` | `gameConfig.hardSpecialtyProbability` |
+
+The time multiplier scales total puzzle-phase time (`(puzzleBaseTime + chronosBonus) × timeMultiplier`). The threshold multiplier scales the per-threshold token cost (see the threshold formula under *Resource Token System*). The specialty probability is the per-player, per-round chance that the round's question is drawn from that player's specialty category.
 
 ## Technical Architecture
 
@@ -504,15 +497,15 @@ Individual Score =
 
 ### Asset Delivery (Puzzle Images)
 - **Source Images at Runtime**: Source images live under `assets/puzzle-sources/` and are bind-mounted into the backend container read-only at `/app/puzzle-sources/`. They are *not* baked into the image — adding a puzzle requires only a file drop and container restart.
-- **Startup Validation**: On boot, the server verifies that `puzzle-sources/` is non-empty and that every file decodes as a usable image (square or square-croppable). The server refuses to start if validation fails, so missing or corrupt sources are caught at deploy time rather than mid-game.
-- **Deferred Tile Generation**: Tiles are *not* generated at build time, on every connection, or on demand. Generation is triggered exactly once per game, at the resource-gathering → puzzle-assembly transition (see *Phase 1 → 2 Preparation* below), using the Go standard library's `image` package. Only the segments needed for the current player count and grid size are produced (e.g. 16 crops for a 16-player 4×4 game), not all six grid sizes.
+- **Image Selection & Startup Validation**: `gameConfig.puzzleImage` names the source file (inside `puzzle-sources/`) used for every game until the config changes; the same filename is sent as `imageId` in the `PUZZLE_TO_*_PHASE_LOAD` events. On boot, the server verifies the configured file exists and decodes as a usable image (square or square-croppable), refusing to start otherwise — missing or corrupt sources are caught at deploy time rather than mid-game.
+- **Deferred Tile Generation**: Tiles are *not* generated at build time, on every connection, or on demand. Generation is triggered exactly once per game, at the start of the puzzle preparation phase (see *Puzzle Preparation Phase* below), using the Go standard library's `image` package. Only the segments needed for the current player count and grid size are produced (e.g. 16 crops for a 16-player 4×4 game), not all six grid sizes.
 - **In-Memory Tile Cache**: Generated segment images live in an in-memory `map[segmentId][]byte` held by the game manager. They are never written to disk and are released when the game resets.
 - **Server-Gated Fetches**: The Go server is the sole holder of tile bytes. It exposes authenticated HTTP endpoints (under `/api/...`) that validate the requesting session token and check that the player is the assigned owner of the requested segment before streaming the bytes. Players never receive segment images they do not own.
 - **Time-Windowed Full-Image Preview**: The clarity-token preview is enforced server-side. The full assembled image is only available through an authenticated endpoint during the calculated preview window (`gameConfig.clarityBasePreviewTime` + threshold bonuses); requests outside the window return 403 regardless of token validity.
 - **Central Grid Fragments**: Once a player completes their individual puzzle, their fragment becomes visible to all participants. The server then permits all authenticated session tokens to fetch that specific fragment's image — visibility expansion is a server-controlled state transition, not a client decision.
 
-### Phase 1 → 2 Preparation
-When resource gathering ends, the server enters a brief "preparing puzzle" state during which it crops the source image into per-segment tiles. This pause maps onto the natural physical-world delay while players gather in the puzzle room. The host cannot start the puzzle phase until preparation completes; the host UI surfaces a "preparing puzzle…" indicator while it waits.
+### Puzzle Preparation Phase (Phase 1 → 2 transition)
+When resource gathering ends, the game enters `puzzle_preparation` — a first-class phase with its own rules (player reconnection allowed; host-disconnect handling per the table above). It covers both tile generation and the subsequent wait for the host to start the puzzle timer; `puzzle_assembly` begins only when the host sends `PUZZLE_TO_SERVER_PHASE_START`. The pause maps onto the natural physical-world delay while players gather in the puzzle room. The host cannot start the puzzle phase until tile generation completes; the host UI surfaces a "preparing puzzle…" indicator while it waits. Players still disconnected when the timer starts have their segments auto-solved into unassigned fragments at that moment.
 
 For the wire-level event sequence and rejection behavior, see *Resource Gathering → Puzzle Assembly* in `websocket-events.md`.
 
@@ -541,6 +534,7 @@ For the wire-level event sequence and rejection behavior, see *Resource Gatherin
 **Permitted Phases:**
 - ✅ **Setup Phase**: Full reconnection with state restoration and role revalidation
 - ✅ **Resource Gathering Phase**: Rejoin current round with preserved progress
+- ✅ **Puzzle Preparation Phase**: Rejoin while tiles are generated or the host readies the start; a player still disconnected when the puzzle timer starts is auto-solved at that moment
 - ❌ **Puzzle Assembly Phase**: Reconnection explicitly forbidden
 - ✅ **Analytics Phase**: View personal performance report
 
@@ -575,7 +569,7 @@ For the wire-level event sequence and rejection behavior, see *Resource Gatherin
 5. **Player Notification**: All players notified of host reconnection
 
 #### Technical Implementation
-- **Connection Events**: Both `SETUP_TO_HOST_CONNECTION_CONFIRMED` and `SETUP_TO_PLAYER_ROLES_AVAILABLE` include current phase and reconnection status
+- **Connection Events**: The handshake events `SETUP_TO_HOST_CONNECTION_CONFIRMED` and `SETUP_TO_PLAYER_CONNECTION_CONFIRMED` include current phase and reconnection status
 - **Token Validation**: Strict authentication prevents unauthorized reconnections
 - **Phase Enforcement**: Puzzle phase reconnection block maintained for game integrity
 - **State Synchronization**: Complete context restoration ensures seamless experience
@@ -609,9 +603,13 @@ All values below come from `game-config.json`, mounted into the backend containe
 - Minimum Players: `gameConfig.minPlayers` (excluding host)
 - Maximum Players: `gameConfig.maxPlayers` (excluding host)
 
+**Game Selection:**
+- Difficulty Mode: `gameConfig.difficultyMode` (`easy` | `medium` | `hard`)
+- Puzzle Image: `gameConfig.puzzleImage` (filename inside `assets/puzzle-sources/`)
+
 **Phase Timing:**
 - Resource Gathering Rounds: `gameConfig.resourceGatheringRounds`
-- Resource Gathering Round Duration: `gameConfig.resourceGatheringRoundDuration` seconds
+- Round duration is derived: `gameConfig.triviaAnswerTime + gameConfig.triviaGraceTime` seconds
 - One trivia question per gathering round
 - Puzzle Base Time: `gameConfig.puzzleBaseTime` seconds
 - Post-Game Analytics: displays until the host sends `ANALYTICS_TO_SERVER_RESET_GAME`; no auto-expiry
@@ -632,6 +630,7 @@ All values below come from `game-config.json`, mounted into the backend containe
 - Grace Period Time: `gameConfig.triviaGraceTime`
 - Max Specialties Per Player: `gameConfig.maxSpecialtiesPerPlayer` (set to 1)
 - Grid Update Interval: `gameConfig.gridUpdateInterval` seconds (default 3s)
+- Recommendation Timeout: `gameConfig.recommendationTimeout` seconds
 
 ---
 

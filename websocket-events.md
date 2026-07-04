@@ -2,7 +2,7 @@
 
 ## Authentication Wrapper Format
 
-All client-to-server messages (except initial connection) use this format:
+All client-to-server messages use this format. The `auth` field is optional only on `SETUP_TO_SERVER_PLAYER_CONNECT`, where its absence means "new player joining" (see that event); everywhere else it is required.
 
 ```json
 {
@@ -39,7 +39,15 @@ Every payload field shown in this spec is **required** unless explicitly marked 
 
 ### Message limits
 
-WebSocket messages are limited to **8 KB**. All text fields must be valid UTF-8 and are subject to per-field length limits. Violations are rejected with `SYSTEM_TO_CLIENT_ERROR` / `MALFORMED_PAYLOAD`.
+**Client-to-server** WebSocket messages are limited to **8 KB**; violations are rejected with `SYSTEM_TO_CLIENT_ERROR` / `MALFORMED_PAYLOAD`. Server-to-client messages have no fixed cap — host rosters, grid states, and analytics reports legitimately exceed 8 KB at high player counts.
+
+All text fields must be valid UTF-8. Free-text fields have these length limits (everything else is fixed-format — UUIDs, enums, ISO timestamps, numbers):
+
+| Field | Limit |
+|---|---|
+| `playerName` | 1–32 characters |
+| `reasoning`, `responseReason` | ≤ 200 characters |
+| `stationHash` | ≤ 128 characters |
 
 ### Timestamps
 
@@ -47,7 +55,7 @@ All timestamp fields are ISO 8601 UTC strings — the envelope `timestamp` and p
 
 ### Canonical example game
 
-All example payloads in this document describe the same game: **5 players** — Alice (detective, science), Bob (art_enthusiast, music), Charlie (tourist, geography), Diana (janitor, history), Eve (art_enthusiast, general) — on **medium** difficulty with **5 rounds**, producing a **3×3 grid** (segments `a1`–`c3`; Alice→`a1`, Bob→`a2`, Charlie→`a3`, Diana→`b1`, Eve→`b2`). Final thresholds: anchor 3, chronos 3, guide 3, clarity 2 — hence 6 pre-solved pieces, +60s chronos bonus (360s total), 5 guide highlights, and a 5s clarity preview. Example values are internally consistent with this game and the formulas in `game-design.md`.
+All example payloads in this document describe the same game: **5 players** — Alice (detective, science), Bob (art_enthusiast, music), Charlie (tourist, geography), Diana (janitor, history), Eve (art_enthusiast, general) — on **medium** difficulty with **5 rounds**, producing a **3×3 grid** (segments `a1`–`c3`; Alice→`a1`, Bob→`a2`, Charlie→`a3`, Diana→`b1`, Eve→`b2`). Final team tokens: anchor 90, chronos 70, guide 50, clarity 70 (280 total) — hence final thresholds anchor 3, chronos 3, guide 3, clarity 2, giving 6 pre-solved pieces, +60s chronos bonus (360s total), 5 guide highlights, and a 5s clarity preview. Example values are internally consistent with this game and the formulas in `game-design.md`; setup-phase examples are snapshots taken before all five players finished configuring.
 
 ### Game phases
 
@@ -61,17 +69,18 @@ When the server closes a WebSocket connection it uses these codes:
 |---|---|
 | `1000` | Normal closure (e.g. game reset, graceful client disconnect) |
 | `1001` | Server going away (planned shutdown) |
-| `4001` | Unauthorized (missing/malformed/unknown token at handshake) |
-| `4003` | Forbidden (player tried to connect during puzzle assembly phase) |
+| `4001` | Unauthorized (malformed/unknown token in the host URL or player connect frame, or no `SETUP_TO_SERVER_PLAYER_CONNECT` frame within 10 seconds of the upgrade) |
+| `4002` | Join rejected (new player while the game is past setup or already at `maxPlayers`) |
+| `4003` | Forbidden (player tried to connect — new or reconnecting — during puzzle assembly phase) |
 | `4004` | Token invalid or expired (e.g. game reset since the token was issued) |
 
 Codes in the `4xxx` range are application-specific per RFC 6455 §7.4.2; clients should treat any unrecognized `4xxx` close as a terminal failure.
 
-Handshake-time rejections (`4001`, `4003`, `4004`) are delivered by completing the WebSocket upgrade and immediately closing with the code, without exchanging application frames. Rejecting at the HTTP layer instead would leave browser clients — which cannot read the HTTP status of a failed upgrade — unable to distinguish a permanent rejection from a transient network failure (both surface as a `1006` close).
+Handshake-time rejections (`4001`–`4004`) are delivered by completing the WebSocket upgrade and closing with the code, without sending any application frames. For hosts the token is judged from the URL immediately; for players it is judged from the first frame (`SETUP_TO_SERVER_PLAYER_CONNECT`). Rejecting at the HTTP layer instead would leave browser clients — which cannot read the HTTP status of a failed upgrade — unable to distinguish a permanent rejection from a transient network failure (both surface as a `1006` close).
 
 ### Client reconnection backoff
 
-After an unexpected close (any code other than `1000`), clients should attempt to reconnect using exponential backoff: start at 1 second, double each retry, cap at 30 seconds. Reset to 1 second on a successful connection. Connection attempts that close immediately with code `4001`, `4003`, or `4004` should not be retried — the failure is permanent for this game.
+After an unexpected close (any code other than `1000`), clients should attempt to reconnect using exponential backoff: start at 1 second, double each retry, cap at 30 seconds. Reset to 1 second on a successful connection. Connection attempts that close immediately with code `4001`, `4002`, `4003`, or `4004` should not be retried — the failure is permanent for this game.
 
 ### Error code registry
 
@@ -87,10 +96,12 @@ Codes are stable identifiers; new codes may be added over time, but existing cod
 | `MALFORMED_REQUEST` | HTTP | Path, header, or body unparsable |
 | `MALFORMED_PAYLOAD` | WS | Required WebSocket field missing or wrong type |
 | `INVALID_ROLE_SELECTION` | WS | Selected role is unknown |
+| `INVALID_SPECIALTY_SELECTION` | WS | Specialty list is empty, has duplicates, exceeds `maxSpecialtiesPerPlayer`, or names an unknown category |
 | `ROLE_FULL` | WS | All slots for the requested role are taken |
 | `INVALID_STATION_HASH` | WS | QR-code hash did not match any configured station |
 | `INSUFFICIENT_PLAYERS` | WS | Host tried to start the game before every connected player was ready and at least `minPlayers` were ready |
 | `COOLDOWN_ACTIVE` | WS | Recommendation created or accepted while an involved fragment is on its move cooldown |
+| `RECOMMENDATION_PENDING` | WS | Sender already has an outgoing recommendation pending |
 | `FORBIDDEN_PHASE` | HTTP, WS | Action not permitted in the current game phase or phase state (e.g. puzzle start before tile generation completes) |
 | `FORBIDDEN_NOT_OWNER` | HTTP, WS | Caller is not the assigned owner of the resource |
 | `FORBIDDEN_PREVIEW_WINDOW_CLOSED` | HTTP | Full-image preview requested outside its active time window |
@@ -107,6 +118,7 @@ Every event in this spec, in protocol order. Directions: H = host, P = player, S
 | Event | Direction | When |
 |---|---|---|
 | `SETUP_TO_HOST_CONNECTION_CONFIRMED` | S → H | Host connects or reconnects (handshake) |
+| `SETUP_TO_SERVER_PLAYER_CONNECT` | P → S | First frame after opening `/ws` (token = reconnect; no token = new join) |
 | `SETUP_TO_PLAYER_CONNECTION_CONFIRMED` | S → P | Player connects or reconnects (handshake) |
 | `SETUP_TO_PLAYER_ROLES_AVAILABLE` | S → P | After player handshake in setup; on any role availability change (unready players only) |
 | `SETUP_TO_SERVER_PLAYER_CONFIGURATION` | P → S | Player submits role, specialty, and name |
@@ -121,7 +133,7 @@ Every event in this spec, in protocol order. Directions: H = host, P = player, S
 | `RESOURCE_TO_PLAYER_TRIVIA_QUESTION` | S → P | Start of each gathering round |
 | `RESOURCE_TO_SERVER_TRIVIA_ANSWER` | P → S | Player selects an answer |
 | `RESOURCE_TO_PLAYER_ANSWER_RESULT` | S → P | Answer window ends |
-| `RESOURCE_TO_CLIENT_TEAM_PROGRESS` | S → all P | End of each round, after marking and token awards |
+| `RESOURCE_TO_CLIENT_TEAM_PROGRESS` | S → all P | End of each round's answer window, after marking and token awards |
 | `RESOURCE_TO_HOST_ROUND_ANALYTICS` | S → H | After each round |
 | `RESOURCE_TO_CLIENT_PHASE_COMPLETE` | S → all P | All gathering rounds completed |
 | `RESOURCE_TO_HOST_PHASE_COMPLETE` | S → H | All gathering rounds completed |
@@ -193,7 +205,7 @@ The events fired in order at each phase boundary. See each event's own subsectio
 
 ## Reconnection Behavior
 
-Both host and players reconnect using the same WebSocket endpoint and token they used originally. The handshake event (`SETUP_TO_HOST_CONNECTION_CONFIRMED` for the host, `SETUP_TO_PLAYER_CONNECTION_CONFIRMED` for a player) carries `isReconnection: true` and `currentPhase`. The server then replays a phase-appropriate sequence of state-restoration events (defined under each event's own subsection — only the sequence is listed here).
+Both host and players reconnect using the same WebSocket endpoint and token they used originally — the host presents its UUID in the connection URL; a player presents theirs in the `auth` field of `SETUP_TO_SERVER_PLAYER_CONNECT`, the first frame after opening the socket. The handshake event (`SETUP_TO_HOST_CONNECTION_CONFIRMED` for the host, `SETUP_TO_PLAYER_CONNECTION_CONFIRMED` for a player) carries `isReconnection: true` and `currentPhase`. The server then replays a phase-appropriate sequence of state-restoration events (defined under each event's own subsection — only the sequence is listed here).
 
 ### Host
 
@@ -233,7 +245,7 @@ If a host socket is already open, a new connection presenting the valid host UUI
 {
   "event": "SETUP_TO_HOST_CONNECTION_CONFIRMED",
   "payload": {
-    "playerId": "uuid-generated-by-server",
+    "hostId": "host-uuid",
     "currentPhase": "setup",
     "isReconnection": false,
     "gameConfig": {
@@ -250,9 +262,26 @@ If a host socket is already open, a new connection presenting the valid host UUI
 }
 ```
 
+`hostId` echoes the host UUID from the connection URL — it is the token the host uses for all subsequent authenticated messages and HTTP asset fetches.
+
+#### `SETUP_TO_SERVER_PLAYER_CONNECT`
+**Direction**: Player → Server
+**Trigger**: The first frame a player client sends after the WebSocket to `/ws` opens. With `auth` present, it is a reconnection attempt using the previously issued token; with `auth` omitted (or `null`), it is a new player joining. The server replies with `SETUP_TO_PLAYER_CONNECTION_CONFIRMED`, or closes the socket with `4001`/`4002`/`4003`/`4004` (see *WebSocket close codes*). If no connect frame arrives within 10 seconds of the upgrade, the server closes with `4001`. Host connections do not send this event — the host token travels in the URL.
+
+```json
+{
+  "event": "SETUP_TO_SERVER_PLAYER_CONNECT",
+  "auth": {
+    "token": "player-uuid"
+  },
+  "payload": {},
+  "timestamp": "2025-06-15T14:23:05.000Z"
+}
+```
+
 #### `SETUP_TO_PLAYER_CONNECTION_CONFIRMED`
 **Direction**: Server → Player
-**Trigger**: Player connects to `/ws` (initial connection or reconnection). This is the player handshake event, mirroring `SETUP_TO_HOST_CONNECTION_CONFIRMED`, and is sent in every phase that permits player connections.
+**Trigger**: Sent in response to a valid `SETUP_TO_SERVER_PLAYER_CONNECT` (initial connection or reconnection). This is the player handshake event, mirroring `SETUP_TO_HOST_CONNECTION_CONFIRMED`, and is sent in every phase that permits player connections.
 
 ```json
 {
@@ -285,6 +314,8 @@ If a host socket is already open, a new connection presenting the valid host UUI
 **Trigger**: Sent immediately after `SETUP_TO_PLAYER_CONNECTION_CONFIRMED` during setup, and again whenever role availability changes (players joining/leaving, role slots filling or freeing).
 
 **Important**: This event is only sent to players who have not yet marked themselves as ready — a ready player's configuration is locked, so availability updates are irrelevant to them. (A ready player who reconnects still receives the connection handshake above; they simply don't receive this event.)
+
+Example snapshot: early in setup, 4 players connected (role capacity `max(1, ceil(4/4)) = 1`) and only Alice has configured — so detective is at capacity and unavailable, the other three roles are open.
 
 ```json
 {
@@ -338,6 +369,8 @@ If a host socket is already open, a new connection presenting the valid host UUI
 }
 ```
 
+`maxSpecialties` echoes `gameConfig.maxSpecialtiesPerPlayer` — the upper bound on how many `selectedSpecialties` a configuration may contain.
+
 ### Role and Specialty Selection
 
 #### `SETUP_TO_SERVER_PLAYER_CONFIGURATION`
@@ -359,7 +392,9 @@ If a host socket is already open, a new connection presenting the valid host UUI
 }
 ```
 
-The server processes these messages serially; if two players race for the last slot of a role, the first to land wins and the loser receives `SYSTEM_TO_CLIENT_ERROR` with `errorCode: "ROLE_FULL"` (see *Race Resolution* in `game-design.md`). The resubmission only needs a new `selectedRole` — specialty and name are preserved server-side.
+`selectedSpecialties` must contain 1 to `gameConfig.maxSpecialtiesPerPlayer` distinct known categories, else the message is rejected with `INVALID_SPECIALTY_SELECTION`.
+
+The server processes these messages serially; if two players race for the last slot of a role, the first to land wins and the loser receives `SYSTEM_TO_CLIENT_ERROR` with `errorCode: "ROLE_FULL"` (see *Race Resolution* in `game-design.md`). A rejected configuration is discarded in full; the loser resubmits a complete configuration with a different role.
 
 #### `SETUP_TO_CLIENT_LOBBY_STATUS`
 **Direction**: Server → All Players
@@ -373,7 +408,7 @@ The server processes these messages serially; if two players race for the last s
     "minPlayers": 4,
     "maxPlayers": 64,
     "playerRoles": {
-      "art_enthusiast": 2,
+      "art_enthusiast": 1,
       "detective": 1,
       "tourist": 1,
       "janitor": 1
@@ -387,6 +422,8 @@ The server processes these messages serially; if two players race for the last s
   "timestamp": "2025-06-15T14:23:05.000Z"
 }
 ```
+
+Because configuration is atomic (role + specialty in one message, which also marks the player ready), `playerRoles` always sums to `readyPlayers` — here Eve has not yet configured, so her art-enthusiast slot isn't counted.
 
 #### `SETUP_TO_HOST_PLAYER_ROSTER`
 **Direction**: Server → Host
@@ -409,17 +446,17 @@ The server processes these messages serially; if two players race for the last s
         "ready": true,
         "lastActivity": "2025-06-15T14:23:05.000Z"
       },
-      "player2-uuid": {
-        "playerName": "Bob",
-        "role": "art_enthusiast",
-        "specialties": ["music"],
+      "player5-uuid": {
+        "playerName": "Eve",
+        "role": null,
+        "specialties": [],
         "connected": true,
         "ready": false,
         "lastActivity": "2025-06-15T14:23:05.000Z"
       }
     },
     "roleDistribution": {
-      "art_enthusiast": 2,
+      "art_enthusiast": 1,
       "detective": 1,
       "tourist": 1,
       "janitor": 1
@@ -428,6 +465,8 @@ The server processes these messages serially; if two players race for the last s
   "timestamp": "2025-06-15T14:23:05.000Z"
 }
 ```
+
+Same snapshot as the lobby-status example above: Eve is connected but hasn't configured yet, so her `role` is `null` and she isn't in `roleDistribution`. (Alice through Diana's entries are elided.)
 
 ### Game Start
 
@@ -607,7 +646,7 @@ On a recognized hash, the server replies with `RESOURCE_TO_PLAYER_LOCATION_CONFI
 
 #### `RESOURCE_TO_SERVER_TRIVIA_ANSWER`
 **Direction**: Player → Server
-**Trigger**: Player selects an answer. If the player never selects one, the client sends nothing; at the answer deadline the server marks the question incorrect for that player.
+**Trigger**: Player selects an answer. A player may resubmit before `answerDeadline`; the last answer received counts. If the player never selects one, the client sends nothing; at the answer deadline the server marks the question incorrect for that player. Answers arriving after the deadline are silently ignored.
 
 ```json
 {
@@ -624,7 +663,7 @@ On a recognized hash, the server replies with `RESOURCE_TO_PLAYER_LOCATION_CONFI
 }
 ```
 
-The server determines which token type an answer earns from its own station tracking (QR scans), never from the client. Answers submitted while the player's station is `unknown` (no successful scan yet this game) earn no tokens.
+The server determines which token type an answer earns from its own station tracking (QR scans), never from the client — specifically the station on record when the answer window closes. Players whose station is `unknown` at that moment (no successful scan yet this game) earn no tokens.
 
 #### `RESOURCE_TO_PLAYER_ANSWER_RESULT`
 **Direction**: Server → Individual Player
@@ -644,8 +683,7 @@ The server determines which token type an answer earns from its own station trac
       "roleBonus": true,
       "roleBonusTokens": 10,
       "specialtyBonus": false,
-      "specialtyBonusTokens": 0,
-      "difficultyMultiplier": 1.0
+      "specialtyBonusTokens": 0
     },
     "currentLocation": "clarity",
     "nextTriviaTimestamp": "2025-06-15T14:23:05.000Z"
@@ -653,6 +691,8 @@ The server determines which token type an answer earns from its own station trac
   "timestamp": "2025-06-15T14:23:05.000Z"
 }
 ```
+
+`tokensEarned` follows the multiplicative award formula in `game-design.md` § *Token Scoring*. The bonus fields decompose it for display: `roleBonusTokens = baseTokens × (roleResourceMultiplier − 1)` when at the matching station, and `specialtyBonusTokens = baseTokens × roleFactor × (specialtyPointMultiplier − 1)` for specialty questions (each is `0` when its flag is `false`).
 
 `currentLocation` is the server-tracked station — `"unknown"` if the player has never scanned one, in which case `tokensEarned` is `0` even for a correct answer.
 
@@ -671,19 +711,19 @@ The server determines which token type an answer earns from its own station trac
     "questionsAnswered": 14,
     "totalQuestions": 25,
     "teamTokens": {
-      "anchorTokens": 45,
-      "chronosTokens": 32,
-      "guideTokens": 28,
-      "clarityTokens": 38
+      "anchorTokens": 40,
+      "chronosTokens": 30,
+      "guideTokens": 30,
+      "clarityTokens": 40
     },
     "currentThresholds": {
       "anchor": 1,
       "chronos": 1,
-      "guide": 1,
+      "guide": 2,
       "clarity": 1
     },
     "teamPerformance": {
-      "averageAccuracy": 0.78,
+      "averageAccuracy": 0.79,
       "roundTimeRemaining": 28
     }
   },
@@ -706,35 +746,35 @@ The server determines which token type an answer earns from its own station trac
       "answersReceived": 5,
       "correctAnswers": 4,
       "averageResponseTime": 22.3,
-      "tokensAwarded": 95
+      "tokensAwarded": 90
     },
     "playerPerformance": {
       "player1-uuid": {
-        "location": "anchor",
+        "location": "guide",
         "answerCorrect": true,
         "responseTime": 18.2,
         "tokensEarned": 30,
-        "runningAccuracy": 0.85
+        "runningAccuracy": 1.0
       },
       "player2-uuid": {
         "location": "clarity",
         "answerCorrect": false,
         "responseTime": 28.7,
         "tokensEarned": 0,
-        "runningAccuracy": 0.72
+        "runningAccuracy": 0.67
       }
     },
     "stationDistribution": {
-      "anchor": 2,
+      "anchor": 1,
       "chronos": 1,
-      "guide": 1,
+      "guide": 2,
       "clarity": 1
     },
     "teamTokens": {
-      "anchorTokens": 45,
-      "chronosTokens": 32,
-      "guideTokens": 28,
-      "clarityTokens": 38
+      "anchorTokens": 40,
+      "chronosTokens": 30,
+      "guideTokens": 30,
+      "clarityTokens": 40
     }
   },
   "timestamp": "2025-06-15T14:23:05.000Z"
@@ -754,10 +794,10 @@ The server determines which token type an answer earns from its own station trac
     "phase": "resource_gathering",
     "nextPhase": "puzzle_preparation",
     "finalTokenTotals": {
-      "anchorTokens": 87,
-      "chronosTokens": 64,
-      "guideTokens": 52,
-      "clarityTokens": 78
+      "anchorTokens": 90,
+      "chronosTokens": 70,
+      "guideTokens": 50,
+      "clarityTokens": 70
     },
     "thresholdAchievements": {
       "anchor": 3,
@@ -788,14 +828,14 @@ The server determines which token type an answer earns from its own station trac
     "totalQuestionsAnswered": 25,
     "teamPerformance": {
       "overallAccuracy": 0.76,
-      "totalTokensEarned": 281,
+      "totalTokensEarned": 280,
       "averageResponseTime": 23.5
     },
     "finalTokenDistribution": {
-      "anchorTokens": 87,
-      "chronosTokens": 64,
-      "guideTokens": 52,
-      "clarityTokens": 78
+      "anchorTokens": 90,
+      "chronosTokens": 70,
+      "guideTokens": 50,
+      "clarityTokens": 70
     },
     "playerAnalytics": {
       "player1-uuid": {
@@ -837,6 +877,12 @@ Clients and the host derive the full set of valid segment IDs from
 
 Fragments are identified by the `segmentId` of the segment they contain —
 there is no separate fragment ID namespace.
+
+**Coordinate mapping**: grid positions are `{x, y}` with `x` = column
+(`col − 1`) and `y` = row (letter index, `a` = 0), both 0-based from the
+top-left. A segment's correct cell follows directly: `segment_a1` belongs at
+`{x: 0, y: 0}`, `segment_c3` at `{x: 2, y: 2}`. The server uses this mapping
+for victory validation and guide highlights.
 
 ### Puzzle Preparation
 
@@ -884,7 +930,7 @@ When resource gathering ends, the game enters the `puzzle_preparation` phase, du
     "individualPuzzleSize": 16,
     "anchorPreSolvedPieces": 6,
     "centralGridSize": 3,
-    "totalCentralFragments": 9,
+    "totalFragments": 9,
     "clarityPreviewDuration": 5,
     "guideHighlightCount": 5
   },
@@ -946,7 +992,7 @@ The `error` field is a fixed machine-readable code from the *Error code registry
 Returns PNG bytes of a single puzzle segment. The server enforces, in order:
 
 1. The token must correspond to a known player or the host of the current game.
-2. The current phase must be `puzzle_preparation` with tile generation complete (see `PUZZLE_TO_HOST_READY`), or `puzzle_assembly`.
+2. The current phase must be `puzzle_preparation` with tile generation complete (see `PUZZLE_TO_HOST_READY`), `puzzle_assembly`, or `analytics` (the final grid stays viewable on result screens until the game resets).
 3. The requested `segmentId` must match either:
    - the requesting player's own assigned segment, OR
    - a fragment that has already been completed and is now visible to all players on the central grid, OR
@@ -1034,7 +1080,7 @@ If the team earned zero clarity thresholds, the endpoint returns `FORBIDDEN_PREV
 
 #### `PUZZLE_TO_CLIENT_PREVIEW_EXPIRED`
 **Direction**: Server → All Players
-**Trigger**: The clarity-token full-image preview window has elapsed. Sent at most once per game, `clarityPreviewDuration` seconds after `PUZZLE_TO_CLIENT_PHASE_START`, and **only** if the team earned at least one clarity-token threshold (i.e. `PUZZLE_TO_CLIENT_PHASE_START.clarityPreviewActive` was `true`). Games where no clarity thresholds were earned never see a preview window open and never receive this event. Clients should dismiss the preview overlay on receipt rather than relying on a locally-computed deadline (which can drift).
+**Trigger**: The clarity-token full-image preview window has elapsed. Sent at most once per game, `clarityPreviewDuration` seconds after `PUZZLE_TO_CLIENT_PHASE_START` (the preview clock pauses during a host-disconnect pause, like every other timer), and **only** if the team earned at least one clarity-token threshold (i.e. `PUZZLE_TO_CLIENT_PHASE_START.clarityPreviewActive` was `true`). Games where no clarity thresholds were earned never see a preview window open and never receive this event. Clients should dismiss the preview overlay on receipt rather than relying on a locally-computed deadline (which can drift).
 
 After this event fires, `GET /api/preview/full` returns `403 FORBIDDEN_PREVIEW_WINDOW_CLOSED` for the rest of the game.
 
@@ -1233,7 +1279,7 @@ The `fragments` array grows over time as players complete their individual puzzl
         "position": {"x": 2, "y": 1}
       }
     ],
-    "timeRemaining": 285
+    "timeRemaining": 165
   },
   "timestamp": "2025-06-15T14:23:05.000Z"
 }
@@ -1269,7 +1315,7 @@ The `fragments` array follows the same proportional-reveal rule as `PUZZLE_TO_CL
       }
     },
     "activeRecommendations": 2,
-    "timeRemaining": 285
+    "timeRemaining": 165
   },
   "timestamp": "2025-06-15T14:23:05.000Z"
 }
@@ -1297,7 +1343,7 @@ The `guideHighlights` array carries the cells on the central grid currently high
 }
 ```
 
-`guideHighlights` is an empty array until the team earns its first guide-token threshold. This is the only client-visible delivery channel for guide highlights — they intentionally do not appear in the broadcast `PUZZLE_TO_CLIENT_GRID_STATE`.
+`guideHighlights` is an empty array until the team earns its first guide-token threshold. The set always contains the fragment's correct cell and is stable between ticks — it changes only if a new guide threshold is earned (see `game-design.md` § *Guide Tokens*). This is the only client-visible delivery channel for guide highlights — they intentionally do not appear in the broadcast `PUZZLE_TO_CLIENT_GRID_STATE`.
 
 ### Strategic Collaboration
 
@@ -1305,7 +1351,7 @@ The `guideHighlights` array carries the cells on the central grid currently high
 **Direction**: Player → Server
 **Trigger**: Player sends recommendation to another player
 
-Validation: the sender must be in Phase 2B and control `fromSegmentId` (their own or unassigned); `toSegmentId` must be owned by `targetPlayerId` (recommendations exist precisely for the swaps a player cannot execute directly); and both fragments must be off cooldown, otherwise the request is rejected with `SYSTEM_TO_CLIENT_ERROR` / `COOLDOWN_ACTIVE`.
+Validation: the sender must be in Phase 2B and control `fromSegmentId` (their own or unassigned); `toSegmentId` must be owned by `targetPlayerId` (recommendations exist precisely for the swaps a player cannot execute directly); both fragments must be off cooldown, otherwise the request is rejected with `SYSTEM_TO_CLIENT_ERROR` / `COOLDOWN_ACTIVE`; and the sender must have no other outgoing recommendation pending, otherwise `RECOMMENDATION_PENDING`.
 
 ```json
 {
@@ -1531,10 +1577,10 @@ The swap exchanges the fragments' positions at execution time, and both fragment
     "rank": 1,
     "totalPlayers": 5,
     "tokenCollection": {
-      "anchorTokens": 20,
-      "chronosTokens": 10,
-      "guideTokens": 70,
-      "clarityTokens": 30,
+      "anchorTokens": 40,
+      "chronosTokens": 20,
+      "guideTokens": 30,
+      "clarityTokens": 40,
       "totalTokens": 130
     },
     "triviaPerformance": {
@@ -1593,7 +1639,7 @@ The swap exchanges the fragments' positions at execution time, and both fragment
     "totalGameTime": 795,
     "teamPerformance": {
       "overallAccuracy": 0.76,
-      "totalTokensCollected": 281,
+      "totalTokensCollected": 280,
       "thresholdAchievements": {
         "anchor": 3,
         "chronos": 3,
@@ -1644,6 +1690,8 @@ The swap exchanges the fragments' positions at execution time, and both fragment
 }
 ```
 
+The leaderboard is sorted by `totalScore` descending. Players with equal scores share the same rank (competition ranking: 1, 2, 2, 4) and are ordered alphabetically by `playerName` within the tie; the same rule produces `rank` in `ANALYTICS_TO_PLAYER_PERSONAL_REPORT`.
+
 #### `ANALYTICS_TO_HOST_COMPLETE_REPORT`
 **Direction**: Server → Host
 **Trigger**: Game completion
@@ -1667,10 +1715,10 @@ The swap exchanges the fragments' positions at execution time, and both fragment
       "questionsAnswered": 25,
       "overallAccuracy": 0.76,
       "tokenDistribution": {
-        "anchorTokens": 87,
-        "chronosTokens": 64,
-        "guideTokens": 52,
-        "clarityTokens": 78
+        "anchorTokens": 90,
+        "chronosTokens": 70,
+        "guideTokens": 50,
+        "clarityTokens": 70
       },
       "playerPerformance": {
         "player1-uuid": {
@@ -1686,8 +1734,8 @@ The swap exchanges the fragments' positions at execution time, and both fragment
           },
           "stationPreferences": {
             "anchor": 1,
-            "chronos": 0,
-            "guide": 3,
+            "chronos": 1,
+            "guide": 2,
             "clarity": 1
           }
         }
@@ -1924,12 +1972,12 @@ The `errorCode` field in both error events draws from the *Error code registry* 
     "disconnectionTime": "2025-06-15T14:23:05.000Z",
     "currentPhase": "setup",
     "updatedCounts": {
-      "connectedPlayers": 3,
-      "readyPlayers": 2,
+      "connectedPlayers": 4,
+      "readyPlayers": 3,
       "roleDistribution": {
         "art_enthusiast": 1,
-        "detective": 0,
-        "tourist": 1,
+        "detective": 1,
+        "tourist": 0,
         "janitor": 1
       }
     }
@@ -1982,6 +2030,9 @@ The `errorCode` field in both error events draws from the *Error code registry* 
 ```json
 {
   "event": "SYSTEM_PING",
+  "auth": {
+    "token": "player-uuid"
+  },
   "payload": {
     "clientTimestamp": "2025-06-15T14:23:05.000Z",
     "sequenceNumber": 42
@@ -1989,6 +2040,8 @@ The `errorCode` field in both error events draws from the *Error code registry* 
   "timestamp": "2025-06-15T14:23:05.000Z"
 }
 ```
+
+Heartbeats use the standard client wrapper, `auth` included (the host sends its own UUID). Clients start pinging only after their handshake completes.
 
 #### `SYSTEM_PONG`
 **Direction**: Server → Client

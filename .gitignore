@@ -1,5 +1,6 @@
+# package-lock.json is committed on purpose: the frontend Dockerfile's
+# `npm ci` requires it for reproducible builds.
 node_modules/
-package-lock.json
 
 # Build artifacts
 dist/

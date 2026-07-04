@@ -16,6 +16,11 @@ services:
     ports:
       - "8081:8080" # expose backend directly for curl/debugging
     command: ["air", "-c", ".air.toml"]
+    # The prod healthcheck runs /app/server, which doesn't exist in the dev
+    # image (air rebuilds from /src). Disable it here and relax the
+    # frontend's startup condition below to match.
+    healthcheck:
+      disable: true
 
   frontend:
     build:
@@ -23,11 +28,15 @@ services:
     volumes:
       - ./frontend:/app
       - /app/node_modules # anonymous volume so host node_modules doesn't shadow
-    environment:
-      VITE_BACKEND_URL: http://localhost:8081
+    # No VITE_BACKEND_URL: the Vite dev server proxies /ws and /api to
+    # http://backend:8080 (vite.config server.proxy), mirroring the prod
+    # nginx setup so the browser sees a single origin in both environments.
     command: ["npm", "run", "dev", "--", "--host", "0.0.0.0"]
     ports:
       - "5173:5173" # vite default
+    depends_on:
+      backend:
+        condition: service_started # healthcheck is disabled in dev
 
 volumes:
   go-mod-cache:

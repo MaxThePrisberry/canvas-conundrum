@@ -49,6 +49,10 @@ docker compose -f docker-compose.yml up --build
 | `http://localhost:8080/host` (prod) or `http://localhost:5173/host` (dev) | Host interface |
 | `http://localhost:8081/` (dev only) | Backend exposed directly for debugging |
 
+In dev, the Vite server proxies `/ws` and `/api` to the backend container
+(`vite.config` `server.proxy`), mirroring prod nginx — the browser sees a
+single origin in both environments.
+
 ## Attribution
 
 Trivia content from [Open Trivia Database](https://opentdb.com/) under

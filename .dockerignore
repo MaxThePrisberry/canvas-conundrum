@@ -5,6 +5,11 @@
 .github
 **/node_modules
 frontend
+# Runtime-mounted content — never baked into the image, so keep it out of
+# the build context.
+assets
+trivia
+game-config.json
 **/*.log
 **/dist
 **/build

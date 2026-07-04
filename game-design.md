@@ -45,24 +45,12 @@ Canvas Conundrum uses a dedicated host model for reliable game management:
   - Collaborate on master puzzle assembly through recommendations
   - Move fragments on shared puzzle grid
 - **Requirements**: Host must be connected for game to start
+- **Join Window**: New players can join only during the setup phase and only while connected players are below `gameConfig.maxPlayers`; attempts outside that window are rejected at the WebSocket handshake (close code `4002`, see `websocket-events.md`)
 - **Reconnection**: Can reconnect using assigned token
 
 ## Authentication System
 
-All communication after initial connection requires authentication using the standardized message format:
-
-```json
-{
-  "event": "EVENT_NAME",
-  "auth": {
-    "token": "uuid-generated-by-server"
-  },
-  "payload": {
-    // Event-specific data
-  },
-  "timestamp": "2025-06-15T14:23:05.000Z"
-}
-```
+All communication after initial connection requires a server-issued UUID token, carried in the standardized message wrapper defined in `websocket-events.md` § *Authentication Wrapper Format*. The host's token is embedded in its connection URL; a player presents theirs in `SETUP_TO_SERVER_PLAYER_CONNECT` — the first frame sent after opening the socket, with a token to reconnect or without one to join fresh.
 
 **Validation Features:**
 - UUID v4 format validation for tokens
@@ -94,18 +82,19 @@ Players connect, select roles and specialties, host monitors readiness and start
 
 **Race Resolution:**
 - Two players may submit `SETUP_TO_SERVER_PLAYER_CONFIGURATION` for the last available slot of a role at almost the same time. The server processes configuration messages serially: the first to land claims the slot.
-- Losers receive `SYSTEM_TO_CLIENT_ERROR` with code `ROLE_FULL`. Their previously selected specialty and player name are preserved server-side; they must reselect a role and resubmit. The next `SETUP_TO_PLAYER_ROLES_AVAILABLE` broadcast reflects the updated availability so loser clients can immediately offer remaining roles.
+- Losers receive `SYSTEM_TO_CLIENT_ERROR` with code `ROLE_FULL`. The rejected configuration is discarded in full — nothing is stored server-side; the client resubmits a complete `SETUP_TO_SERVER_PLAYER_CONFIGURATION` with a different role (keeping the user's specialty and name filled in locally). The next `SETUP_TO_PLAYER_ROLES_AVAILABLE` broadcast reflects the updated availability so loser clients can immediately offer remaining roles.
 
 ### Trivia Specialty Selection (Players Only)
 **Available Categories:**
 - General Knowledge, Geography, History, Music, Science, Video Games
 
 **Specialty Mechanics:**
-- Players select 1 category as their specialty
+- Players select between 1 and `gameConfig.maxSpecialtiesPerPlayer` distinct categories as their specialties
+- Each round, with the difficulty-dependent specialty probability (see *Difficulty Levels and Modifiers*), a player's question is a **specialty question**, drawn uniformly at random from that player's specialty categories; otherwise it is a regular question
+- A regular question that happens to land in one of the player's specialty categories is *not* a specialty question — no bonus, no difficulty bump. Only questions delivered with `isSpecialty: true` count
 - Specialty questions are one difficulty level harder than the game's base difficulty (`gameConfig.difficultyMode`), capped at hard — in a hard game, specialty and regular questions are both drawn from the hard pool
 - Same time limits as regular questions (no extension)
 - Specialty bonus: `gameConfig.specialtyPointMultiplier`
-- Frequency of specialty questions is difficulty-dependent — see *Difficulty Levels and Modifiers*
 - Players are immediately marked as ready upon successful specialty selection
 - Once ready, a player's configuration is locked for the rest of the game — there is no un-ready or reconfigure flow
 
@@ -130,17 +119,19 @@ The host may start the game only when **every connected player is ready** and th
 - Each station corresponds to different token type
 - Location verification only required when changing stations
 - Players start each game with no verified station (`unknown`); correct answers earn no tokens until the player's first successful QR scan
+- Tokens are credited to the station on record at the moment the answer window closes; a scan later in the round (during the grace period) takes effect for subsequent rounds
 - QR codes' text value is the hash sent to the server for validation
 - Station hashes stored as constants: `gameConfig.stationHashes.anchor`, `gameConfig.stationHashes.chronos`, `gameConfig.stationHashes.guide`, `gameConfig.stationHashes.clarity`
 
 **Trivia System:**
 - One question delivered to each player per gathering round; regular (non-specialty) questions are drawn from a uniformly random category at the game's base difficulty
 - Distinct multiple-choice options; no fuzzy matching — clear right/wrong on the selected option, no partial credit
-- Answers lock and are marked correct/incorrect after `gameConfig.triviaAnswerTime` seconds
+- Answers lock and are marked correct/incorrect after `gameConfig.triviaAnswerTime` seconds; until then a player may resubmit and the last selection received counts. Selections arriving after the deadline are silently ignored
 - All questions have the same time limit regardless of specialty status
 
 ### Question Management
 - 6 categories × 3 difficulties = 18 question pools (JSON files under `trivia/{category}/{difficulty}.json`)
+- File format: raw Open Trivia DB export — `{"response_code": 0, "results": [{"question", "correct_answer", "incorrect_answers", ...}]}` with HTML-entity-encoded text. The directory name is the category key and the filename the difficulty; the `category`/`difficulty` fields inside the file are ignored
 - Automatic pool cycling when exhausted, with randomized order; history tracking prevents immediate repeats
 - HTML entity decoding and text normalization
 
@@ -176,6 +167,8 @@ where `tokenThreshold` is the per-type config value (`gameConfig.anchorTokenThre
      - If `N == 0`: no cells are highlighted (no guidance earned yet — showing every cell would be visual noise carrying no information).
      - If `N ≥ 1`: `max(1, ceil(gridSize² × (1 − N / maxThresholds)))` cells are highlighted.
      - At full thresholds the count converges to exactly one cell — the correct destination.
+   - The highlighted set always contains the fragment's correct cell; the remaining cells are decoys
+   - The set for a given threshold count is drawn once and is stable across broadcasts; it re-rolls (shrinking) only when a new guide threshold is earned — otherwise players could intersect successive sets to isolate the correct cell
    - Individual hints visible only to each player for their own fragment
    - Only applies after individual puzzle completion
 
@@ -187,11 +180,15 @@ where `tokenThreshold` is the per-type config value (`gameConfig.anchorTokenThre
    - Helps with spatial understanding and planning
 
 ### Token Scoring
-**Base Scoring:**
-- Correct Answer: `gameConfig.baseTokensPerCorrectAnswer` tokens
-- Role Bonus: `gameConfig.roleResourceMultiplier` when at matching station
-- Specialty Bonus: `gameConfig.specialtyPointMultiplier` for specialty questions
-- Difficulty Modifier: Applied to final token awards
+**Award formula (per correct answer):**
+
+```
+tokensEarned = gameConfig.baseTokensPerCorrectAnswer
+               × gameConfig.roleResourceMultiplier   (only if at the role's matching station)
+               × gameConfig.specialtyPointMultiplier (only if a specialty question)
+```
+
+The factors stack multiplicatively (all together on default config: 20 × 1.5 × 2 = 60); the result is rounded down to an integer. The full award is credited to the token type of the station the player is verified at when the answer window closes; players at `unknown` earn nothing.
 
 **Token Distribution:**
 - Anchor Station → Anchor Tokens (Janitor role bonus)
@@ -339,6 +336,7 @@ Player Count → Grid Size → Total Fragments
 **Piece Recommendation Protocol:**
 - **Scope**: A recommendation proposes a swap between a fragment the sender controls (own or unassigned) and another player's owned fragment. The owner must explicitly accept before the swap executes. Swaps involving no other player's fragment never need a recommendation — they are executed directly as fragment moves.
 - **Cooldown Gating**: Creating a recommendation and accepting one both require both named fragments to be off cooldown; otherwise the request is rejected with `COOLDOWN_ACTIVE`. A blocked acceptance leaves the recommendation pending — it can be retried once the cooldown passes.
+- **Pending Limit**: A player may have at most one outgoing recommendation pending at a time; creating another before it resolves is rejected with `RECOMMENDATION_PENDING`. This (with cooldown gating) is what deters recommendation spam.
 - **Fragment-Based, Not Position-Based**: Pending recommendations are not invalidated when fragments move; an accepted swap exchanges the fragments' *current* positions. Both fragments' cooldowns restart when the swap executes.
 - **Expiry**: A recommendation is cleared only by acceptance, rejection, timeout (`gameConfig.recommendationTimeout` seconds after creation), or either involved player disconnecting.
 - **Analytics Tracking**: Recommendations sent/received/accepted are tracked for scoring.
@@ -389,7 +387,7 @@ Individual Score =
   (recommendationsAccepted × gameConfig.pointsPerRecommendationAccepted)
 ```
 
-Counter semantics: `recommendationsSent` counts recommendations the player created; `recommendationsAccepted` counts recommendations the player *received and accepted* — the acceptance is the collaborative act being rewarded (recommendation spam is already deterred by cooldown gating). Swaps executed through accepted recommendations are tracked only in recommendation metrics; they do not increment either player's `successfulMoves`.
+Counter semantics: `recommendationsSent` counts recommendations the player created; `recommendationsAccepted` counts recommendations the player *received and accepted* — the acceptance is the collaborative act being rewarded (recommendation spam is already deterred by cooldown gating and the one-pending-per-sender limit). Swaps executed through accepted recommendations are tracked only in recommendation metrics; they do not increment either player's `successfulMoves`.
 
 ## Difficulty Levels and Modifiers
 
@@ -441,7 +439,7 @@ The general rule: setup and resource gathering proceed without a host — the ho
 | Setup | **Continues, but the game cannot start.** Players keep connecting, configuring, and readying up; `SETUP_TO_SERVER_START_GAME` requires the host. |
 | Resource Gathering | **No effect.** Trivia rounds proceed on schedule; tokens accumulate. Host loses real-time monitoring until reconnect. |
 | Puzzle Preparation | **Tile generation completes**, but the puzzle phase timer cannot start until the host reconnects and sends `PUZZLE_TO_SERVER_PHASE_START`. Game waits in a "ready, awaiting host" state. |
-| Puzzle Assembly | **Full pause.** The phase timer stops and the server rejects every puzzle action — segment completions, fragment moves, recommendation creation and responses — with `FORBIDDEN_PHASE`/`phase_invalid` until the host reconnects. Pending recommendation timeout clocks pause as well. The puzzle deadline is extended by the disconnect duration. |
+| Puzzle Assembly | **Full pause.** The phase timer stops and the server rejects every puzzle action — segment completions, fragment moves, recommendation creation and responses — with `FORBIDDEN_PHASE`/`phase_invalid` until the host reconnects. Every time-based clock pauses with it — pending recommendation timeouts, per-fragment move cooldowns, and the clarity preview window all resume where they stopped. The puzzle deadline is extended by the disconnect duration. |
 | Analytics | **No effect.** Reports remain available on each player's device; reset still requires the host but there is no time pressure. |
 
 In all cases: complete game state is preserved for host reconnection, and players are notified of host disconnection and reconnection events. If the host never reconnects, the affected phase remains stalled — recovery requires a deployment-level restart.
@@ -517,7 +515,7 @@ All values below come from `game-config.json`, mounted into the backend containe
 - Individual Puzzle Pieces: `gameConfig.individualPuzzlePieces` per player — must be a perfect square (4, 9, 16, 25, 36, 49, 64) since it's manipulated as an N×N sub-grid. The server rejects startup if this value is not a perfect square.
 - Answer Selection Time: `gameConfig.triviaAnswerTime`
 - Grace Period Time: `gameConfig.triviaGraceTime`
-- Max Specialties Per Player: `gameConfig.maxSpecialtiesPerPlayer`
+- Max Specialties Per Player: `gameConfig.maxSpecialtiesPerPlayer` (players choose 1 up to this many; see *Trivia Specialty Selection*)
 - Grid Update Interval: `gameConfig.gridUpdateInterval` seconds
 - Recommendation Timeout: `gameConfig.recommendationTimeout` seconds
 

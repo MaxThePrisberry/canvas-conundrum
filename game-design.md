@@ -3,6 +3,8 @@
 ## Game Concept
 A collaborative puzzle-solving game where players recover a stolen masterpiece by gathering resources, answering trivia, and assembling a fragmented artwork. The game uses a dedicated host system for reliable game management and real-time coordination.
 
+The game runs through five phases: `setup` (Phase 0) → `resource_gathering` (Phase 1) → `puzzle_preparation` → `puzzle_assembly` (Phase 2) → `analytics` (Phase 3). Each has a section below, followed by the cross-cutting systems (difficulty, disconnections) and the technical architecture.
+
 ## Terminology
 - **Piece**: One of the `gameConfig.individualPuzzlePieces` (default 16) sub-tiles a player manipulates inside their *own* individual puzzle (Phase 2A). Pieces are private and never appear on the central grid.
 - **Segment**: The image one player is assigned to solve. A segment, once assembled by its owner, becomes a single **fragment** on the central grid.
@@ -47,7 +49,6 @@ Canvas Conundrum uses a dedicated host model for reliable game management:
 
 ## Authentication System
 
-### Security Model
 All communication after initial connection requires authentication using the standardized message format:
 
 ```json
@@ -71,7 +72,9 @@ All communication after initial connection requires authentication using the sta
 - Rate limiting on fragment movements (`gameConfig.fragmentMoveCooldown`)
 - Asset authorization: all puzzle imagery served through authenticated, server-gated HTTP endpoints (see *Asset Delivery (Puzzle Images)*)
 
-## Player Setup and Character Selection
+## Phase 0: Setup and Connection
+
+Players connect, select roles and specialties, host monitors readiness and starts the game when minimum players are ready.
 
 ### Role Selection (Players Only)
 **4 Available Roles:**
@@ -103,19 +106,11 @@ All communication after initial connection requires authentication using the sta
 - Specialty questions are one difficulty level harder than the game's base difficulty (`gameConfig.difficultyMode`), capped at hard — in a hard game, specialty and regular questions are both drawn from the hard pool
 - Same time limits as regular questions (no extension)
 - Specialty bonus: `gameConfig.specialtyPointMultiplier`
+- Frequency of specialty questions is difficulty-dependent — see *Difficulty Levels and Modifiers*
 - Players are immediately marked as ready upon successful specialty selection
 
-**Specialty Question Frequency:**
-- Easy Mode: `gameConfig.easySpecialtyProbability`
-- Medium Mode: `gameConfig.mediumSpecialtyProbability`
-- Hard Mode: `gameConfig.hardSpecialtyProbability`
+## Phase 1: Resource Gathering
 
-## Game Phases
-
-### Phase 0: Setup and Connection
-Players connect, select roles and specialties, host monitors readiness and starts the game when minimum players are ready.
-
-### Phase 1: Resource Gathering
 **Duration**: Configurable rounds; each round lasts `gameConfig.triviaAnswerTime + gameConfig.triviaGraceTime` seconds (round duration is derived, not separately configurable)
 - Number of rounds: `gameConfig.resourceGatheringRounds`
 - Each gathering round = one trivia round = one trivia question sent to all players
@@ -126,7 +121,7 @@ Players connect, select roles and specialties, host monitors readiness and start
 
 **Participants**: Players only (host monitors)
 
-#### Core Mechanics
+### Core Mechanics
 **Physical Movement:**
 - Players physically move between 4 QR code stations
 - Each station corresponds to different token type
@@ -141,12 +136,12 @@ Players connect, select roles and specialties, host monitors readiness and start
 - Answers lock and are marked correct/incorrect after `gameConfig.triviaAnswerTime` seconds
 - All questions have the same time limit regardless of specialty status
 
-#### Question Management
+### Question Management
 - 6 categories × 3 difficulties = 18 question pools (JSON files under `trivia/{category}/{difficulty}.json`)
 - Automatic pool cycling when exhausted, with randomized order; history tracking prevents immediate repeats
 - HTML entity decoding and text normalization
 
-#### Resource Token System
+### Resource Token System
 **Threshold formula (all four token types):**
 
 ```
@@ -188,7 +183,7 @@ where `tokenThreshold` is the per-type config value (`gameConfig.anchorTokenThre
    - Maximum window: `gameConfig.clarityBasePreviewTime + (gameConfig.maxThresholds × gameConfig.previewTimePerThreshold)` seconds (when all thresholds earned)
    - Helps with spatial understanding and planning
 
-#### Scoring System
+### Token Scoring
 **Base Scoring:**
 - Correct Answer: `gameConfig.baseTokensPerCorrectAnswer` tokens
 - Role Bonus: `gameConfig.roleResourceMultiplier` when at matching station
@@ -201,14 +196,19 @@ where `tokenThreshold` is the per-type config value (`gameConfig.anchorTokenThre
 - Guide Station → Guide Tokens (Detective role bonus)
 - Clarity Station → Clarity Tokens (Art Enthusiast role bonus)
 
-### Phase 2: Puzzle Assembly
+## Puzzle Preparation Phase
+
+When resource gathering ends, the game enters `puzzle_preparation` — a first-class phase with its own rules (player reconnection allowed; host-disconnect handling per *Disconnections and Reconnection* below). It covers both tile generation and the subsequent wait for the host to start the puzzle timer; `puzzle_assembly` begins only when the host sends `PUZZLE_TO_SERVER_PHASE_START`. The pause maps onto the natural physical-world delay while players gather in the puzzle room. The host cannot start the puzzle phase until tile generation completes; the host UI surfaces a "preparing puzzle…" indicator while it waits. Players still disconnected when the timer starts have their segments auto-solved into unassigned fragments at that moment.
+
+For the wire-level event sequence and rejection behavior, see *Resource Gathering → Puzzle Assembly* in `websocket-events.md`.
+
+## Phase 2: Puzzle Assembly
+
 **Location**: Large central room (gymnasium recommended)
 
 **Duration**: `gameConfig.puzzleBaseTime` seconds + chronos bonuses + difficulty modifiers
 
 **Participants**: Players solve and collaborate (host monitors + shows big central grid for phase 2B)
-
-## Dual-Puzzle System Architecture
 
 Canvas Conundrum operates with two independent puzzle systems that remain separate until a specific transition moment.
 
@@ -278,7 +278,7 @@ This is the single most important transition in the entire game system:
    - Player now participates only in central grid collaboration
    - Fragment participates in shared puzzle assembly process
 
-#### Dynamic Grid System
+### Dynamic Grid System
 
 **Grid Scaling Algorithm:**
 ```
@@ -297,7 +297,7 @@ Player Count → Grid Size → Total Fragments
 - Supports position swapping between any fragments
 - As segments enter play they are placed on random open tiles of the grid
 
-#### Fragment Ownership and Movement System
+### Fragment Ownership and Movement System
 
 **Ownership Categories:**
 1. **Player-Owned Fragments**: Created when player completes individual puzzle
@@ -317,10 +317,10 @@ Player Count → Grid Size → Total Fragments
 - **Permission Checking**: A direct move may only involve fragments the mover controls (their own fragment or unassigned ones). A swap that would displace another player's owned fragment is rejected with `not_owner` — propose it through the recommendation system instead.
 - **Phase 2A Lockout**: Players still solving their individual puzzle cannot move fragments or use recommendations; they receive grid broadcasts read-only. Violations are rejected with `phase_invalid`.
 
-#### Fragment Visibility and State Management
+### Fragment Visibility and State Management
 
 **Visibility Rules:**
-- **Invisible Until Completion**: Fragments only become visible on the central grid after their owner completes their individual puzzle. Anchor tokens pre-solve *pieces inside individual puzzles* — they do not place fragments on the central grid (see *Anchor Token Pre-Solving*).
+- **Invisible Until Completion**: Fragments only become visible on the central grid after their owner completes their individual puzzle. Anchor tokens pre-solve *pieces inside individual puzzles* — they do not place fragments on the central grid (see *Resource Token System*).
 - **Persistent Once Visible**: Once a fragment appears on the grid it remains visible to all players and the host for the rest of the puzzle phase.
 - **Personal View Consistency**: Each player sees identical central grid state.
 - **Public vs Private**: Fragment positions are fully public — both the host's big-screen display and every player's device show the same grid. Guide-token highlights are strictly private; each player sees only the highlights for their own fragment, never another player's.
@@ -331,7 +331,7 @@ Player Count → Grid Size → Total Fragments
 - **Personal Puzzle State**: Individual view with guide highlighting (from guide tokens)
 - **Phase Tracking**: Server implicitly tracks each player as Phase 2A (individual) or Phase 2B (collaborative)
 
-#### Strategic Collaboration System
+### Strategic Collaboration System
 
 **Piece Recommendation Protocol:**
 - **Scope**: A recommendation proposes a swap between a fragment the sender controls (own or unassigned) and another player's owned fragment. The owner must explicitly accept before the swap executes. Swaps involving no other player's fragment never need a recommendation — they are executed directly as fragment moves.
@@ -341,11 +341,11 @@ Player Count → Grid Size → Total Fragments
 - **Analytics Tracking**: Recommendations sent/received/accepted are tracked for scoring.
 - **Verbal Coordination**: Players encouraged to communicate during collaboration
 
-#### Token Effects in Puzzle Phase
+### Token Effects in Puzzle Phase
 
 The four token types and their puzzle-phase effects are fully defined under *Resource Token System* (Phase 1). One additional point not covered there: total puzzle-phase time is computed as `gameConfig.puzzleBaseTime + chronosBonus` and then scaled by the active difficulty's time multiplier (see *Difficulty Levels and Modifiers*).
 
-#### Puzzle Completion Logic
+### Puzzle Completion Logic
 
 **Victory Conditions (Both Required):**
 1. **All Fragments Present**: Every player's individual puzzle completed and converted to fragment
@@ -357,72 +357,25 @@ The four token types and their puzzle-phase effects are fully defined under *Res
 - **Immediate Resolution on Success**: The game ends instantly when both conditions are satisfied; the server emits `PUZZLE_TO_CLIENT_COMPLETED_SUCCESS`.
 - **Timer Expiry = Loss**: If the puzzle phase timer reaches zero before both victory conditions are met — for any reason — the team loses. This applies regardless of how many players are still in Phase 2A solving privately, how many fragments are unrevealed, or how many fragments are in incorrect positions. The server emits `PUZZLE_TO_CLIENT_COMPLETED_TIMEOUT` and transitions directly to the Analytics phase. There is no auto-solve fallback.
 
-## Phase-Specific Disconnection Rules
+## Phase 3: Post-Game Analytics
 
-Canvas Conundrum handles disconnections differently based on the game phase to balance game integrity with player experience.
-
-### Setup Phase (Phase 0) Disconnections
-
-**Player Disconnection:**
-- **Immediate Removal**: Player removed from all counts (connected, ready, role distribution)
-- **State Preservation**: Player's selection data (role, specialty, name) preserved for potential reconnection
-- **No Game Impact**: Disconnection does not affect other players or game progression
-- **Reconnection Behavior**:
-  - Player can reconnect and restore previous selections if role still available
-  - If selected role has filled up since disconnection, player must reselect role
-  - All other selections (specialty, name) restored automatically
-  - Player automatically marked ready if role available and they were ready before disconnection
-
-**Host Disconnection:**
-- **Game Pause**: Game cannot progress until host reconnects
-- **State Preservation**: Complete setup state maintained
-- **Player Notification**: All players notified of host disconnection
-- **Automatic Recovery**: Host can reconnect to resume control
-
-### Post-Setup Phases (Phases 1-3) Disconnections
-
-**Player Disconnection:**
-- **Maintained Presence**: Player remains in game counts and their contributions continue to matter
-- **Resource Phase**: Collected tokens remain in team totals
-- **Puzzle Phase**: If still solving (Phase 2A), the individual puzzle is immediately auto-solved into an unassigned fragment at a random unoccupied grid position; if already collaborating (Phase 2B), their existing fragment becomes unassigned. Either way, any remaining player can move it, and the disconnection is broadcast to all remaining players.
-- **Analytics Phase**: Personal analytics preserved for viewing upon reconnection
-- **Limited Reconnection**: Cannot reconnect during puzzle assembly phase; can reconnect during resource gathering, puzzle preparation, and analytics phases
-
-**Host Disconnection:**
-
-The general rule: setup and resource gathering proceed without a host — the host is only needed to *start* the game and to *start* the puzzle phase. Puzzle assembly, whose shared big-screen display is part of the gameplay artifact, pauses entirely.
-
-| Phase | Effect of host disconnect |
-|---|---|
-| Setup | **Continues, but the game cannot start.** Players keep connecting, configuring, and readying up; `SETUP_TO_SERVER_START_GAME` requires the host. |
-| Resource Gathering | **No effect.** Trivia rounds proceed on schedule; tokens accumulate. Host loses real-time monitoring until reconnect. |
-| Puzzle Preparation | **Tile generation completes**, but the puzzle phase timer cannot start until the host reconnects and sends `PUZZLE_TO_SERVER_PHASE_START`. Game waits in a "ready, awaiting host" state. |
-| Puzzle Assembly | **Full pause.** The phase timer stops and the server rejects every puzzle action — segment completions, fragment moves, recommendation creation and responses — with `FORBIDDEN_PHASE`/`phase_invalid` until the host reconnects. Pending recommendation timeout clocks pause as well. The puzzle deadline is extended by the disconnect duration. |
-| Analytics | **No effect.** Reports remain available on each player's device; reset still requires the host but there is no time pressure. |
-
-In all cases: complete game state is preserved for host reconnection, and players are notified of host disconnection and reconnection events. If the host never reconnects, the affected phase remains stalled — recovery requires a deployment-level restart.
-
-### Reconnection
-
-Both host and players reconnect with their original tokens (host: the server-startup UUID; players: the UUID issued at first connection). The host may reconnect during any phase. Players may reconnect during every phase except puzzle assembly; phase-specific effects are described above, and the wire-level handshake and state-restoration sequences are specified in `websocket-events.md` § *Reconnection Behavior*.
-
-### Phase 3: Post-Game Analytics
 **Duration**: Game result and analytics display until the host sends `ANALYTICS_TO_SERVER_RESET_GAME`; no auto-expiry
+
 **Performance Tracking:**
 
-#### Individual Player Analytics
+### Individual Player Analytics
 - **Token Collection**: Total tokens by type, role bonuses earned
 - **Trivia Performance**: Accuracy by category, specialty accuracy and bonus tokens
 - **Puzzle Solving Metrics**: Individual solve time, fragment moves and success rate, recommendations sent/received/accepted
 
-#### Team Performance Metrics
+### Team Performance Metrics
 - **Overall Performance**: Puzzle outcome, completion time, team score
 - **Resource Efficiency**: Token distribution, threshold achievements
 - **Collaboration**: Move counts and success rate, recommendation acceptance rate
 
 All reported metrics are direct counters or ratios of tracked events; the game does not compute synthetic scores (communication effectiveness, coordination ratings, etc.).
 
-#### Scoring Algorithm
+### Scoring Algorithm
 ```
 Individual Score =
   (correctAnswers × gameConfig.pointsPerCorrectAnswer) +
@@ -449,6 +402,49 @@ The game difficulty is set by `gameConfig.difficultyMode` (`easy` | `medium` | `
 
 The time multiplier scales total puzzle-phase time (`(puzzleBaseTime + chronosBonus) × timeMultiplier`). The threshold multiplier scales the per-threshold token cost (see the threshold formula under *Resource Token System*). The specialty probability is the per-player, per-round chance that the round's question is drawn from that player's specialty category.
 
+## Disconnections and Reconnection
+
+Canvas Conundrum handles disconnections differently based on the game phase to balance game integrity with player experience.
+
+### Setup Phase (Phase 0) Disconnections
+
+**Player Disconnection:**
+- **Immediate Removal**: Player removed from all counts (connected, ready, role distribution)
+- **State Preservation**: Player's selection data (role, specialty, name) preserved for potential reconnection
+- **No Game Impact**: Disconnection does not affect other players or game progression
+- **Reconnection Behavior**:
+  - Player can reconnect and restore previous selections if role still available
+  - If selected role has filled up since disconnection, player must reselect role
+  - All other selections (specialty, name) restored automatically
+  - Player automatically marked ready if role available and they were ready before disconnection
+
+### Post-Setup Phase Disconnections
+
+**Player Disconnection:**
+- **Maintained Presence**: Player remains in game counts and their contributions continue to matter
+- **Resource Phase**: Collected tokens remain in team totals
+- **Puzzle Phase**: If still solving (Phase 2A), the individual puzzle is immediately auto-solved into an unassigned fragment at a random unoccupied grid position; if already collaborating (Phase 2B), their existing fragment becomes unassigned. Either way, any remaining player can move it, and the disconnection is broadcast to all remaining players.
+- **Analytics Phase**: Personal analytics preserved for viewing upon reconnection
+- **Limited Reconnection**: Cannot reconnect during puzzle assembly phase; can reconnect during resource gathering, puzzle preparation, and analytics phases
+
+### Host Disconnections (All Phases)
+
+The general rule: setup and resource gathering proceed without a host — the host is only needed to *start* the game and to *start* the puzzle phase. Puzzle assembly, whose shared big-screen display is part of the gameplay artifact, pauses entirely.
+
+| Phase | Effect of host disconnect |
+|---|---|
+| Setup | **Continues, but the game cannot start.** Players keep connecting, configuring, and readying up; `SETUP_TO_SERVER_START_GAME` requires the host. |
+| Resource Gathering | **No effect.** Trivia rounds proceed on schedule; tokens accumulate. Host loses real-time monitoring until reconnect. |
+| Puzzle Preparation | **Tile generation completes**, but the puzzle phase timer cannot start until the host reconnects and sends `PUZZLE_TO_SERVER_PHASE_START`. Game waits in a "ready, awaiting host" state. |
+| Puzzle Assembly | **Full pause.** The phase timer stops and the server rejects every puzzle action — segment completions, fragment moves, recommendation creation and responses — with `FORBIDDEN_PHASE`/`phase_invalid` until the host reconnects. Pending recommendation timeout clocks pause as well. The puzzle deadline is extended by the disconnect duration. |
+| Analytics | **No effect.** Reports remain available on each player's device; reset still requires the host but there is no time pressure. |
+
+In all cases: complete game state is preserved for host reconnection, and players are notified of host disconnection and reconnection events. If the host never reconnects, the affected phase remains stalled — recovery requires a deployment-level restart.
+
+### Reconnection
+
+Both host and players reconnect with their original tokens (host: the server-startup UUID; players: the UUID issued at first connection). The host may reconnect during any phase. Players may reconnect during every phase except puzzle assembly; phase-specific effects are described above, and the wire-level handshake and state-restoration sequences are specified in `websocket-events.md` § *Reconnection Behavior*.
+
 ## Technical Architecture
 
 ### Deployment
@@ -463,20 +459,14 @@ The time multiplier scales total puzzle-phase time (`(puzzleBaseTime + chronosBo
 ### Asset Delivery (Puzzle Images)
 - **Source Images at Runtime**: Source images live under `assets/puzzle-sources/` and are bind-mounted into the backend container read-only at `/app/puzzle-sources/`. They are *not* baked into the image — adding a puzzle requires only a file drop and container restart.
 - **Image Selection & Startup Validation**: `gameConfig.puzzleImage` names the source file (inside `puzzle-sources/`) used for every game until the config changes; the same filename is sent as `imageId` in the `PUZZLE_TO_*_PHASE_LOAD` events. On boot, the server verifies the configured file exists and decodes as a usable image (square or square-croppable), refusing to start otherwise — missing or corrupt sources are caught at deploy time rather than mid-game.
-- **Deferred Tile Generation**: Tiles are *not* generated at build time, on every connection, or on demand. Generation is triggered exactly once per game, at the start of the puzzle preparation phase (see *Puzzle Preparation Phase* below), using the Go standard library's `image` package. Only the segments needed for the current player count and grid size are produced (e.g. 16 crops for a 16-player 4×4 game), not all six grid sizes.
+- **Deferred Tile Generation**: Tiles are *not* generated at build time, on every connection, or on demand. Generation is triggered exactly once per game, at the start of the puzzle preparation phase (see *Puzzle Preparation Phase*), using the Go standard library's `image` package. Only the segments needed for the current player count and grid size are produced (e.g. 16 crops for a 16-player 4×4 game), not all six grid sizes.
 - **In-Memory Tile Cache**: Generated segment images live in an in-memory `map[segmentId][]byte` held by the game manager. They are never written to disk and are released when the game resets.
 - **Server-Gated Fetches**: The Go server is the sole holder of tile bytes. It exposes authenticated HTTP endpoints (under `/api/...`) that validate the requesting session token and check that the player is the assigned owner of the requested segment before streaming the bytes. Players never receive segment images they do not own.
 - **Time-Windowed Full-Image Preview**: The clarity-token preview is enforced server-side. The full assembled image is only available through an authenticated endpoint during the calculated preview window (`gameConfig.clarityBasePreviewTime` + threshold bonuses); requests outside the window return 403 regardless of token validity.
 - **Central Grid Fragments**: Once a player completes their individual puzzle, their fragment becomes visible to all participants. The server then permits all authenticated session tokens to fetch that specific fragment's image — visibility expansion is a server-controlled state transition, not a client decision.
 
-### Puzzle Preparation Phase (Phase 1 → 2 transition)
-When resource gathering ends, the game enters `puzzle_preparation` — a first-class phase with its own rules (player reconnection allowed; host-disconnect handling per the table above). It covers both tile generation and the subsequent wait for the host to start the puzzle timer; `puzzle_assembly` begins only when the host sends `PUZZLE_TO_SERVER_PHASE_START`. The pause maps onto the natural physical-world delay while players gather in the puzzle room. The host cannot start the puzzle phase until tile generation completes; the host UI surfaces a "preparing puzzle…" indicator while it waits. Players still disconnected when the timer starts have their segments auto-solved into unassigned fragments at that moment.
+## Configuration Reference (`game-config.json`)
 
-For the wire-level event sequence and rejection behavior, see *Resource Gathering → Puzzle Assembly* in `websocket-events.md`.
-
-## Configuration and Customization
-
-### Server Configuration (`game-config.json`)
 All values below come from `game-config.json`, mounted into the backend container at runtime so they can be tuned without a rebuild.
 
 **Player Limits:**

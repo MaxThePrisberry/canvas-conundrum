@@ -88,6 +88,97 @@ HTTP responses map status codes as follows: `400` for `MALFORMED_REQUEST`; `401`
 
 ---
 
+## Event Index
+
+Every event in this spec, in protocol order. Directions: H = host, P = player, S = server; "all P" = broadcast to all players.
+
+| Event | Direction | When |
+|---|---|---|
+| `SETUP_TO_HOST_CONNECTION_CONFIRMED` | S → H | Host connects or reconnects (handshake) |
+| `SETUP_TO_PLAYER_CONNECTION_CONFIRMED` | S → P | Player connects or reconnects (handshake) |
+| `SETUP_TO_PLAYER_ROLES_AVAILABLE` | S → P | After player handshake in setup; on any role availability change (unready players only) |
+| `SETUP_TO_SERVER_PLAYER_CONFIGURATION` | P → S | Player submits role, specialty, and name |
+| `SETUP_TO_CLIENT_LOBBY_STATUS` | S → all P | Any player joins/leaves or changes configuration |
+| `SETUP_TO_HOST_PLAYER_ROSTER` | S → H | Any change to player status |
+| `SETUP_TO_SERVER_START_GAME` | H → S | Host starts the game |
+| `SETUP_TO_HOST_GAME_STARTED` | S → H | Game successfully started |
+| `RESOURCE_TO_CLIENT_PHASE_START` | S → all P | Resource gathering begins |
+| `RESOURCE_TO_HOST_PHASE_START` | S → H | Resource gathering begins |
+| `RESOURCE_TO_SERVER_LOCATION_VERIFIED` | P → S | Player scans a station QR code |
+| `RESOURCE_TO_PLAYER_LOCATION_CONFIRMED` | S → P | Server applies a station change |
+| `RESOURCE_TO_PLAYER_TRIVIA_QUESTION` | S → P | Start of each gathering round |
+| `RESOURCE_TO_SERVER_TRIVIA_ANSWER` | P → S | Player selects an answer |
+| `RESOURCE_TO_PLAYER_ANSWER_RESULT` | S → P | Answer window ends |
+| `RESOURCE_TO_CLIENT_TEAM_PROGRESS` | S → all P | End of each round, after marking and token awards |
+| `RESOURCE_TO_HOST_ROUND_ANALYTICS` | S → H | After each round |
+| `RESOURCE_TO_CLIENT_PHASE_COMPLETE` | S → all P | All gathering rounds completed |
+| `RESOURCE_TO_HOST_PHASE_COMPLETE` | S → H | All gathering rounds completed |
+| `PUZZLE_TO_HOST_PREPARING` | S → H | Tile generation begins (`puzzle_preparation` starts) |
+| `PUZZLE_TO_HOST_READY` | S → H | Tile generation complete; host may start the timer |
+| `PUZZLE_TO_CLIENT_PHASE_LOAD` | S → all P | Tiles ready; players fetch segments, UI stays hidden |
+| `PUZZLE_TO_HOST_PHASE_LOAD` | S → H | Tiles ready (immediately after `PUZZLE_TO_HOST_READY`) |
+| `PUZZLE_TO_SERVER_PHASE_START` | H → S | Host starts the puzzle timer |
+| `PUZZLE_TO_CLIENT_PHASE_START` | S → all P | Puzzle timer started (`puzzle_assembly` begins) |
+| `PUZZLE_TO_HOST_PHASE_START` | S → H | Puzzle timer started |
+| `PUZZLE_TO_CLIENT_PREVIEW_EXPIRED` | S → all P | Clarity preview window elapses (only if a window opened) |
+| `PUZZLE_TO_SERVER_SEGMENT_COMPLETED` | P → S | Player completes their individual puzzle |
+| `PUZZLE_TO_PLAYER_SEGMENT_ACKNOWLEDGED` | S → P | Server accepts a segment completion |
+| `PUZZLE_TO_HOST_SEGMENT_COMPLETED` | S → H | A player completes their segment |
+| `PUZZLE_TO_SERVER_FRAGMENT_MOVE` | P → S | Player moves or swaps a fragment |
+| `PUZZLE_TO_PLAYER_MOVE_RESULT` | S → P | Server processes a move request |
+| `PUZZLE_TO_CLIENT_GRID_STATE` | S → all P | Every `gridUpdateInterval` seconds |
+| `PUZZLE_TO_HOST_GRID_STATE` | S → H | Immediately on any grid change |
+| `PUZZLE_TO_PLAYER_PERSONAL_STATE` | S → P | Guide highlights, per grid tick (Phase 2B players only) |
+| `PUZZLE_TO_SERVER_RECOMMEND_MOVE` | P → S | Player proposes a swap to a fragment owner |
+| `PUZZLE_TO_PLAYER_MOVE_RECOMMENDATION` | S → P | Recommendation delivered to the target player |
+| `PUZZLE_TO_SERVER_RECOMMENDATION_RESPONSE` | P → S | Target accepts or rejects a recommendation |
+| `PUZZLE_TO_PLAYER_RECOMMENDATION_RESULT` | S → P | Outcome delivered to the recommender |
+| `PUZZLE_TO_PLAYER_RECOMMENDATION_EXPIRED` | S → P (both parties) | Recommendation times out or a party disconnects |
+| `PUZZLE_TO_CLIENT_COMPLETED_SUCCESS` | S → all | Both victory conditions met |
+| `PUZZLE_TO_CLIENT_COMPLETED_TIMEOUT` | S → all | Timer expires before completion |
+| `PUZZLE_TO_HOST_COMPLETION_ANALYTICS` | S → H | Puzzle phase ends (either outcome) |
+| `ANALYTICS_TO_PLAYER_PERSONAL_REPORT` | S → P | Game completion |
+| `ANALYTICS_TO_CLIENT_TEAM_SUMMARY` | S → all P | Game completion |
+| `ANALYTICS_TO_HOST_COMPLETE_REPORT` | S → H | Game completion |
+| `ANALYTICS_TO_SERVER_RESET_GAME` | H → S | Host resets for a new game |
+| `ANALYTICS_TO_CLIENT_GAME_RESET` | S → all | Server has reset; clients must reconnect |
+| `SYSTEM_TO_CLIENT_ERROR` | S → P | Error conditions (see error code registry) |
+| `SYSTEM_TO_HOST_ERROR` | S → H | Host-specific errors |
+| `SYSTEM_TO_CLIENT_HOST_DISCONNECTED` | S → all P | Host disconnects |
+| `SYSTEM_TO_CLIENT_HOST_RECONNECTED` | S → all P | Host reconnects |
+| `SYSTEM_TO_HOST_PLAYER_DISCONNECTED` | S → H | A player disconnects |
+| `SYSTEM_PING` | C → S | Client heartbeat (every 30 seconds) |
+| `SYSTEM_PONG` | S → C | Heartbeat response |
+
+---
+
+## Phase Transition Sequences
+
+The events fired in order at each phase boundary. See each event's own subsection for trigger conditions and payload details.
+
+**Setup → Resource Gathering**
+1. Host sends `SETUP_TO_SERVER_START_GAME`
+2. Host receives `SETUP_TO_HOST_GAME_STARTED`, then `RESOURCE_TO_HOST_PHASE_START`
+3. All players receive `RESOURCE_TO_CLIENT_PHASE_START`
+4. Server waits one round duration before the first `RESOURCE_TO_PLAYER_TRIVIA_QUESTION`
+
+**Resource Gathering → Puzzle Assembly**
+1. Final round completes automatically; the game enters `puzzle_preparation`
+2. Host receives `RESOURCE_TO_HOST_PHASE_COMPLETE`; players receive `RESOURCE_TO_CLIENT_PHASE_COMPLETE`
+3. Host receives `PUZZLE_TO_HOST_PREPARING` while the server generates tiles in memory
+4. Host receives `PUZZLE_TO_HOST_READY`, then `PUZZLE_TO_HOST_PHASE_LOAD`
+5. Players receive `PUZZLE_TO_CLIENT_PHASE_LOAD` and begin fetching their segment from `GET /api/segments/{segmentId}` (puzzle UI stays hidden)
+6. Host sends `PUZZLE_TO_SERVER_PHASE_START` when ready (rejected before step 4)
+7. Host receives `PUZZLE_TO_HOST_PHASE_START`; players receive `PUZZLE_TO_CLIENT_PHASE_START` and reveal the puzzle UI; the game enters `puzzle_assembly`
+
+**Puzzle Assembly → Analytics**
+1. Puzzle completes successfully or timer expires
+2. Players receive `PUZZLE_TO_CLIENT_COMPLETED_SUCCESS` or `PUZZLE_TO_CLIENT_COMPLETED_TIMEOUT`
+3. Host receives `PUZZLE_TO_HOST_COMPLETION_ANALYTICS`, then `ANALYTICS_TO_HOST_COMPLETE_REPORT`
+4. Each player receives `ANALYTICS_TO_PLAYER_PERSONAL_REPORT`, then `ANALYTICS_TO_CLIENT_TEAM_SUMMARY`
+
+---
+
 ## Reconnection Behavior
 
 Both host and players reconnect using the same WebSocket endpoint and token they used originally. The handshake event (`SETUP_TO_HOST_CONNECTION_CONFIRMED` for the host, `SETUP_TO_PLAYER_CONNECTION_CONFIRMED` for a player) carries `isReconnection: true` and `currentPhase`. The server then replays a phase-appropriate sequence of state-restoration events (defined under each event's own subsection — only the sequence is listed here).
@@ -1793,7 +1884,7 @@ The `errorCode` field in both error events draws from the *Error code registry* 
 }
 ```
 
-`gameImpact.canContinue` is phase-aware — see the host-disconnect rules in `game-design.md` § *Phase-Specific Disconnection Rules*. It is `false` only during `puzzle_assembly`, where the timer pauses and the server rejects all puzzle actions (segment completions, fragment moves, recommendation creation and responses) until the host reconnects. In every other phase it is `true`: setup activity and trivia rounds proceed, but host-gated transitions (game start, puzzle start) remain blocked.
+`gameImpact.canContinue` is phase-aware — see the host-disconnect rules in `game-design.md` § *Disconnections and Reconnection*. It is `false` only during `puzzle_assembly`, where the timer pauses and the server rejects all puzzle actions (segment completions, fragment moves, recommendation creation and responses) until the host reconnects. In every other phase it is `true`: setup activity and trivia rounds proceed, but host-gated transitions (game start, puzzle start) remain blocked.
 
 `gameImpact.affectedFeatures` includes `"puzzle_timer"` only during Puzzle Assembly. `timerPausedAt` is **(optional)** — present only when the puzzle timer pauses (Puzzle Assembly host disconnect). The value is the server timestamp at which the timer was frozen; clients use it to display "paused at N seconds remaining" without drift.
 
@@ -1913,28 +2004,3 @@ The `errorCode` field in both error events draws from the *Error code registry* 
 ```
 
 `clientTimestamp` echoes the ping's value so the client can compute round-trip time itself.
-
-### Phase Transition Sequences
-
-The events fired in order at each phase boundary. See each event's own subsection for trigger conditions and payload details.
-
-**Setup → Resource Gathering**
-1. Host sends `SETUP_TO_SERVER_START_GAME`
-2. Host receives `SETUP_TO_HOST_GAME_STARTED`, then `RESOURCE_TO_HOST_PHASE_START`
-3. All players receive `RESOURCE_TO_CLIENT_PHASE_START`
-4. Server waits one round duration before the first `RESOURCE_TO_PLAYER_TRIVIA_QUESTION`
-
-**Resource Gathering → Puzzle Assembly**
-1. Final round completes automatically; the game enters `puzzle_preparation`
-2. Host receives `RESOURCE_TO_HOST_PHASE_COMPLETE`; players receive `RESOURCE_TO_CLIENT_PHASE_COMPLETE`
-3. Host receives `PUZZLE_TO_HOST_PREPARING` while the server generates tiles in memory
-4. Host receives `PUZZLE_TO_HOST_READY`, then `PUZZLE_TO_HOST_PHASE_LOAD`
-5. Players receive `PUZZLE_TO_CLIENT_PHASE_LOAD` and begin fetching their segment from `GET /api/segments/{segmentId}` (puzzle UI stays hidden)
-6. Host sends `PUZZLE_TO_SERVER_PHASE_START` when ready (rejected before step 4)
-7. Host receives `PUZZLE_TO_HOST_PHASE_START`; players receive `PUZZLE_TO_CLIENT_PHASE_START` and reveal the puzzle UI; the game enters `puzzle_assembly`
-
-**Puzzle Assembly → Analytics**
-1. Puzzle completes successfully or timer expires
-2. Players receive `PUZZLE_TO_CLIENT_COMPLETED_SUCCESS` or `PUZZLE_TO_CLIENT_COMPLETED_TIMEOUT`
-3. Host receives `PUZZLE_TO_HOST_COMPLETION_ANALYTICS`, then `ANALYTICS_TO_HOST_COMPLETE_REPORT`
-4. Each player receives `ANALYTICS_TO_PLAYER_PERSONAL_REPORT`, then `ANALYTICS_TO_CLIENT_TEAM_SUMMARY`

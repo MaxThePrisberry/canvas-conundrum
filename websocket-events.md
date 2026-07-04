@@ -49,13 +49,15 @@ All text fields must be valid UTF-8. Free-text fields have these length limits (
 | `reasoning`, `responseReason` | ≤ 200 characters |
 | `stationHash` | ≤ 128 characters |
 
+`playerName` is display-only; uniqueness is not enforced — player UUIDs disambiguate.
+
 ### Timestamps
 
 All timestamp fields are ISO 8601 UTC strings — the envelope `timestamp` and payload fields like `startTimestamp`, `completionTimestamp`, `nextMoveAvailable`, and `timerPausedAt` alike. Durations and countdowns are plain numeric seconds (milliseconds only where a config value says so, e.g. `fragmentMoveCooldown`).
 
 ### Canonical example game
 
-All example payloads in this document describe the same game: **5 players** — Alice (detective, science), Bob (art_enthusiast, music), Charlie (tourist, geography), Diana (janitor, history), Eve (art_enthusiast, general) — on **medium** difficulty with **5 rounds**, producing a **3×3 grid** (segments `a1`–`c3`; Alice→`a1`, Bob→`a2`, Charlie→`a3`, Diana→`b1`, Eve→`b2`). Final team tokens: anchor 90, chronos 70, guide 50, clarity 70 (280 total) — hence final thresholds anchor 3, chronos 3, guide 3, clarity 2, giving 6 pre-solved pieces, +60s chronos bonus (360s total), 5 guide highlights, and a 5s clarity preview. Example values are internally consistent with this game and the formulas in `game-design.md`; setup-phase examples are snapshots taken before all five players finished configuring.
+All example payloads in this document describe the same game: **5 players** — Alice (detective, science), Bob (art_enthusiast, music), Charlie (tourist, geography), Diana (janitor, history), Eve (art_enthusiast, general) — on **medium** difficulty with **5 rounds**, producing a **3×3 grid** (segments `a1`–`c3`; Alice→`a1`, Bob→`a2`, Charlie→`a3`, Diana→`b1`, Eve→`b2`). Final team tokens: anchor 90, chronos 70, guide 50, clarity 70 (280 total) — hence final thresholds anchor 3, chronos 3, guide 3, clarity 2, giving 6 pre-solved pieces, +60s chronos bonus (360s total), 5 guide highlights, and a 5s clarity preview. Example values are internally consistent with this game and the formulas in `game-design.md`. Setup- and puzzle-phase examples are snapshots from different moments within their phase, and `PUZZLE_TO_CLIENT_COMPLETED_TIMEOUT` illustrates the alternative (losing) ending of the same game.
 
 ### Game phases
 
@@ -69,18 +71,17 @@ When the server closes a WebSocket connection it uses these codes:
 |---|---|
 | `1000` | Normal closure (e.g. game reset, graceful client disconnect) |
 | `1001` | Server going away (planned shutdown) |
-| `4001` | Unauthorized (malformed/unknown token in the host URL or player connect frame, or no `SETUP_TO_SERVER_PLAYER_CONNECT` frame within 10 seconds of the upgrade) |
-| `4002` | Join rejected (new player while the game is past setup or already at `maxPlayers`) |
-| `4003` | Forbidden (player tried to connect — new or reconnecting — during puzzle assembly phase) |
-| `4004` | Token invalid or expired (e.g. game reset since the token was issued) |
+| `4001` | Unauthorized (malformed or unknown token in the host URL or player connect frame — including tokens invalidated by a game reset — or no `SETUP_TO_SERVER_PLAYER_CONNECT` frame within 10 seconds of the upgrade) |
+| `4002` | Join rejected (new player joining while the game is past the setup phase or already at `maxPlayers`) |
+| `4003` | Forbidden (player *reconnection* attempted during the puzzle assembly phase) |
 
 Codes in the `4xxx` range are application-specific per RFC 6455 §7.4.2; clients should treat any unrecognized `4xxx` close as a terminal failure.
 
-Handshake-time rejections (`4001`–`4004`) are delivered by completing the WebSocket upgrade and closing with the code, without sending any application frames. For hosts the token is judged from the URL immediately; for players it is judged from the first frame (`SETUP_TO_SERVER_PLAYER_CONNECT`). Rejecting at the HTTP layer instead would leave browser clients — which cannot read the HTTP status of a failed upgrade — unable to distinguish a permanent rejection from a transient network failure (both surface as a `1006` close).
+Handshake-time rejections (`4001`–`4003`) are delivered by completing the WebSocket upgrade and closing with the code, without sending any application frames. For hosts the token is judged from the URL immediately; for players it is judged from the first frame (`SETUP_TO_SERVER_PLAYER_CONNECT`). Rejecting at the HTTP layer instead would leave browser clients — which cannot read the HTTP status of a failed upgrade — unable to distinguish a permanent rejection from a transient network failure (both surface as a `1006` close).
 
 ### Client reconnection backoff
 
-After an unexpected close (any code other than `1000`), clients should attempt to reconnect using exponential backoff: start at 1 second, double each retry, cap at 30 seconds. Reset to 1 second on a successful connection. Connection attempts that close immediately with code `4001`, `4002`, `4003`, or `4004` should not be retried — the failure is permanent for this game.
+After an unexpected close (any code other than `1000`), clients should attempt to reconnect using exponential backoff: start at 1 second, double each retry, cap at 30 seconds. Reset to 1 second on a successful connection. Connection attempts that close immediately with code `4001`, `4002`, or `4003` should not be retried — the failure is permanent for this game.
 
 ### Error code registry
 
@@ -98,6 +99,7 @@ Codes are stable identifiers; new codes may be added over time, but existing cod
 | `INVALID_ROLE_SELECTION` | WS | Selected role is unknown |
 | `INVALID_SPECIALTY_SELECTION` | WS | Specialty list is empty, has duplicates, exceeds `maxSpecialtiesPerPlayer`, or names an unknown category |
 | `ROLE_FULL` | WS | All slots for the requested role are taken |
+| `CONFIGURATION_LOCKED` | WS | Configuration submitted by a player who is already ready (configuration is locked once ready) |
 | `INVALID_STATION_HASH` | WS | QR-code hash did not match any configured station |
 | `INSUFFICIENT_PLAYERS` | WS | Host tried to start the game before every connected player was ready and at least `minPlayers` were ready |
 | `COOLDOWN_ACTIVE` | WS | Recommendation created or accepted while an involved fragment is on its move cooldown |
@@ -105,7 +107,7 @@ Codes are stable identifiers; new codes may be added over time, but existing cod
 | `FORBIDDEN_PHASE` | HTTP, WS | Action not permitted in the current game phase or phase state (e.g. puzzle start before tile generation completes) |
 | `FORBIDDEN_NOT_OWNER` | HTTP, WS | Caller is not the assigned owner of the resource |
 | `FORBIDDEN_PREVIEW_WINDOW_CLOSED` | HTTP | Full-image preview requested outside its active time window |
-| `NOT_FOUND` | HTTP | Resource does not currently exist (e.g. tiles before generation, or after game reset) |
+| `NOT_FOUND` | HTTP | Resource does not exist (unknown `segmentId`, or tiles already cleared by a game reset) |
 
 HTTP responses map status codes as follows: `400` for `MALFORMED_REQUEST`; `401` for `UNAUTHORIZED`; `403` for any `FORBIDDEN_*` code; `404` for `NOT_FOUND`.
 
@@ -214,12 +216,12 @@ Both host and players reconnect using the same WebSocket endpoint and token they
 | Setup | Yes | `SETUP_TO_HOST_PLAYER_ROSTER` |
 | Resource Gathering | Yes | `RESOURCE_TO_HOST_PHASE_START`; `RESOURCE_TO_HOST_ROUND_ANALYTICS` if a round is in progress |
 | Puzzle Preparation | Yes | `PUZZLE_TO_HOST_PREPARING` if tile generation is still running, otherwise `PUZZLE_TO_HOST_READY` then `PUZZLE_TO_HOST_PHASE_LOAD` |
-| Puzzle Assembly | Yes | `PUZZLE_TO_HOST_PHASE_LOAD`; `PUZZLE_TO_HOST_GRID_STATE`; `PUZZLE_TO_HOST_PHASE_START` re-anchored to the resume (`startTimestamp` = resume time, `totalTime` = seconds remaining after the pause extension) |
+| Puzzle Assembly | Yes | `PUZZLE_TO_HOST_PHASE_LOAD`; `PUZZLE_TO_HOST_GRID_STATE`; `PUZZLE_TO_HOST_PHASE_START` re-anchored to the resume (`startTimestamp` = resume time, `totalTime` = seconds remaining after the pause extension; `baseTime`/`chronosBonus` keep their original values and are display-only) |
 | Analytics | Yes | `ANALYTICS_TO_HOST_COMPLETE_REPORT` |
 
 All currently-connected players additionally receive `SYSTEM_TO_CLIENT_HOST_RECONNECTED`.
 
-If a host socket is already open, a new connection presenting the valid host UUID supersedes it: the older socket is closed with code `1000` and the new connection receives the normal reconnection handshake.
+If a host socket is already open, a new connection presenting the valid host UUID supersedes it: the older socket is closed with code `1000` and the new connection receives the normal reconnection handshake. Code `1000` is deliberate — per the backoff rule it is the one close code that stops the superseded client from auto-reconnecting and fighting over the socket.
 
 ### Player
 
@@ -266,7 +268,7 @@ If a host socket is already open, a new connection presenting the valid host UUI
 
 #### `SETUP_TO_SERVER_PLAYER_CONNECT`
 **Direction**: Player → Server
-**Trigger**: The first frame a player client sends after the WebSocket to `/ws` opens. With `auth` present, it is a reconnection attempt using the previously issued token; with `auth` omitted (or `null`), it is a new player joining. The server replies with `SETUP_TO_PLAYER_CONNECTION_CONFIRMED`, or closes the socket with `4001`/`4002`/`4003`/`4004` (see *WebSocket close codes*). If no connect frame arrives within 10 seconds of the upgrade, the server closes with `4001`. Host connections do not send this event — the host token travels in the URL.
+**Trigger**: The first frame a player client sends after the WebSocket to `/ws` opens. With `auth` present, it is a reconnection attempt using the previously issued token; with `auth` omitted (or `null`), it is a new player joining. The server replies with `SETUP_TO_PLAYER_CONNECTION_CONFIRMED`, or closes the socket with `4001`/`4002`/`4003` (see *WebSocket close codes*). If no connect frame arrives within 10 seconds of the upgrade, the server closes with `4001`. Host connections do not send this event — the host token travels in the URL.
 
 ```json
 {
@@ -394,7 +396,7 @@ Example snapshot: early in setup, 4 players connected (role capacity `max(1, cei
 
 `selectedSpecialties` must contain 1 to `gameConfig.maxSpecialtiesPerPlayer` distinct known categories, else the message is rejected with `INVALID_SPECIALTY_SELECTION`.
 
-The server processes these messages serially; if two players race for the last slot of a role, the first to land wins and the loser receives `SYSTEM_TO_CLIENT_ERROR` with `errorCode: "ROLE_FULL"` (see *Race Resolution* in `game-design.md`). A rejected configuration is discarded in full; the loser resubmits a complete configuration with a different role.
+The server processes these messages serially; if two players race for the last slot of a role, the first to land wins and the loser receives `SYSTEM_TO_CLIENT_ERROR` with `errorCode: "ROLE_FULL"` (see *Race Resolution* in `game-design.md`). A rejected configuration is discarded in full; the loser resubmits a complete configuration with a different role. A configuration from a player who is already ready is rejected with `CONFIGURATION_LOCKED` — configuration is locked once ready.
 
 #### `SETUP_TO_CLIENT_LOBBY_STATUS`
 **Direction**: Server → All Players
@@ -516,7 +518,7 @@ Same snapshot as the lobby-status example above: Eve is connected but hasn't con
 **Direction**: Server → All Players
 **Trigger**: Resource gathering phase begins (marks transition from Setup phase)
 
-**Important**: After sending this event, the server waits one full round duration (`gameConfig.triviaAnswerTime + gameConfig.triviaGraceTime` seconds) before starting Round 1 and sending the first `RESOURCE_TO_PLAYER_TRIVIA_QUESTION`. The `roundDuration` payload field is that derived sum, echoed for display convenience.
+**Important**: After sending this event, the server waits one full round duration (`gameConfig.triviaAnswerTime + gameConfig.triviaGraceTime` seconds) before starting Round 1 and sending the first `RESOURCE_TO_PLAYER_TRIVIA_QUESTION` — time for players to reach and scan their first QR station (see `game-design.md` § *Phase 1*). The wait applies only when the phase actually starts; the reconnect replay of this event restores context mid-phase and does not affect round scheduling. The `roundDuration` payload field is that derived sum, echoed for display convenience.
 
 ```json
 {
@@ -636,7 +638,7 @@ On a recognized hash, the server replies with `RESOURCE_TO_PLAYER_LOCATION_CONFI
     ],
     "roundNumber": 3,
     "totalRounds": 5,
-    "answerDeadline": "2025-06-15T14:23:05.000Z"
+    "answerDeadline": "2025-06-15T14:23:35.000Z"
   },
   "timestamp": "2025-06-15T14:23:05.000Z"
 }
@@ -686,7 +688,7 @@ The server determines which token type an answer earns from its own station trac
       "specialtyBonusTokens": 0
     },
     "currentLocation": "clarity",
-    "nextTriviaTimestamp": "2025-06-15T14:23:05.000Z"
+    "nextTriviaTimestamp": "2025-06-15T14:23:35.000Z"
   },
   "timestamp": "2025-06-15T14:23:05.000Z"
 }
@@ -708,7 +710,7 @@ The server determines which token type an answer earns from its own station trac
   "payload": {
     "currentRound": 3,
     "totalRounds": 5,
-    "questionsAnswered": 14,
+    "questionsAnswered": 15,
     "totalQuestions": 25,
     "teamTokens": {
       "anchorTokens": 40,
@@ -723,13 +725,15 @@ The server determines which token type an answer earns from its own station trac
       "clarity": 1
     },
     "teamPerformance": {
-      "averageAccuracy": 0.79,
+      "averageAccuracy": 0.73,
       "roundTimeRemaining": 28
     }
   },
   "timestamp": "2025-06-15T14:23:05.000Z"
 }
 ```
+
+`questionsAnswered` counts answers submitted so far; `totalQuestions` is the full-phase delivery count (players × rounds). Accuracy denominators count questions *delivered* — an unanswered question counts as incorrect.
 
 #### `RESOURCE_TO_HOST_ROUND_ANALYTICS`
 **Direction**: Server → Host
@@ -992,10 +996,10 @@ The `error` field is a fixed machine-readable code from the *Error code registry
 Returns PNG bytes of a single puzzle segment. The server enforces, in order:
 
 1. The token must correspond to a known player or the host of the current game.
-2. The current phase must be `puzzle_preparation` with tile generation complete (see `PUZZLE_TO_HOST_READY`), `puzzle_assembly`, or `analytics` (the final grid stays viewable on result screens until the game resets).
+2. The current phase must be `puzzle_preparation` with tile generation complete (see `PUZZLE_TO_HOST_READY`), `puzzle_assembly`, or `analytics` (the final grid stays viewable on result screens until the game resets). Requests in any other phase state — including `puzzle_preparation` before tile generation completes — fail with `FORBIDDEN_PHASE`.
 3. The requested `segmentId` must match either:
    - the requesting player's own assigned segment, OR
-   - a fragment that has already been completed and is now visible to all players on the central grid, OR
+   - any fragment currently visible on the central grid (completed player fragments and revealed unassigned fragments alike), OR
    - any segment if the request comes from the host (read-only access for monitoring).
 
 Authorization failures return `FORBIDDEN_NOT_OWNER` or `FORBIDDEN_PHASE` as appropriate.
@@ -1012,13 +1016,13 @@ If the team earned zero clarity thresholds, the endpoint returns `FORBIDDEN_PREV
 
 **Caching**: Tile responses include `Cache-Control: no-cache` (clients revalidate on each request). Tiles are small enough that revalidation is cheap, and `no-cache` avoids the risk of a stale response surviving past `ANALYTICS_TO_CLIENT_GAME_RESET` within the cache's max-age window.
 
-**Lifecycle**: Tiles exist only between `PUZZLE_TO_HOST_READY` (server has finished generation) and `ANALYTICS_TO_CLIENT_GAME_RESET` (server clears the in-memory cache). Requests outside that window return `NOT_FOUND`.
+**Lifecycle**: Tiles exist only between `PUZZLE_TO_HOST_READY` (server has finished generation) and `ANALYTICS_TO_CLIENT_GAME_RESET` (server clears the in-memory cache). Requests before that window fail the phase check above (`FORBIDDEN_PHASE`); requests after a reset, or naming an unknown `segmentId`, return `NOT_FOUND`.
 
 ### Phase Start Management
 
 #### `PUZZLE_TO_SERVER_PHASE_START`
 **Direction**: Host → Server
-**Trigger**: Host starts puzzle phase. Rejected with `SYSTEM_TO_HOST_ERROR` / `FORBIDDEN_PHASE` if tile preparation has not yet completed (i.e. before `PUZZLE_TO_HOST_READY`).
+**Trigger**: Host starts puzzle phase. Rejected with `SYSTEM_TO_HOST_ERROR` / `FORBIDDEN_PHASE` if tile preparation has not yet completed (i.e. before `PUZZLE_TO_HOST_READY`) or if the puzzle timer is already running (duplicate start).
 
 ```json
 {
@@ -1054,9 +1058,11 @@ If the team earned zero clarity thresholds, the endpoint returns `FORBIDDEN_PREV
 }
 ```
 
+`totalTime` is authoritative and already includes the difficulty time multiplier — `totalTime = (baseTime + chronosBonus) × timeMultiplier` (see `game-design.md` § *Difficulty Levels and Modifiers*); `baseTime` and `chronosBonus` are display-only decomposition (they sum to `totalTime` here only because medium's multiplier is 1.0).
+
 `playerPhases` partitions every connected player by current sub-phase: `phase2a` for those still solving their individual puzzle privately, `phase2b` for those who have completed it and are now collaborating on the central grid. At phase start every player is in `phase2a`. Subsequent transitions are reflected in `PUZZLE_TO_HOST_GRID_STATE.playerMetrics[*].phase`.
 
-`clarityPreviewActive` and `clarityPreviewDuration` are gated on whether the team earned at least one clarity-token threshold during resource gathering (see `game-design.md` § *Clarity Tokens*). If zero clarity thresholds were earned, `clarityPreviewActive: false` and `clarityPreviewDuration: 0`; clients render no preview overlay and the corresponding `PUZZLE_TO_CLIENT_PREVIEW_EXPIRED` event is not emitted.
+`clarityPreviewActive`/`clarityPreviewDuration` follow the clarity gating in `game-design.md` § *Clarity Tokens*: with zero clarity thresholds they are `false`/`0`, no overlay is shown, and `PUZZLE_TO_CLIENT_PREVIEW_EXPIRED` is never emitted.
 
 #### `PUZZLE_TO_HOST_PHASE_START`
 **Direction**: Server → Host
@@ -1078,9 +1084,11 @@ If the team earned zero clarity thresholds, the endpoint returns `FORBIDDEN_PREV
 }
 ```
 
+`totalTime` semantics match `PUZZLE_TO_CLIENT_PHASE_START`: authoritative, difficulty multiplier included, `baseTime`/`chronosBonus` display-only.
+
 #### `PUZZLE_TO_CLIENT_PREVIEW_EXPIRED`
 **Direction**: Server → All Players
-**Trigger**: The clarity-token full-image preview window has elapsed. Sent at most once per game, `clarityPreviewDuration` seconds after `PUZZLE_TO_CLIENT_PHASE_START` (the preview clock pauses during a host-disconnect pause, like every other timer), and **only** if the team earned at least one clarity-token threshold (i.e. `PUZZLE_TO_CLIENT_PHASE_START.clarityPreviewActive` was `true`). Games where no clarity thresholds were earned never see a preview window open and never receive this event. Clients should dismiss the preview overlay on receipt rather than relying on a locally-computed deadline (which can drift).
+**Trigger**: The clarity-token full-image preview window has elapsed. Sent at most once per game, `clarityPreviewDuration` seconds after `PUZZLE_TO_CLIENT_PHASE_START` (the preview clock pauses during a host-disconnect pause, like every other timer), and **only** in games where a window opened (`clarityPreviewActive: true`). Clients should dismiss the preview overlay on receipt rather than relying on a locally-computed deadline (which can drift).
 
 After this event fires, `GET /api/preview/full` returns `403 FORBIDDEN_PREVIEW_WINDOW_CLOSED` for the rest of the game.
 
@@ -1114,6 +1122,8 @@ After this event fires, `GET /api/preview/full` returns `403 FORBIDDEN_PREVIEW_W
   "timestamp": "2025-06-15T14:23:05.000Z"
 }
 ```
+
+`segmentId` must be the sender's assigned segment; anything else is rejected with `SYSTEM_TO_CLIENT_ERROR` / `FORBIDDEN_NOT_OWNER`. A repeat completion for an already-completed segment is acknowledged idempotently — the server re-sends `PUZZLE_TO_PLAYER_SEGMENT_ACKNOWLEDGED` with the fragment's current position and changes no state, so clients can safely retry after a network blip. While the game is paused by a host disconnect, completions are rejected with `SYSTEM_TO_CLIENT_ERROR` / `FORBIDDEN_PHASE`.
 
 #### `PUZZLE_TO_PLAYER_SEGMENT_ACKNOWLEDGED`
 **Direction**: Server → Individual Player
@@ -1244,7 +1254,7 @@ The moving fragment is identified by `segmentId` alone; the server always uses i
 
 | Value | Meaning |
 |---|---|
-| `cooldown` | Target fragment is still in its `gameConfig.fragmentMoveCooldown` window from a prior move. `cooldownInfo` describes when it will be free. |
+| `cooldown` | An involved fragment (the moving fragment or, on a swap, its partner) is still in its `gameConfig.fragmentMoveCooldown` window from a prior move. `cooldownInfo` describes when it will be free. |
 | `not_owner` | Caller does not control the moving fragment (not theirs and not unassigned), or the swap would displace another player's owned fragment. |
 | `target_invalid` | `targetPosition` is out of bounds, or the swap/empty-cell mode declared in the request does not match the actual occupant of `targetPosition`. |
 | `phase_invalid` | Move arrived outside the puzzle assembly phase, before `PUZZLE_TO_CLIENT_PHASE_START`, while the game is paused by a host disconnect, or from a player still in Phase 2A. |
@@ -1257,7 +1267,7 @@ The moving fragment is identified by `segmentId` alone; the server always uses i
 **Direction**: Server → All Players
 **Trigger**: Every `gameConfig.gridUpdateInterval` seconds
 
-The `fragments` array grows over time as players complete their individual puzzles. Per the *Proportional Unassigned Fragment Reveal* rule in `game-design.md`, after *k* of *N* players have completed their individual puzzles the array contains `ceil((k / N) × gridSize²)` entries — *k* player-owned fragments plus the rest randomly-selected unassigned fragments at random unoccupied positions.
+The `fragments` array grows over time as players complete their individual puzzles; it contains exactly the fragments currently visible under the *Proportional Unassigned Fragment Reveal* rule in `game-design.md` (player-owned fragments plus progressively revealed unassigned ones).
 
 `playerId` and `playerName` identify each fragment's owner; both are `null` for unassigned fragments. Clients need this to apply the movement rules locally (own + unassigned fragments are movable) and to address recommendations (`targetPlayerId`).
 
@@ -1343,7 +1353,7 @@ The `guideHighlights` array carries the cells on the central grid currently high
 }
 ```
 
-`guideHighlights` is an empty array until the team earns its first guide-token threshold. The set always contains the fragment's correct cell and is stable between ticks — it changes only if a new guide threshold is earned (see `game-design.md` § *Guide Tokens*). This is the only client-visible delivery channel for guide highlights — they intentionally do not appear in the broadcast `PUZZLE_TO_CLIENT_GRID_STATE`.
+`guideHighlights` is an empty array if the team earned no guide-token thresholds. The set always contains the fragment's correct cell and never changes once drawn (see `game-design.md` § *Guide Tokens*). This is the only client-visible delivery channel for guide highlights — they intentionally do not appear in the broadcast `PUZZLE_TO_CLIENT_GRID_STATE`.
 
 ### Strategic Collaboration
 
@@ -1351,7 +1361,9 @@ The `guideHighlights` array carries the cells on the central grid currently high
 **Direction**: Player → Server
 **Trigger**: Player sends recommendation to another player
 
-Validation: the sender must be in Phase 2B and control `fromSegmentId` (their own or unassigned); `toSegmentId` must be owned by `targetPlayerId` (recommendations exist precisely for the swaps a player cannot execute directly); both fragments must be off cooldown, otherwise the request is rejected with `SYSTEM_TO_CLIENT_ERROR` / `COOLDOWN_ACTIVE`; and the sender must have no other outgoing recommendation pending, otherwise `RECOMMENDATION_PENDING`.
+Validation: the sender must be in Phase 2B and control `fromSegmentId` (their own or unassigned); `toSegmentId` must be owned by `targetPlayerId` (recommendations exist precisely for the swaps a player cannot execute directly); both fragments must be off cooldown, otherwise the request is rejected with `SYSTEM_TO_CLIENT_ERROR` / `COOLDOWN_ACTIVE`; and the sender must have no other outgoing recommendation pending, otherwise `RECOMMENDATION_PENDING`. While the game is paused by a host disconnect, recommendation creation and responses are rejected with `FORBIDDEN_PHASE`.
+
+Example: Diana proposes swapping her own `segment_b1` with Bob's `segment_a2`.
 
 ```json
 {
@@ -1361,9 +1373,9 @@ Validation: the sender must be in Phase 2B and control `fromSegmentId` (their ow
   },
   "payload": {
     "targetPlayerId": "player2-uuid",
-    "fromSegmentId": "segment_a1",
+    "fromSegmentId": "segment_b1",
     "toSegmentId": "segment_a2",
-    "reasoning": "This swap would place both fragments closer to correct positions"
+    "reasoning": "This swap puts both fragments on their correct cells"
   },
   "timestamp": "2025-06-15T14:23:05.000Z"
 }
@@ -1378,12 +1390,12 @@ Validation: the sender must be in Phase 2B and control `fromSegmentId` (their ow
   "event": "PUZZLE_TO_PLAYER_MOVE_RECOMMENDATION",
   "payload": {
     "moveId": "rec-uuid-67890",
-    "fromPlayerId": "player1-uuid",
-    "fromPlayerName": "Alice",
+    "fromPlayerId": "player4-uuid",
+    "fromPlayerName": "Diana",
     "targetPlayerId": "player2-uuid",
-    "fromSegmentId": "segment_a1",
+    "fromSegmentId": "segment_b1",
     "toSegmentId": "segment_a2",
-    "reasoning": "This swap would place both fragments closer to correct positions",
+    "reasoning": "This swap puts both fragments on their correct cells",
     "expiresAt": "2025-06-15T14:23:35.000Z"
   },
   "timestamp": "2025-06-15T14:23:05.000Z"
@@ -1438,12 +1450,12 @@ On reject, the swap is not executed and the recommender receives `PUZZLE_TO_PLAY
     "response": "accept",
     "responseReason": "Good strategic move",
     "swapExecuted": {
-      "segment1Id": "segment_a1",
-      "segment1OldPosition": {"x": 0, "y": 0},
-      "segment1NewPosition": {"x": 1, "y": 1},
+      "segment1Id": "segment_b1",
+      "segment1OldPosition": {"x": 1, "y": 0},
+      "segment1NewPosition": {"x": 0, "y": 1},
       "segment2Id": "segment_a2",
-      "segment2OldPosition": {"x": 1, "y": 1},
-      "segment2NewPosition": {"x": 0, "y": 0}
+      "segment2OldPosition": {"x": 0, "y": 1},
+      "segment2NewPosition": {"x": 1, "y": 0}
     }
   },
   "timestamp": "2025-06-15T14:23:05.000Z"
@@ -1596,13 +1608,13 @@ The swap exchanges the fragments' positions at execution time, and both fragment
         "specialtyQuestions": 2,
         "specialtyCorrect": 2,
         "specialtyAccuracy": 1.0,
-        "specialtyBonus": 40
+        "bonusTokens": 40
       },
       "averageResponseTime": 18.5
     },
     "puzzleSolvingMetrics": {
       "individualSolveTime": 180,
-      "individualRank": 2,
+      "individualRank": 4,
       "fragmentMoves": 8,
       "successfulMoves": 7,
       "moveAccuracy": 0.875,
@@ -1612,7 +1624,7 @@ The swap exchanges the fragments' positions at execution time, and both fragment
     },
     "scoreBreakdown": {
       "triviaPoints": 40,
-      "specialtyBonus": 4,
+      "specialtyPoints": 4,
       "completionBonus": 100,
       "movePoints": 35,
       "recommendationPoints": 17,
@@ -1634,7 +1646,7 @@ The swap exchanges the fragments' positions at execution time, and both fragment
   "event": "ANALYTICS_TO_CLIENT_TEAM_SUMMARY",
   "payload": {
     "gameSuccess": true,
-    "totalScore": 830,
+    "totalScore": 932,
     "totalPlayers": 5,
     "totalGameTime": 795,
     "teamPerformance": {
@@ -1659,28 +1671,28 @@ The swap exchanges the fragments' positions at execution time, and both fragment
       {
         "playerId": "player2-uuid",
         "playerName": "Bob",
-        "totalScore": 178,
+        "totalScore": 194,
         "rank": 2,
         "role": "art_enthusiast"
       },
       {
-        "playerId": "player3-uuid",
-        "playerName": "Charlie",
-        "totalScore": 165,
-        "rank": 3,
-        "role": "tourist"
-      },
-      {
         "playerId": "player4-uuid",
         "playerName": "Diana",
-        "totalScore": 152,
-        "rank": 4,
+        "totalScore": 184,
+        "rank": 3,
         "role": "janitor"
+      },
+      {
+        "playerId": "player3-uuid",
+        "playerName": "Charlie",
+        "totalScore": 181,
+        "rank": 4,
+        "role": "tourist"
       },
       {
         "playerId": "player5-uuid",
         "playerName": "Eve",
-        "totalScore": 139,
+        "totalScore": 177,
         "rank": 5,
         "role": "art_enthusiast"
       }
@@ -1700,14 +1712,13 @@ The leaderboard is sorted by `totalScore` descending. Players with equal scores 
 {
   "event": "ANALYTICS_TO_HOST_COMPLETE_REPORT",
   "payload": {
-    "gameId": "game-uuid-12345",
     "gameSuccess": true,
     "totalGameTime": 795,
     "totalPlayers": 5,
     "difficultyMode": "medium",
     "overallPerformance": {
-      "totalScore": 830,
-      "averageScore": 166,
+      "totalScore": 932,
+      "averageScore": 186.4,
       "completionRate": 1.0
     },
     "resourceGatheringAnalytics": {
@@ -1870,7 +1881,7 @@ The `errorCode` field in both error events draws from the *Error code registry* 
     "errorType": "validation_error",
     "errorCode": "INVALID_ROLE_SELECTION",
     "message": "Role selection validation failed",
-    "details": "Selected role 'invalid_role' is not available",
+    "details": "'invalid_role' is not a recognized role",
     "context": {
       "requestedAction": "role_selection",
       "currentPhase": "setup",
@@ -1935,7 +1946,7 @@ The `errorCode` field in both error events draws from the *Error code registry* 
 }
 ```
 
-`gameImpact.canContinue` is phase-aware — see the host-disconnect rules in `game-design.md` § *Disconnections and Reconnection*. It is `false` only during `puzzle_assembly`, where the timer pauses and the server rejects all puzzle actions (segment completions, fragment moves, recommendation creation and responses) until the host reconnects. In every other phase it is `true`: setup activity and trivia rounds proceed, but host-gated transitions (game start, puzzle start) remain blocked.
+`gameImpact.canContinue` is `false` only during `puzzle_assembly` (full pause) and `true` in every other phase; the per-phase effects are specified in `game-design.md` § *Disconnections and Reconnection*.
 
 `gameImpact.affectedFeatures` includes `"puzzle_timer"` only during Puzzle Assembly. `timerPausedAt` is **(optional)** — present only when the puzzle timer pauses (Puzzle Assembly host disconnect). The value is the server timestamp at which the timer was frozen; clients use it to display "paused at N seconds remaining" without drift.
 

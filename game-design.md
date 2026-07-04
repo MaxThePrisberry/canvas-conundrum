@@ -96,7 +96,7 @@ Players connect, select roles and specialties, host monitors readiness and start
 - Same time limits as regular questions (no extension)
 - Specialty bonus: `gameConfig.specialtyPointMultiplier`
 - Players are immediately marked as ready upon successful specialty selection
-- Once ready, a player's configuration is locked for the rest of the game — there is no un-ready or reconfigure flow
+- Once ready, a player's configuration is locked for the rest of the game — there is no un-ready or reconfigure flow; later configuration messages are rejected (`CONFIGURATION_LOCKED`)
 
 ### Game Start (Host Only)
 The host may start the game only when **every connected player is ready** and the ready count is at least `gameConfig.minPlayers`. Otherwise `SETUP_TO_SERVER_START_GAME` is rejected with `INSUFFICIENT_PLAYERS`. A connected-but-unready player therefore blocks the start; stragglers must either configure or disconnect.
@@ -108,6 +108,7 @@ The host may start the game only when **every connected player is ready** and th
 - Each gathering round = one trivia round = one trivia question delivered to each player. Questions are drawn per player — the specialty-probability roll is individual — so players may receive different questions in the same round
 - First part of round: Players select their answer from multiple choice options for `gameConfig.triviaAnswerTime` seconds
 - Second part of round: Answers locked in, marked right/wrong, grace period of `gameConfig.triviaGraceTime` seconds for location changes and team discussion
+- The phase opens with one silent round-length wait before Round 1's question, giving players time to reach and scan their first QR station
 
 **Location**: 4 QR code stations in physical spaces
 
@@ -168,7 +169,7 @@ where `tokenThreshold` is the per-type config value (`gameConfig.anchorTokenThre
      - If `N ≥ 1`: `max(1, ceil(gridSize² × (1 − N / maxThresholds)))` cells are highlighted.
      - At full thresholds the count converges to exactly one cell — the correct destination.
    - The highlighted set always contains the fragment's correct cell; the remaining cells are decoys
-   - The set for a given threshold count is drawn once and is stable across broadcasts; it re-rolls (shrinking) only when a new guide threshold is earned — otherwise players could intersect successive sets to isolate the correct cell
+   - The set is drawn once per player when their fragment enters the central grid and never changes thereafter — guide thresholds are final before puzzle assembly begins, so there is nothing to re-roll
    - Individual hints visible only to each player for their own fragment
    - Only applies after individual puzzle completion
 
@@ -251,32 +252,7 @@ Canvas Conundrum operates with two independent puzzle systems that remain separa
 
 ### The Critical Transformation Moment
 
-**Individual Completion → Central Fragment Activation:**
-
-This is the single most important transition in the entire game system:
-
-1. **Pre-Completion State**:
-   - Individual puzzle exists only in player's private space
-   - Central grid shows no trace of this puzzle
-   - Other players see no indication of progress
-   - Host displays show no fragment for this player
-
-2. **Completion Trigger**:
-   - Player arranges final pieces of their individual puzzle
-   - Player sends `PUZZLE_TO_SERVER_SEGMENT_COMPLETED` message with `segmentId` and timestamp
-   - Server accepts the completion claim — the client is authoritative for its own private puzzle — and assigns a grid position
-
-3. **Instant Transformation**:
-   - Individual puzzle instantly becomes one single fragment
-   - Server places fragment at random unoccupied position on central shared grid
-   - Fragment becomes visible to all players and host immediately
-   - Fragment becomes movable according to ownership rules
-   - Player transitions from Phase 2A to Phase 2B
-
-4. **Post-Completion State**:
-   - Individual puzzle workspace no longer exists for that player
-   - Player now participates only in central grid collaboration
-   - Fragment participates in shared puzzle assembly process
+The single most important transition in the game: when a player arranges the final pieces of their individual puzzle, the client sends `PUZZLE_TO_SERVER_SEGMENT_COMPLETED` with `segmentId` and timestamp. The server accepts the completion claim — the client is authoritative for its own private puzzle — and places the new fragment at a random unoccupied position on the central grid. The fragment is immediately visible to all players and the host, and movable under ownership rules. The player's private workspace ceases to exist and they transition from Phase 2A to Phase 2B, participating from then on only in central-grid collaboration. Until this moment, the isolation rules of *System 1* apply in full — no trace of the segment exists anywhere outside the player's device.
 
 ### Dynamic Grid System
 
@@ -311,7 +287,7 @@ Player Count → Grid Size → Total Fragments
    - Marked as `playerId: null` in system
 
 **Movement Mechanics (Switches/Swaps):**
-- **Movement Cooldown**: `gameConfig.fragmentMoveCooldown` ms is enforced **per fragment**, not per player. Each fragment has its own cooldown clock that starts when the fragment last moved (whether moved by its owner, an unassigned mover, or as the swap target of another move). A single player can chain rapid moves across different fragments. Two players who both want to move the same unassigned fragment serialize on its cooldown.
+- **Movement Cooldown**: `gameConfig.fragmentMoveCooldown` ms is enforced **per fragment**, not per player. Each fragment has its own cooldown clock that starts when the fragment last moved (whether moved by its owner, an unassigned mover, or as the swap target of another move). A single player can chain rapid moves across different fragments. Two players who both want to move the same unassigned fragment serialize on its cooldown. A move or swap executes only if **every** involved fragment is off cooldown.
 - **Position Validation**: All swaps validated against grid boundaries (0 to gridSize-1)
 - **Collision Resolution**: Fragments swap positions or one fragment moves to open grid space
 - **Permission Checking**: A direct move may only involve fragments the mover controls (their own fragment or unassigned ones). A swap that would displace another player's owned fragment is rejected with `not_owner` — propose it through the recommendation system instead.
@@ -320,10 +296,9 @@ Player Count → Grid Size → Total Fragments
 ### Fragment Visibility and State Management
 
 **Visibility Rules:**
-- **Invisible Until Completion**: Fragments only become visible on the central grid after their owner completes their individual puzzle. Anchor tokens pre-solve *pieces inside individual puzzles* — they do not place fragments on the central grid (see *Resource Token System*).
-- **Persistent Once Visible**: Once a fragment appears on the grid it remains visible to all players and the host for the rest of the puzzle phase.
-- **Personal View Consistency**: Each player sees identical central grid state.
-- **Public vs Private**: Fragment positions are fully public — both the host's big-screen display and every player's device show the same grid. Guide-token highlights are strictly private; each player sees only the highlights for their own fragment, never another player's.
+- Anchor tokens pre-solve *pieces inside individual puzzles* — they never place fragments on the central grid (see *Resource Token System*).
+- Once a fragment appears on the grid it remains visible to all players and the host for the rest of the puzzle phase.
+- Fragment positions are fully public — the host's big-screen display and every player's device show the identical grid. Guide-token highlights are strictly private; each player sees only the highlights for their own fragment, never another player's.
 
 **State Broadcasting:**
 - **Central Puzzle State**: Complete grid state sent to all players every `gameConfig.gridUpdateInterval` seconds
@@ -360,7 +335,7 @@ The four token types and their puzzle-phase effects are fully defined under *Res
 
 ## Phase 3: Post-Game Analytics
 
-**Duration**: Game result and analytics display until the host sends `ANALYTICS_TO_SERVER_RESET_GAME`; no auto-expiry
+**Duration**: Game result and analytics display until the host sends `ANALYTICS_TO_SERVER_RESET_GAME`; no auto-expiry. Reset is valid only during this phase — a reset attempt in any other phase is rejected with `FORBIDDEN_PHASE`. There is deliberately no mid-game abort; a stalled game is recovered by a deployment-level restart (see *Host Disconnections*).
 
 **Performance Tracking:**
 
@@ -425,7 +400,7 @@ Canvas Conundrum handles disconnections differently based on the game phase to b
 
 **Player Disconnection:**
 - **Maintained Presence**: Player remains in game counts and their contributions continue to matter
-- **Resource Phase**: Collected tokens remain in team totals
+- **Resource Phase**: Collected tokens remain in team totals. No questions are delivered while disconnected; each missed round counts as unanswered (incorrect) in per-player and team accuracy
 - **Puzzle Phase**: If still solving (Phase 2A), the individual puzzle is immediately auto-solved into an unassigned fragment at a random unoccupied grid position; if already collaborating (Phase 2B), their existing fragment becomes unassigned. Either way, any remaining player can move it, and the disconnection is broadcast to all remaining players.
 - **Analytics Phase**: Personal analytics preserved for viewing upon reconnection
 - **Limited Reconnection**: Cannot reconnect during puzzle assembly phase; can reconnect during resource gathering, puzzle preparation, and analytics phases

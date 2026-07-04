@@ -60,7 +60,7 @@ All communication after initial connection requires authentication using the sta
   "payload": {
     // Event-specific data
   },
-  "timestamp": "2025-01-XX:XX:XX.XXXZ"
+  "timestamp": "2025-06-15T14:23:05.000Z"
 }
 ```
 

@@ -13,7 +13,7 @@ All client-to-server messages (except initial connection) use this format:
   "payload": {
     // Event-specific data shown below
   },
-  "timestamp": "2025-01-XX:XX:XX.XXXZ"
+  "timestamp": "2025-06-15T14:23:05.000Z"
 }
 ```
 
@@ -25,7 +25,7 @@ All server-to-client messages use this format:
   "payload": {
     // Event-specific data shown below
   },
-  "timestamp": "2025-01-XX:XX:XX.XXXZ"
+  "timestamp": "2025-06-15T14:23:05.000Z"
 }
 ```
 
@@ -36,6 +36,14 @@ All server-to-client messages use this format:
 ### Required vs optional fields
 
 Every payload field shown in this spec is **required** unless explicitly marked **(optional)** in prose following the JSON example. Optional fields may be omitted entirely or sent as JSON `null`; their absence has the meaning described per-event. A missing required field returns `SYSTEM_TO_CLIENT_ERROR` with code `MALFORMED_PAYLOAD`.
+
+### Timestamps
+
+All timestamp fields are ISO 8601 UTC strings — the envelope `timestamp` and payload fields like `startTimestamp`, `completionTimestamp`, `nextMoveAvailable`, and `timerPausedAt` alike. Durations and countdowns are plain numeric seconds (milliseconds only where a config value says so, e.g. `fragmentMoveCooldown`).
+
+### Canonical example game
+
+All example payloads in this document describe the same game: **5 players** — Alice (detective, science), Bob (art_enthusiast, music), Charlie (tourist, geography), Diana (janitor, history), Eve (art_enthusiast, general) — on **medium** difficulty with **5 rounds**, producing a **3×3 grid** (segments `a1`–`c3`; Alice→`a1`, Bob→`a2`, Charlie→`a3`, Diana→`b1`, Eve→`b2`). Final thresholds: anchor 3, chronos 3, guide 3, clarity 2 — hence 6 pre-solved pieces, +60s chronos bonus (360s total), 5 guide highlights, and a 5s clarity preview. Example values are internally consistent with this game and the formulas in `game-design.md`.
 
 ### Game phases
 
@@ -232,7 +240,7 @@ All currently-connected players additionally receive `SYSTEM_TO_CLIENT_HOST_RECO
       "difficultyMode": "medium"
     }
   },
-  "timestamp": "2025-01-XX:XX:XX.XXXZ"
+  "timestamp": "2025-06-15T14:23:05.000Z"
 }
 ```
 
@@ -249,7 +257,7 @@ All currently-connected players additionally receive `SYSTEM_TO_CLIENT_HOST_RECO
     "isReconnection": false,
     "existingConfiguration": null
   },
-  "timestamp": "2025-01-XX:XX:XX.XXXZ"
+  "timestamp": "2025-06-15T14:23:05.000Z"
 }
 ```
 
@@ -320,7 +328,7 @@ All currently-connected players additionally receive `SYSTEM_TO_CLIENT_HOST_RECO
     ],
     "maxSpecialties": 1
   },
-  "timestamp": "2025-01-XX:XX:XX.XXXZ"
+  "timestamp": "2025-06-15T14:23:05.000Z"
 }
 ```
 
@@ -341,7 +349,7 @@ All currently-connected players additionally receive `SYSTEM_TO_CLIENT_HOST_RECO
     "selectedSpecialties": ["science"],
     "playerName": "Player Display Name"
   },
-  "timestamp": "2025-01-XX:XX:XX.XXXZ"
+  "timestamp": "2025-06-15T14:23:05.000Z"
 }
 ```
 
@@ -370,7 +378,7 @@ The server processes these messages serially; if two players race for the last s
     "gameStartEligible": false,
     "waitingMessage": "Waiting for 1 more player to be ready"
   },
-  "timestamp": "2025-01-XX:XX:XX.XXXZ"
+  "timestamp": "2025-06-15T14:23:05.000Z"
 }
 ```
 
@@ -393,7 +401,7 @@ The server processes these messages serially; if two players race for the last s
         "specialties": ["science"],
         "connected": true,
         "ready": true,
-        "lastActivity": "2025-01-XX:XX:XX.XXXZ"
+        "lastActivity": "2025-06-15T14:23:05.000Z"
       },
       "player2-uuid": {
         "playerName": "Bob",
@@ -401,7 +409,7 @@ The server processes these messages serially; if two players race for the last s
         "specialties": ["music"],
         "connected": true,
         "ready": false,
-        "lastActivity": "2025-01-XX:XX:XX.XXXZ"
+        "lastActivity": "2025-06-15T14:23:05.000Z"
       }
     },
     "roleDistribution": {
@@ -411,7 +419,7 @@ The server processes these messages serially; if two players race for the last s
       "janitor": 1
     }
   },
-  "timestamp": "2025-01-XX:XX:XX.XXXZ"
+  "timestamp": "2025-06-15T14:23:05.000Z"
 }
 ```
 
@@ -428,7 +436,7 @@ The server processes these messages serially; if two players race for the last s
     "token": "host-uuid"
   },
   "payload": {},
-  "timestamp": "2025-01-XX:XX:XX.XXXZ"
+  "timestamp": "2025-06-15T14:23:05.000Z"
 }
 ```
 
@@ -449,7 +457,7 @@ The server processes these messages serially; if two players race for the last s
       "clarityTokens": 0
     }
   },
-  "timestamp": "2025-01-XX:XX:XX.XXXZ"
+  "timestamp": "2025-06-15T14:23:05.000Z"
 }
 ```
 
@@ -493,7 +501,7 @@ The server processes these messages serially; if two players race for the last s
       "thresholdMultiplier": 1.0
     }
   },
-  "timestamp": "2025-01-XX:XX:XX.XXXZ"
+  "timestamp": "2025-06-15T14:23:05.000Z"
 }
 ```
 
@@ -519,7 +527,7 @@ The server processes these messages serially; if two players race for the last s
       }
     }
   },
-  "timestamp": "2025-01-XX:XX:XX.XXXZ"
+  "timestamp": "2025-06-15T14:23:05.000Z"
 }
 ```
 
@@ -538,9 +546,9 @@ The server processes these messages serially; if two players race for the last s
   "payload": {
     "stationHash": "hash_anchor_station_constant",
     "previousLocation": "clarity",
-    "scanTimestamp": "2025-01-XX:XX:XX.XXXZ"
+    "scanTimestamp": "2025-06-15T14:23:05.000Z"
   },
-  "timestamp": "2025-01-XX:XX:XX.XXXZ"
+  "timestamp": "2025-06-15T14:23:05.000Z"
 }
 ```
 
@@ -558,7 +566,7 @@ On a recognized hash, the server replies with `RESOURCE_TO_PLAYER_LOCATION_CONFI
   "payload": {
     "newLocation": "anchor"
   },
-  "timestamp": "2025-01-XX:XX:XX.XXXZ"
+  "timestamp": "2025-06-15T14:23:05.000Z"
 }
 ```
 
@@ -574,7 +582,7 @@ On a recognized hash, the server replies with `RESOURCE_TO_PLAYER_LOCATION_CONFI
 {
   "event": "RESOURCE_TO_PLAYER_TRIVIA_QUESTION",
   "payload": {
-    "questionId": "general_medium_42_1234567",
+    "questionId": "geography_medium_042",
     "questionText": "What is the capital of France?",
     "category": "geography",
     "difficulty": "medium",
@@ -587,13 +595,13 @@ On a recognized hash, the server replies with `RESOURCE_TO_PLAYER_LOCATION_CONFI
     ],
     "roundNumber": 3,
     "totalRounds": 5,
-    "answerDeadline": "2025-01-XX:XX:XX.XXXZ"
+    "answerDeadline": "2025-06-15T14:23:05.000Z"
   },
-  "timestamp": "2025-01-XX:XX:XX.XXXZ"
+  "timestamp": "2025-06-15T14:23:05.000Z"
 }
 ```
 
-`difficulty` is `gameConfig.difficultyMode` for regular questions and one level higher (capped at hard) for specialty questions.
+`difficulty` is `gameConfig.difficultyMode` for regular questions and one level higher (capped at hard) for specialty questions. `questionId` follows `{category}_{difficulty}_{index}`.
 
 #### `RESOURCE_TO_SERVER_TRIVIA_ANSWER`
 **Direction**: Player → Server
@@ -606,12 +614,11 @@ On a recognized hash, the server replies with `RESOURCE_TO_PLAYER_LOCATION_CONFI
     "token": "player-uuid"
   },
   "payload": {
-    "questionId": "general_medium_42_1234567",
-    "selectedAnswer": "Paris",
+    "questionId": "geography_medium_042",
     "answerIndex": 0,
     "timeElapsed": 18.5
   },
-  "timestamp": "2025-01-XX:XX:XX.XXXZ"
+  "timestamp": "2025-06-15T14:23:05.000Z"
 }
 ```
 
@@ -625,7 +632,7 @@ The server determines which token type an answer earns from its own station trac
 {
   "event": "RESOURCE_TO_PLAYER_ANSWER_RESULT",
   "payload": {
-    "questionId": "general_medium_42_1234567",
+    "questionId": "geography_medium_042",
     "correct": true,
     "selectedAnswer": "Paris",
     "correctAnswer": "Paris",
@@ -639,9 +646,9 @@ The server determines which token type an answer earns from its own station trac
       "difficultyMultiplier": 1.0
     },
     "currentLocation": "clarity",
-    "nextTriviaTimestamp": "2025-01-XX:XX:XX.XXXZ"
+    "nextTriviaTimestamp": "2025-06-15T14:23:05.000Z"
   },
-  "timestamp": "2025-01-XX:XX:XX.XXXZ"
+  "timestamp": "2025-06-15T14:23:05.000Z"
 }
 ```
 
@@ -659,8 +666,8 @@ The server determines which token type an answer earns from its own station trac
   "payload": {
     "currentRound": 3,
     "totalRounds": 5,
-    "questionsAnswered": 28,
-    "totalQuestions": 40,
+    "questionsAnswered": 14,
+    "totalQuestions": 25,
     "teamTokens": {
       "anchorTokens": 45,
       "chronosTokens": 32,
@@ -668,7 +675,7 @@ The server determines which token type an answer earns from its own station trac
       "clarityTokens": 38
     },
     "currentThresholds": {
-      "anchor": 2,
+      "anchor": 1,
       "chronos": 1,
       "guide": 1,
       "clarity": 1
@@ -678,7 +685,7 @@ The server determines which token type an answer earns from its own station trac
       "roundTimeRemaining": 42
     }
   },
-  "timestamp": "2025-01-XX:XX:XX.XXXZ"
+  "timestamp": "2025-06-15T14:23:05.000Z"
 }
 ```
 
@@ -728,7 +735,7 @@ The server determines which token type an answer earns from its own station trac
       "clarityTokens": 38
     }
   },
-  "timestamp": "2025-01-XX:XX:XX.XXXZ"
+  "timestamp": "2025-06-15T14:23:05.000Z"
 }
 ```
 
@@ -759,11 +766,11 @@ The server determines which token type an answer earns from its own station trac
     "bonusEffects": {
       "anchorPreSolved": 6,
       "chronosTimeBonus": 60,
-      "guideHighlightCount": 3,
+      "guideHighlightCount": 5,
       "clarityPreviewDuration": 5
     }
   },
-  "timestamp": "2025-01-XX:XX:XX.XXXZ"
+  "timestamp": "2025-06-15T14:23:05.000Z"
 }
 ```
 
@@ -776,9 +783,9 @@ The server determines which token type an answer earns from its own station trac
   "event": "RESOURCE_TO_HOST_PHASE_COMPLETE",
   "payload": {
     "phase": "resource_gathering",
-    "totalQuestionsAnswered": 40,
+    "totalQuestionsAnswered": 25,
     "teamPerformance": {
-      "overallAccuracy": 0.78,
+      "overallAccuracy": 0.76,
       "totalTokensEarned": 281,
       "averageResponseTime": 23.5
     },
@@ -790,20 +797,20 @@ The server determines which token type an answer earns from its own station trac
     },
     "playerAnalytics": {
       "player1-uuid": {
-        "questionsAnswered": 8,
-        "correctAnswers": 7,
-        "accuracy": 0.875,
-        "tokensEarned": 165,
+        "questionsAnswered": 5,
+        "correctAnswers": 4,
+        "accuracy": 0.8,
+        "tokensEarned": 130,
         "specialtyPerformance": {
-          "questionsReceived": 3,
-          "correctAnswers": 3,
-          "bonusTokens": 45
+          "questionsReceived": 2,
+          "correctAnswers": 2,
+          "bonusTokens": 40
         }
       }
     },
     "readyForPuzzlePhase": true
   },
-  "timestamp": "2025-01-XX:XX:XX.XXXZ"
+  "timestamp": "2025-06-15T14:23:05.000Z"
 }
 ```
 
@@ -826,6 +833,9 @@ Clients and the host derive the full set of valid segment IDs from
 `centralGridSize` (delivered in `PUZZLE_TO_CLIENT_PHASE_LOAD` and
 `PUZZLE_TO_HOST_PHASE_LOAD`); the server never sends the enumeration.
 
+Fragments are identified by the `segmentId` of the segment they contain —
+there is no separate fragment ID namespace.
+
 ### Puzzle Preparation
 
 When resource gathering ends, the game enters the `puzzle_preparation` phase, during which the server crops the configured source image into per-segment tiles in memory. The host's `PUZZLE_TO_SERVER_PHASE_START` is rejected until tile generation completes. (For the gameplay rationale of this pause, see `game-design.md` § *Puzzle Preparation Phase*.)
@@ -838,7 +848,7 @@ When resource gathering ends, the game enters the `puzzle_preparation` phase, du
 {
   "event": "PUZZLE_TO_HOST_PREPARING",
   "payload": {},
-  "timestamp": "2025-01-XX:XX:XX.XXXZ"
+  "timestamp": "2025-06-15T14:23:05.000Z"
 }
 ```
 
@@ -850,7 +860,7 @@ When resource gathering ends, the game enters the `puzzle_preparation` phase, du
 {
   "event": "PUZZLE_TO_HOST_READY",
   "payload": {},
-  "timestamp": "2025-01-XX:XX:XX.XXXZ"
+  "timestamp": "2025-06-15T14:23:05.000Z"
 }
 ```
 
@@ -871,12 +881,12 @@ When resource gathering ends, the game enters the `puzzle_preparation` phase, du
     "assignedSegmentId": "segment_a1",
     "individualPuzzleSize": 16,
     "anchorPreSolvedPieces": 6,
-    "centralGridSize": 4,
-    "totalCentralFragments": 16,
+    "centralGridSize": 3,
+    "totalCentralFragments": 9,
     "clarityPreviewDuration": 5,
-    "guideHighlightCount": 9
+    "guideHighlightCount": 5
   },
-  "timestamp": "2025-01-XX:XX:XX.XXXZ"
+  "timestamp": "2025-06-15T14:23:05.000Z"
 }
 ```
 
@@ -890,24 +900,24 @@ When resource gathering ends, the game enters the `puzzle_preparation` phase, du
   "payload": {
     "phase": "puzzle_preparation",
     "imageId": "nature_image.png",
-    "centralGridSize": 4,
-    "totalFragments": 16,
+    "centralGridSize": 3,
+    "totalFragments": 9,
     "playerCount": 5,
     "playerSegmentAssignments": {
       "player1-uuid": "segment_a1",
       "player2-uuid": "segment_a2",
       "player3-uuid": "segment_a3",
-      "player4-uuid": "segment_a4",
-      "player5-uuid": "segment_b1"
+      "player4-uuid": "segment_b1",
+      "player5-uuid": "segment_b2"
     },
     "bonusEffects": {
       "anchorPreSolved": 6,
       "chronosTimeBonus": 60,
-      "guideHighlightCount": 9,
+      "guideHighlightCount": 5,
       "clarityPreviewDuration": 5
     }
   },
-  "timestamp": "2025-01-XX:XX:XX.XXXZ"
+  "timestamp": "2025-06-15T14:23:05.000Z"
 }
 ```
 
@@ -969,7 +979,7 @@ If the team earned zero clarity thresholds, the endpoint returns `FORBIDDEN_PREV
     "token": "host-uuid"
   },
   "payload": {},
-  "timestamp": "2025-01-XX:XX:XX.XXXZ"
+  "timestamp": "2025-06-15T14:23:05.000Z"
 }
 ```
 
@@ -981,7 +991,7 @@ If the team earned zero clarity thresholds, the endpoint returns `FORBIDDEN_PREV
 {
   "event": "PUZZLE_TO_CLIENT_PHASE_START",
   "payload": {
-    "startTimestamp": 1640995200000,
+    "startTimestamp": "2025-06-15T14:23:05.000Z",
     "totalTime": 360,
     "baseTime": 300,
     "chronosBonus": 60,
@@ -992,7 +1002,7 @@ If the team earned zero clarity thresholds, the endpoint returns `FORBIDDEN_PREV
       "phase2b": []
     }
   },
-  "timestamp": "2025-01-XX:XX:XX.XXXZ"
+  "timestamp": "2025-06-15T14:23:05.000Z"
 }
 ```
 
@@ -1009,14 +1019,14 @@ If the team earned zero clarity thresholds, the endpoint returns `FORBIDDEN_PREV
   "event": "PUZZLE_TO_HOST_PHASE_START",
   "payload": {
     "timerActive": true,
-    "startTimestamp": 1640995200000,
+    "startTimestamp": "2025-06-15T14:23:05.000Z",
     "totalTime": 360,
     "baseTime": 300,
     "chronosBonus": 60,
     "playersInPhase2a": 5,
     "playersInPhase2b": 0
   },
-  "timestamp": "2025-01-XX:XX:XX.XXXZ"
+  "timestamp": "2025-06-15T14:23:05.000Z"
 }
 ```
 
@@ -1030,7 +1040,7 @@ After this event fires, `GET /api/preview/full` returns `403 FORBIDDEN_PREVIEW_W
 {
   "event": "PUZZLE_TO_CLIENT_PREVIEW_EXPIRED",
   "payload": {},
-  "timestamp": "2025-01-XX:XX:XX.XXXZ"
+  "timestamp": "2025-06-15T14:23:05.000Z"
 }
 ```
 
@@ -1047,13 +1057,13 @@ After this event fires, `GET /api/preview/full` returns `403 FORBIDDEN_PREVIEW_W
     "token": "player-uuid"
   },
   "payload": {
-    "segmentId": "segment_a5",
-    "completionTimestamp": 1640995200000,
+    "segmentId": "segment_a1",
+    "completionTimestamp": "2025-06-15T14:23:05.000Z",
     "solveTime": 180,
     "manualPiecesSolved": 10,
     "preSolvedPieces": 6
   },
-  "timestamp": "2025-01-XX:XX:XX.XXXZ"
+  "timestamp": "2025-06-15T14:23:05.000Z"
 }
 ```
 
@@ -1066,10 +1076,9 @@ After this event fires, `GET /api/preview/full` returns `403 FORBIDDEN_PREVIEW_W
   "event": "PUZZLE_TO_PLAYER_SEGMENT_ACKNOWLEDGED",
   "payload": {
     "segmentId": "segment_a1",
-    "position": {"x": 2, "y": 3},
-    "fragmentId": "fragment_01"
+    "position": {"x": 2, "y": 1}
   },
-  "timestamp": "2025-01-XX:XX:XX.XXXZ"
+  "timestamp": "2025-06-15T14:23:05.000Z"
 }
 ```
 
@@ -1090,8 +1099,7 @@ team-completion-status payload.
     "playerName": "Alice",
     "segmentId": "segment_a1",
     "completionTime": 180,
-    "position": {"x": 2, "y": 3},
-    "fragmentId": "fragment_01",
+    "position": {"x": 2, "y": 1},
     "phaseTransition": {
       "playersInPhase2a": 4,
       "playersInPhase2b": 1
@@ -1099,12 +1107,14 @@ team-completion-status payload.
     "completionStats": {
       "totalCompleted": 1,
       "totalRequired": 5,
-      "unassignedFragments": 11
+      "unassignedFragments": 1
     }
   },
-  "timestamp": "2025-01-XX:XX:XX.XXXZ"
+  "timestamp": "2025-06-15T14:23:05.000Z"
 }
 ```
+
+`unassignedFragments` counts the unassigned fragments currently visible on the grid (per the *Proportional Unassigned Fragment Reveal* rule in `game-design.md`), not the game's total.
 
 ### Collaborative Fragment Movement (Phase 2B)
 
@@ -1119,19 +1129,19 @@ team-completion-status payload.
     "token": "player-uuid"
   },
   "payload": {
-    "fragmentId": "fragment_01",
-    "currentPosition": {"x": 2, "y": 3},
-    "targetPosition": {"x": 1, "y": 1},
-    "swapWithFragmentId": "fragment_02"
+    "segmentId": "segment_a1",
+    "currentPosition": {"x": 2, "y": 1},
+    "targetPosition": {"x": 0, "y": 0},
+    "swapWithSegmentId": "segment_b3"
   },
-  "timestamp": "2025-01-XX:XX:XX.XXXZ"
+  "timestamp": "2025-06-15T14:23:05.000Z"
 }
 ```
 
 The event covers two move modes:
 
-- **Swap**: `swapWithFragmentId` is set. The fragment at `targetPosition` (which must be `swapWithFragmentId`) and the moving fragment exchange positions. Both fragments must be controllable by the caller (their own fragment or unassigned ones); a swap that would displace another player's owned fragment is rejected with reason `not_owner` — propose it via `PUZZLE_TO_SERVER_RECOMMEND_MOVE` instead.
-- **Move to empty cell**: `swapWithFragmentId` is `null` or omitted **(optional)**. `targetPosition` must reference an unoccupied cell; the moving fragment relocates into it.
+- **Swap**: `swapWithSegmentId` is set. The fragment at `targetPosition` (which must be `swapWithSegmentId`) and the moving fragment exchange positions. Both fragments must be controllable by the caller (their own fragment or unassigned ones — in the example, `segment_b3` is unassigned); a swap that would displace another player's owned fragment is rejected with reason `not_owner` — propose it via `PUZZLE_TO_SERVER_RECOMMEND_MOVE` instead.
+- **Move to empty cell**: `swapWithSegmentId` is `null` or omitted **(optional)**. `targetPosition` must reference an unoccupied cell; the moving fragment relocates into it.
 
 The server validates that `targetPosition` actually matches the requested mode (swap target occupied by the named fragment, or empty cell unoccupied). Mismatches return `SYSTEM_TO_CLIENT_ERROR` with `errorCode: "FORBIDDEN_NOT_OWNER"` if the caller does not control an involved fragment, or `MALFORMED_PAYLOAD` if the position/fragment-ID combination is inconsistent.
 
@@ -1149,20 +1159,20 @@ The server validates that `targetPosition` actually matches the requested mode (
   "payload": {
     "moveId": "move-uuid-12345",
     "status": "success",
-    "fragmentId": "fragment_01",
-    "newPosition": {"x": 1, "y": 1},
-    "swappedFragmentId": "fragment_02",
-    "swappedFragmentNewPosition": {"x": 2, "y": 3},
+    "segmentId": "segment_a1",
+    "newPosition": {"x": 0, "y": 0},
+    "swappedSegmentId": "segment_b3",
+    "swappedSegmentNewPosition": {"x": 2, "y": 1},
     "cooldownInfo": {
-      "nextMoveAvailable": 1640995203000,
+      "nextMoveAvailable": "2025-06-15T14:23:07.500Z",
       "cooldownRemaining": 2.5
     }
   },
-  "timestamp": "2025-01-XX:XX:XX.XXXZ"
+  "timestamp": "2025-06-15T14:23:05.000Z"
 }
 ```
 
-`swappedFragmentId` and `swappedFragmentNewPosition` are **(optional)** — present only when the move was a swap; absent when the move was into an empty cell.
+`swappedSegmentId` and `swappedSegmentNewPosition` are **(optional)** — present only when the move was a swap; absent when the move was into an empty cell.
 
 **Rejection example:**
 
@@ -1172,14 +1182,14 @@ The server validates that `targetPosition` actually matches the requested mode (
   "payload": {
     "moveId": "move-uuid-12345",
     "status": "rejected",
-    "fragmentId": "fragment_01",
+    "segmentId": "segment_a1",
     "reason": "cooldown",
     "cooldownInfo": {
-      "nextMoveAvailable": 1640995203000,
+      "nextMoveAvailable": "2025-06-15T14:23:06.200Z",
       "cooldownRemaining": 1.2
     }
   },
-  "timestamp": "2025-01-XX:XX:XX.XXXZ"
+  "timestamp": "2025-06-15T14:23:05.000Z"
 }
 ```
 
@@ -1209,19 +1219,17 @@ The `fragments` array grows over time as players complete their individual puzzl
     "updateType": "periodic",
     "fragments": [
       {
-        "fragmentId": "fragment_01",
         "segmentId": "segment_a1",
-        "position": {"x": 1, "y": 1}
+        "position": {"x": 0, "y": 0}
       },
       {
-        "fragmentId": "fragment_02",
-        "segmentId": "segment_a2",
-        "position": {"x": 2, "y": 3}
+        "segmentId": "segment_b3",
+        "position": {"x": 2, "y": 1}
       }
     ],
     "timeRemaining": 285
   },
-  "timestamp": "2025-01-XX:XX:XX.XXXZ"
+  "timestamp": "2025-06-15T14:23:05.000Z"
 }
 ```
 
@@ -1238,12 +1246,11 @@ The `fragments` array follows the same proportional-reveal rule as `PUZZLE_TO_CL
     "updateType": "immediate",
     "fragments": [
       {
-        "fragmentId": "fragment_01",
         "playerId": "player1-uuid",
         "playerName": "Alice",
         "segmentId": "segment_a1",
-        "position": {"x": 1, "y": 1},
-        "lastMoved": "2025-01-XX:XX:XX.XXXZ",
+        "position": {"x": 0, "y": 0},
+        "lastMoved": "2025-06-15T14:23:05.000Z",
         "moveCount": 3
       }
     ],
@@ -1253,13 +1260,13 @@ The `fragments` array follows the same proportional-reveal rule as `PUZZLE_TO_CL
         "fragmentsOwned": 1,
         "movesContributed": 3,
         "successfulMoves": 2,
-        "lastActivity": "2025-01-XX:XX:XX.XXXZ"
+        "lastActivity": "2025-06-15T14:23:05.000Z"
       }
     },
     "activeRecommendations": 2,
     "timeRemaining": 285
   },
-  "timestamp": "2025-01-XX:XX:XX.XXXZ"
+  "timestamp": "2025-06-15T14:23:05.000Z"
 }
 ```
 
@@ -1274,11 +1281,14 @@ The `guideHighlights` array carries the cells on the central grid currently high
   "event": "PUZZLE_TO_PLAYER_PERSONAL_STATE",
   "payload": {
     "guideHighlights": [
-      {"x": 1, "y": 2},
-      {"x": 3, "y": 0}
+      {"x": 0, "y": 0},
+      {"x": 0, "y": 2},
+      {"x": 1, "y": 1},
+      {"x": 2, "y": 0},
+      {"x": 2, "y": 2}
     ]
   },
-  "timestamp": "2025-01-XX:XX:XX.XXXZ"
+  "timestamp": "2025-06-15T14:23:05.000Z"
 }
 ```
 
@@ -1290,7 +1300,7 @@ The `guideHighlights` array carries the cells on the central grid currently high
 **Direction**: Player → Server
 **Trigger**: Player sends recommendation to another player
 
-Validation: the sender must be in Phase 2B and control `fromFragmentId` (their own or unassigned); `toFragmentId` must be owned by `targetPlayerId` (recommendations exist precisely for the swaps a player cannot execute directly); and both fragments must be off cooldown, otherwise the request is rejected with `SYSTEM_TO_CLIENT_ERROR` / `COOLDOWN_ACTIVE`.
+Validation: the sender must be in Phase 2B and control `fromSegmentId` (their own or unassigned); `toSegmentId` must be owned by `targetPlayerId` (recommendations exist precisely for the swaps a player cannot execute directly); and both fragments must be off cooldown, otherwise the request is rejected with `SYSTEM_TO_CLIENT_ERROR` / `COOLDOWN_ACTIVE`.
 
 ```json
 {
@@ -1300,11 +1310,11 @@ Validation: the sender must be in Phase 2B and control `fromFragmentId` (their o
   },
   "payload": {
     "targetPlayerId": "player2-uuid",
-    "fromFragmentId": "fragment_01",
-    "toFragmentId": "fragment_02",
+    "fromSegmentId": "segment_a1",
+    "toSegmentId": "segment_a2",
     "reasoning": "This swap would place both fragments closer to correct positions"
   },
-  "timestamp": "2025-01-XX:XX:XX.XXXZ"
+  "timestamp": "2025-06-15T14:23:05.000Z"
 }
 ```
 
@@ -1320,12 +1330,12 @@ Validation: the sender must be in Phase 2B and control `fromFragmentId` (their o
     "fromPlayerId": "player1-uuid",
     "fromPlayerName": "Alice",
     "toPlayerId": "player2-uuid",
-    "fromFragmentId": "fragment_01",
-    "toFragmentId": "fragment_02",
+    "fromSegmentId": "segment_a1",
+    "toSegmentId": "segment_a2",
     "reasoning": "This swap would place both fragments closer to correct positions",
-    "expiresAt": "2025-01-XX:XX:XX.XXXZ"
+    "expiresAt": "2025-06-15T14:23:35.000Z"
   },
-  "timestamp": "2025-01-XX:XX:XX.XXXZ"
+  "timestamp": "2025-06-15T14:23:05.000Z"
 }
 ```
 
@@ -1346,7 +1356,7 @@ Validation: the sender must be in Phase 2B and control `fromFragmentId` (their o
     "response": "accept",
     "responseReason": "Good strategic move"
   },
-  "timestamp": "2025-01-XX:XX:XX.XXXZ"
+  "timestamp": "2025-06-15T14:23:05.000Z"
 }
 ```
 
@@ -1377,15 +1387,15 @@ On reject, the swap is not executed and the recommender receives `PUZZLE_TO_PLAY
     "response": "accept",
     "responseReason": "Good strategic move",
     "swapExecuted": {
-      "fragment1Id": "fragment_01",
-      "fragment1OldPosition": {"x": 1, "y": 1},
-      "fragment1NewPosition": {"x": 3, "y": 3},
-      "fragment2Id": "fragment_02",
-      "fragment2OldPosition": {"x": 3, "y": 3},
-      "fragment2NewPosition": {"x": 1, "y": 1}
+      "segment1Id": "segment_a1",
+      "segment1OldPosition": {"x": 0, "y": 0},
+      "segment1NewPosition": {"x": 1, "y": 1},
+      "segment2Id": "segment_a2",
+      "segment2OldPosition": {"x": 1, "y": 1},
+      "segment2NewPosition": {"x": 0, "y": 0}
     }
   },
-  "timestamp": "2025-01-XX:XX:XX.XXXZ"
+  "timestamp": "2025-06-15T14:23:05.000Z"
 }
 ```
 
@@ -1402,7 +1412,7 @@ The swap exchanges the fragments' positions at execution time, and both fragment
     "moveId": "rec-uuid-67890",
     "reason": "timeout"
   },
-  "timestamp": "2025-01-XX:XX:XX.XXXZ"
+  "timestamp": "2025-06-15T14:23:05.000Z"
 }
 ```
 
@@ -1424,11 +1434,11 @@ The swap exchanges the fragments' positions at execution time, and both fragment
     "timeRemaining": 75,
     "finalGridState": {
       "allFragmentsCorrect": true,
-      "totalFragments": 16,
-      "correctFragments": 16
+      "totalFragments": 9,
+      "correctFragments": 9
     }
   },
-  "timestamp": "2025-01-XX:XX:XX.XXXZ"
+  "timestamp": "2025-06-15T14:23:05.000Z"
 }
 ```
 
@@ -1445,13 +1455,13 @@ The swap exchanges the fragments' positions at execution time, and both fragment
     "totalTime": 360,
     "timeExpired": true,
     "finalStats": {
-      "fragmentsPlaced": 14,
-      "totalFragments": 16,
-      "correctlyPlaced": 10,
-      "completionPercentage": 62.5
+      "fragmentsPlaced": 8,
+      "totalFragments": 9,
+      "correctlyPlaced": 6,
+      "completionPercentage": 66.7
     }
   },
-  "timestamp": "2025-01-XX:XX:XX.XXXZ"
+  "timestamp": "2025-06-15T14:23:05.000Z"
 }
 ```
 
@@ -1491,7 +1501,7 @@ The swap exchanges the fragments' positions at execution time, and both fragment
       "slowestIndividual": 198
     }
   },
-  "timestamp": "2025-01-XX:XX:XX.XXXZ"
+  "timestamp": "2025-06-15T14:23:05.000Z"
 }
 ```
 
@@ -1512,29 +1522,29 @@ The swap exchanges the fragments' positions at execution time, and both fragment
     "playerId": "player1-uuid",
     "playerName": "Alice",
     "gameSuccess": true,
-    "personalScore": 320,
+    "personalScore": 196,
     "rank": 1,
     "totalPlayers": 5,
     "tokenCollection": {
-      "anchorTokens": 12,
-      "chronosTokens": 8,
-      "guideTokens": 15,
-      "clarityTokens": 10,
-      "totalTokens": 45
+      "anchorTokens": 20,
+      "chronosTokens": 10,
+      "guideTokens": 70,
+      "clarityTokens": 30,
+      "totalTokens": 130
     },
     "triviaPerformance": {
-      "totalQuestions": 20,
-      "correctAnswers": 16,
-      "accuracy": 0.80,
+      "totalQuestions": 5,
+      "correctAnswers": 4,
+      "accuracy": 0.8,
       "accuracyByCategory": {
-        "general": 0.85,
-        "science": 0.90,
-        "history": 0.75
+        "science": 1.0,
+        "geography": 1.0,
+        "general": 0.5
       },
       "specialtyPerformance": {
-        "specialtyQuestions": 5,
-        "specialtyCorrect": 4,
-        "specialtyAccuracy": 0.80,
+        "specialtyQuestions": 2,
+        "specialtyCorrect": 2,
+        "specialtyAccuracy": 1.0,
         "specialtyBonus": 40
       },
       "averageResponseTime": 18.5
@@ -1550,15 +1560,15 @@ The swap exchanges the fragments' positions at execution time, and both fragment
       "recommendationsAccepted": 1
     },
     "scoreBreakdown": {
-      "triviaPoints": 160,
-      "specialtyBonus": 8,
+      "triviaPoints": 40,
+      "specialtyBonus": 4,
       "completionBonus": 100,
       "movePoints": 35,
       "recommendationPoints": 17,
-      "totalScore": 320
+      "totalScore": 196
     }
   },
-  "timestamp": "2025-01-XX:XX:XX.XXXZ"
+  "timestamp": "2025-06-15T14:23:05.000Z"
 }
 ```
 
@@ -1573,11 +1583,11 @@ The swap exchanges the fragments' positions at execution time, and both fragment
   "event": "ANALYTICS_TO_CLIENT_TEAM_SUMMARY",
   "payload": {
     "gameSuccess": true,
-    "totalScore": 8250,
+    "totalScore": 830,
     "totalPlayers": 5,
-    "gameTime": 1200,
+    "gameTime": 735,
     "teamPerformance": {
-      "overallAccuracy": 0.78,
+      "overallAccuracy": 0.76,
       "totalTokensCollected": 281,
       "thresholdAchievements": {
         "anchor": 3,
@@ -1591,41 +1601,41 @@ The swap exchanges the fragments' positions at execution time, and both fragment
       {
         "playerId": "player1-uuid",
         "playerName": "Alice",
-        "totalScore": 1850,
+        "totalScore": 196,
         "rank": 1,
         "role": "detective"
       },
       {
         "playerId": "player2-uuid",
         "playerName": "Bob",
-        "totalScore": 1720,
+        "totalScore": 178,
         "rank": 2,
         "role": "art_enthusiast"
       },
       {
         "playerId": "player3-uuid",
         "playerName": "Charlie",
-        "totalScore": 1680,
+        "totalScore": 165,
         "rank": 3,
         "role": "tourist"
       },
       {
         "playerId": "player4-uuid",
         "playerName": "Diana",
-        "totalScore": 1575,
+        "totalScore": 152,
         "rank": 4,
         "role": "janitor"
       },
       {
         "playerId": "player5-uuid",
         "playerName": "Eve",
-        "totalScore": 1425,
+        "totalScore": 139,
         "rank": 5,
         "role": "art_enthusiast"
       }
     ]
   },
-  "timestamp": "2025-01-XX:XX:XX.XXXZ"
+  "timestamp": "2025-06-15T14:23:05.000Z"
 }
 ```
 
@@ -1639,18 +1649,18 @@ The swap exchanges the fragments' positions at execution time, and both fragment
   "payload": {
     "gameId": "game-uuid-12345",
     "gameSuccess": true,
-    "totalGameTime": 1200,
+    "totalGameTime": 735,
     "totalPlayers": 5,
     "difficultyMode": "medium",
     "overallPerformance": {
-      "totalScore": 8250,
-      "averageScore": 1650,
+      "totalScore": 830,
+      "averageScore": 166,
       "completionRate": 1.0
     },
     "resourceGatheringAnalytics": {
       "totalRounds": 5,
-      "questionsAnswered": 40,
-      "overallAccuracy": 0.78,
+      "questionsAnswered": 25,
+      "overallAccuracy": 0.76,
       "tokenDistribution": {
         "anchorTokens": 87,
         "chronosTokens": 64,
@@ -1659,21 +1669,21 @@ The swap exchanges the fragments' positions at execution time, and both fragment
       },
       "playerPerformance": {
         "player1-uuid": {
-          "questionsAnswered": 8,
-          "correctAnswers": 7,
-          "accuracy": 0.875,
-          "tokensEarned": 165,
+          "questionsAnswered": 5,
+          "correctAnswers": 4,
+          "accuracy": 0.8,
+          "tokensEarned": 130,
           "averageResponseTime": 18.5,
           "specialtyPerformance": {
-            "questionsReceived": 3,
-            "correctAnswers": 3,
-            "bonusTokens": 45
+            "questionsReceived": 2,
+            "correctAnswers": 2,
+            "bonusTokens": 40
           },
           "stationPreferences": {
-            "anchor": 2,
-            "chronos": 1,
+            "anchor": 1,
+            "chronos": 0,
             "guide": 3,
-            "clarity": 2
+            "clarity": 1
           }
         }
       }
@@ -1709,60 +1719,48 @@ The swap exchanges the fragments' positions at execution time, and both fragment
     },
     "categoryPerformance": {
       "general": {
-        "questionsAsked": 12,
-        "correctAnswers": 9,
-        "accuracy": 0.75
+        "questionsAsked": 6,
+        "correctAnswers": 4,
+        "accuracy": 0.667
       },
       "science": {
-        "questionsAsked": 8,
-        "correctAnswers": 7,
-        "accuracy": 0.875
+        "questionsAsked": 5,
+        "correctAnswers": 4,
+        "accuracy": 0.8
       },
       "history": {
-        "questionsAsked": 6,
-        "correctAnswers": 5,
-        "accuracy": 0.833
-      },
-      "geography": {
-        "questionsAsked": 7,
-        "correctAnswers": 5,
-        "accuracy": 0.714
-      },
-      "music": {
         "questionsAsked": 4,
         "correctAnswers": 3,
         "accuracy": 0.75
       },
-      "video_games": {
+      "geography": {
+        "questionsAsked": 5,
+        "correctAnswers": 3,
+        "accuracy": 0.6
+      },
+      "music": {
         "questionsAsked": 3,
+        "correctAnswers": 3,
+        "accuracy": 1.0
+      },
+      "video_games": {
+        "questionsAsked": 2,
         "correctAnswers": 2,
-        "accuracy": 0.667
+        "accuracy": 1.0
       }
     },
     "timelineAnalysis": {
       "setupPhase": 120,
       "resourcePhase": 300,
-      "puzzlePhase": 285,
-      "analyticsPhase": 0,
-      "phaseTransitions": [
-        {
-          "fromPhase": "setup",
-          "toPhase": "resource_gathering",
-          "timestamp": "2025-01-XX:XX:XX.XXXZ",
-          "duration": 5
-        },
-        {
-          "fromPhase": "resource_gathering",
-          "toPhase": "puzzle_assembly",
-          "timestamp": "2025-01-XX:XX:XX.XXXZ",
-          "duration": 30
-        }
-      ]
+      "preparationPhase": 30,
+      "puzzlePhase": 285
     }
   },
-  "timestamp": "2025-01-XX:XX:XX.XXXZ"
+  "timestamp": "2025-06-15T14:23:05.000Z"
 }
 ```
+
+`timelineAnalysis` values are phase durations in seconds.
 
 ### Game Reset
 
@@ -1779,7 +1777,7 @@ The swap exchanges the fragments' positions at execution time, and both fragment
   "payload": {
     "confirmReset": true
   },
-  "timestamp": "2025-01-XX:XX:XX.XXXZ"
+  "timestamp": "2025-06-15T14:23:05.000Z"
 }
 ```
 
@@ -1796,7 +1794,7 @@ The swap exchanges the fragments' positions at execution time, and both fragment
     "reconnectInstructions": "Refresh your browser and reconnect to join the next game",
     "newGameAvailable": true
   },
-  "timestamp": "2025-01-XX:XX:XX.XXXZ"
+  "timestamp": "2025-06-15T14:23:05.000Z"
 }
 ```
 
@@ -1830,7 +1828,7 @@ The `errorCode` field in both error events draws from the *Error code registry* 
       "Refresh the page if role list appears outdated"
     ]
   },
-  "timestamp": "2025-01-XX:XX:XX.XXXZ"
+  "timestamp": "2025-06-15T14:23:05.000Z"
 }
 ```
 
@@ -1858,7 +1856,7 @@ The `errorCode` field in both error events draws from the *Error code registry* 
       "Verify all players are properly connected"
     ]
   },
-  "timestamp": "2025-01-XX:XX:XX.XXXZ"
+  "timestamp": "2025-06-15T14:23:05.000Z"
 }
 ```
 
@@ -1878,9 +1876,9 @@ The `errorCode` field in both error events draws from the *Error code registry* 
       "canContinue": false,
       "affectedFeatures": ["host_monitoring", "phase_transitions", "puzzle_timer"]
     },
-    "timerPausedAt": 1640995430000
+    "timerPausedAt": "2025-06-15T14:25:30.000Z"
   },
-  "timestamp": "2025-01-XX:XX:XX.XXXZ"
+  "timestamp": "2025-06-15T14:23:05.000Z"
 }
 ```
 
@@ -1901,7 +1899,7 @@ The `errorCode` field in both error events draws from the *Error code registry* 
     "restoredFeatures": ["host_monitoring", "phase_transitions", "puzzle_timer"],
     "timeRemaining": 215
   },
-  "timestamp": "2025-01-XX:XX:XX.XXXZ"
+  "timestamp": "2025-06-15T14:23:05.000Z"
 }
 ```
 
@@ -1918,7 +1916,7 @@ The `errorCode` field in both error events draws from the *Error code registry* 
   "payload": {
     "playerId": "player3-uuid",
     "playerName": "Charlie",
-    "disconnectionTime": "2025-01-XX:XX:XX.XXXZ",
+    "disconnectionTime": "2025-06-15T14:23:05.000Z",
     "currentPhase": "setup",
     "updatedCounts": {
       "connectedPlayers": 3,
@@ -1931,7 +1929,7 @@ The `errorCode` field in both error events draws from the *Error code registry* 
       }
     }
   },
-  "timestamp": "2025-01-XX:XX:XX.XXXZ"
+  "timestamp": "2025-06-15T14:23:05.000Z"
 }
 ```
 
@@ -1942,16 +1940,16 @@ The `errorCode` field in both error events draws from the *Error code registry* 
   "payload": {
     "playerId": "player3-uuid",
     "playerName": "Charlie",
-    "disconnectionTime": "2025-01-XX:XX:XX.XXXZ",
+    "disconnectionTime": "2025-06-15T14:23:05.000Z",
     "currentPhase": "puzzle_assembly",
     "fragmentHandling": {
-      "fragmentId": "fragment_player3-uuid",
+      "segmentId": "segment_a3",
       "newPosition": {"x": 1, "y": 2},
       "nowUnassigned": true
     },
     "updatedPlayerCount": 4
   },
-  "timestamp": "2025-01-XX:XX:XX.XXXZ"
+  "timestamp": "2025-06-15T14:23:05.000Z"
 }
 ```
 
@@ -1962,11 +1960,11 @@ The `errorCode` field in both error events draws from the *Error code registry* 
   "payload": {
     "playerId": "player3-uuid",
     "playerName": "Charlie",
-    "disconnectionTime": "2025-01-XX:XX:XX.XXXZ",
+    "disconnectionTime": "2025-06-15T14:23:05.000Z",
     "currentPhase": "resource_gathering",
     "updatedPlayerCount": 4
   },
-  "timestamp": "2025-01-XX:XX:XX.XXXZ"
+  "timestamp": "2025-06-15T14:23:05.000Z"
 }
 ```
 
@@ -1980,10 +1978,10 @@ The `errorCode` field in both error events draws from the *Error code registry* 
 {
   "event": "SYSTEM_PING",
   "payload": {
-    "clientTimestamp": "2025-01-XX:XX:XX.XXXZ",
+    "clientTimestamp": "2025-06-15T14:23:05.000Z",
     "sequenceNumber": 42
   },
-  "timestamp": "2025-01-XX:XX:XX.XXXZ"
+  "timestamp": "2025-06-15T14:23:05.000Z"
 }
 ```
 
@@ -1995,11 +1993,11 @@ The `errorCode` field in both error events draws from the *Error code registry* 
 {
   "event": "SYSTEM_PONG",
   "payload": {
-    "serverTimestamp": "2025-01-XX:XX:XX.XXXZ",
-    "clientTimestamp": "2025-01-XX:XX:XX.XXXZ",
+    "serverTimestamp": "2025-06-15T14:23:05.000Z",
+    "clientTimestamp": "2025-06-15T14:23:05.000Z",
     "sequenceNumber": 42
   },
-  "timestamp": "2025-01-XX:XX:XX.XXXZ"
+  "timestamp": "2025-06-15T14:23:05.000Z"
 }
 ```
 

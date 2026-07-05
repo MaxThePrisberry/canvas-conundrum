@@ -30,10 +30,14 @@ func payload[T interface{ Validate() error }]() decoder {
 // playerDecoders routes every client→server event a player may send after
 // the connect handshake.
 var playerDecoders = map[protocol.EventType]decoder{
-	protocol.SystemPing:                       payload[protocol.Ping](),
-	protocol.SetupToServerPlayerConfiguration: payload[protocol.PlayerConfiguration](),
-	protocol.ResourceToServerLocationVerified: payload[protocol.LocationVerified](),
-	protocol.ResourceToServerTriviaAnswer:     payload[protocol.TriviaAnswer](),
+	protocol.SystemPing:                           payload[protocol.Ping](),
+	protocol.SetupToServerPlayerConfiguration:     payload[protocol.PlayerConfiguration](),
+	protocol.ResourceToServerLocationVerified:     payload[protocol.LocationVerified](),
+	protocol.ResourceToServerTriviaAnswer:         payload[protocol.TriviaAnswer](),
+	protocol.PuzzleToServerSegmentCompleted:       payload[protocol.SegmentCompleted](),
+	protocol.PuzzleToServerFragmentMove:           payload[protocol.FragmentMove](),
+	protocol.PuzzleToServerRecommendMove:          payload[protocol.RecommendMove](),
+	protocol.PuzzleToServerRecommendationResponse: payload[protocol.RecommendationResponse](),
 }
 
 // hostDecoders routes every client→server event the host may send.

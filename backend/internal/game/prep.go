@@ -29,6 +29,17 @@ type puzzleState struct {
 	startTime      time.Time
 	totalTime      time.Duration
 	previewExpired bool
+
+	// Assembly state.
+	playersAtPuzzleStart int
+	grid                 map[string]*Fragment // segmentID → visible fragment
+	enteredGrid          map[string]bool      // playerID → fragment on grid (completion or auto-solve)
+	highlights           map[string][]protocol.Position
+	recommendations      map[string]*Recommendation // moveID → pending
+	pendingBySender      map[string]string          // senderID → moveID
+	paused               bool
+	pausedAt             time.Time
+	finished             bool
 }
 
 // startPuzzlePreparation begins tile generation. Called from

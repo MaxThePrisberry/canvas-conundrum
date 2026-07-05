@@ -59,6 +59,17 @@ type PlayerStats struct {
 	CorrectByCategory    map[string]int
 	QuestionsByCategory  map[string]int
 	StationVisits        map[string]int
+
+	// Puzzle-assembly metrics.
+	CompletedIndividual     bool    // real completion (not an auto-solve)
+	IndividualSolveTime     float64 // seconds, client-reported
+	FragmentMoves           int     // move requests processed
+	SuccessfulMoves         int
+	RecommendationsSent     int
+	RecommendationsReceived int
+	RecommendationsAccepted int // received and accepted
+	RecResponseTimeSum      float64
+	RecResponses            int
 }
 
 func (s *PlayerStats) countCategory(category string, correct bool) {

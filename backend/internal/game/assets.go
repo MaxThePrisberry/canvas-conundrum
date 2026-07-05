@@ -100,8 +100,8 @@ func (e *Engine) previewVerdict(token string) AssetVerdict {
 }
 
 // segmentVisibleOnGrid reports whether the fragment is currently visible on
-// the central grid (any player may fetch visible fragments). Grid state
-// arrives in M6; before that nothing is visible.
+// the central grid — completed player fragments and revealed unassigned
+// fragments alike are fetchable by any player.
 func (e *Engine) segmentVisibleOnGrid(segmentID string) bool {
-	return false
+	return e.puzzle.grid[segmentID] != nil
 }

@@ -51,7 +51,7 @@ func dial(t *testing.T, url string) *Client {
 	c := &Client{
 		t:      t,
 		conn:   conn,
-		frames: make(chan Frame, 256),
+		frames: make(chan Frame, 4096),
 		closed: make(chan int, 1),
 	}
 	go c.readLoop()
@@ -149,6 +149,30 @@ func (c *Client) Expect(event protocol.EventType) json.RawMessage {
 			}
 		case <-deadline:
 			c.t.Fatalf("timed out waiting for %s", event)
+		}
+	}
+}
+
+// ExpectOneOf consumes frames until one matches any of the given events,
+// returning the whole frame. Other frames are discarded.
+func (c *Client) ExpectOneOf(events ...protocol.EventType) Frame {
+	c.t.Helper()
+	want := map[string]bool{}
+	for _, e := range events {
+		want[string(e)] = true
+	}
+	deadline := time.After(expectTimeout)
+	for {
+		select {
+		case f, ok := <-c.frames:
+			if !ok {
+				c.t.Fatalf("socket closed while waiting for %v", events)
+			}
+			if want[f.Event] {
+				return f
+			}
+		case <-deadline:
+			c.t.Fatalf("timed out waiting for any of %v", events)
 		}
 	}
 }

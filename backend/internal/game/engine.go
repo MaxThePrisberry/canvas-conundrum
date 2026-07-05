@@ -45,9 +45,10 @@ type Engine struct {
 	hostEverConnected bool
 	hostLastActivity  time.Time
 
-	tokens   protocol.TeamTokens
-	resource resourceState
-	puzzle   puzzleState
+	tokens    protocol.TeamTokens
+	resource  resourceState
+	puzzle    puzzleState
+	analytics analyticsState
 
 	// resetOccurred distinguishes post-reset asset requests (NOT_FOUND)
 	// from never-generated ones (FORBIDDEN_PHASE).
@@ -204,6 +205,14 @@ func (e *Engine) handlePlayerFrame(c cmdPlayerFrame) {
 		e.handleLocationVerified(p, payload)
 	case protocol.TriviaAnswer:
 		e.handleTriviaAnswer(p, payload)
+	case protocol.SegmentCompleted:
+		e.handleSegmentCompleted(p, payload)
+	case protocol.FragmentMove:
+		e.handleFragmentMove(p, payload)
+	case protocol.RecommendMove:
+		e.handleRecommendMove(p, payload)
+	case protocol.RecommendationResponse:
+		e.handleRecommendationResponse(p, payload)
 	default:
 		e.handlePhasePlayerFrame(p, c.event, c.payload)
 	}
@@ -251,6 +260,7 @@ func (e *Engine) handleHostConnect(c cmdHostConnect) {
 		e.host.CloseWithCode(protocol.CloseNormal)
 	}
 	isReconnection := e.hostEverConnected
+	wasPaused := e.puzzle.paused
 	e.host = c.client
 	e.hostEverConnected = true
 	e.hostLastActivity = time.Now()
@@ -270,11 +280,21 @@ func (e *Engine) handleHostConnect(c cmdHostConnect) {
 		},
 	})
 
+	// Resume anything the host's absence paused before replaying state, so
+	// the replayed payloads carry post-resume clock values.
+	if wasPaused {
+		e.resumeAssembly()
+	}
+
 	e.replayHostState()
 
 	if isReconnection {
-		e.broadcastPlayers(protocol.SystemToClientHostReconnected, e.hostReconnectedPayload())
-		e.onHostRestored()
+		payload := e.hostReconnectedPayload()
+		if wasPaused {
+			remaining := round2(e.puzzleTimeRemaining().Seconds())
+			payload.TimeRemaining = &remaining
+		}
+		e.broadcastPlayers(protocol.SystemToClientHostReconnected, payload)
 	}
 }
 
@@ -288,6 +308,8 @@ func (e *Engine) replayHostState() {
 		e.replayHostResourceState()
 	case protocol.PhasePuzzlePreparation:
 		e.replayHostPrepState()
+	case protocol.PhasePuzzleAssembly:
+		e.replayHostAssemblyState()
 	}
 }
 
@@ -300,10 +322,6 @@ func (e *Engine) hostReconnectedPayload() protocol.HostReconnected {
 		RestoredFeatures: e.hostFeatures(),
 	}
 }
-
-// onHostRestored resumes anything paused by the host's absence (puzzle
-// assembly pause; extended in M6).
-func (e *Engine) onHostRestored() {}
 
 func (e *Engine) handlePlayerConnect(c cmdPlayerConnect) {
 	if !c.hasToken {
@@ -435,9 +453,40 @@ func (e *Engine) disconnectPlayer(p *Player) {
 	e.sendHost(protocol.SystemToHostPlayerDisconnected, notice)
 }
 
-// onPlayerDisconnectedInPhase applies post-setup phase semantics (fragment
-// handling in puzzle assembly, etc). Extended in later milestones.
+// onPlayerDisconnectedInPhase applies post-setup phase semantics: during
+// puzzle assembly the player's puzzle is auto-solved (2A) or their fragment
+// becomes unassigned (2B), and their pending recommendations expire.
 func (e *Engine) onPlayerDisconnectedInPhase(p *Player, notice *protocol.PlayerDisconnected) {
+	if e.phase != protocol.PhasePuzzleAssembly || e.puzzle.finished {
+		return
+	}
+
+	segment := e.puzzle.assignments[p.ID]
+	if !e.puzzle.enteredGrid[p.ID] {
+		// Phase 2A: auto-solve into an unassigned fragment at a random cell.
+		f := e.autoSolve(p)
+		if f != nil {
+			pos := posOf(f.Pos)
+			notice.FragmentHandling = &protocol.FragmentHandling{
+				SegmentID:     segment,
+				NewPosition:   pos,
+				NowUnassigned: true,
+			}
+		}
+		e.revealUnassigned()
+	} else if f, ok := e.puzzle.grid[segment]; ok && f.OwnerID == p.ID {
+		// Phase 2B: the fragment stays put but loses its owner.
+		f.OwnerID = ""
+		notice.FragmentHandling = &protocol.FragmentHandling{
+			SegmentID:     segment,
+			NewPosition:   posOf(f.Pos),
+			NowUnassigned: true,
+		}
+	}
+
+	e.expireRecommendationsInvolving(p.ID)
+	e.touchGrid()
+	e.checkVictory()
 }
 
 func (e *Engine) disconnectHost() {
@@ -456,9 +505,15 @@ func (e *Engine) disconnectHost() {
 	e.broadcastPlayers(protocol.SystemToClientHostDisconnected, payload)
 }
 
-// onHostLost applies phase-specific host-disconnect handling (the puzzle
-// assembly full pause; extended in M6).
-func (e *Engine) onHostLost(payload *protocol.HostDisconnected) {}
+// onHostLost applies phase-specific host-disconnect handling: during puzzle
+// assembly, everything pauses (timer, cooldowns, recommendation timeouts,
+// preview window) until the host returns.
+func (e *Engine) onHostLost(payload *protocol.HostDisconnected) {
+	if e.phase == protocol.PhasePuzzleAssembly && e.puzzle.timerRunning && !e.puzzle.paused {
+		pausedAt := e.pauseAssembly()
+		payload.TimerPausedAt = protocol.Timestamp(pausedAt)
+	}
+}
 
 // hostFeatures lists what the host's presence provides in the current phase.
 func (e *Engine) hostFeatures() []string {

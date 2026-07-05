@@ -1,0 +1,18 @@
+# Hot-reload config for the dev container (docker-compose.override.yml runs
+# `air -c .air.toml` with ./backend bind-mounted at /src).
+root = "."
+tmp_dir = "tmp"
+
+[build]
+cmd = "go build -o ./tmp/server ./cmd/server"
+bin = "tmp/server"
+include_ext = ["go"]
+exclude_dir = ["tmp"]
+exclude_regex = ["_test\\.go$"]
+delay = 200
+
+[log]
+main_only = true
+
+[misc]
+clean_on_exit = true

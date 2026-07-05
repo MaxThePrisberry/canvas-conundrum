@@ -1,0 +1,4 @@
+{"response_code":0,"results":[
+ {"type":"multiple","difficulty":"hard","category":"Ignored &amp; Unused","question":"beta hard question one: what is 2+2?","correct_answer":"4","incorrect_answers":["3","5","22"]},
+ {"type":"multiple","difficulty":"hard","category":"Ignored","question":"beta hard question two: &quot;quoted&quot; &amp; entity-laden?","correct_answer":"Caf&eacute;","incorrect_answers":["A &lt;tag&gt;","B","C"]}
+]}

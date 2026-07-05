@@ -1,39 +1,15 @@
 # Canvas Conundrum
 
-Collaborative multiplayer puzzle game with educational trivia.
+Collaborative multiplayer puzzle game with educational trivia. Design docs:
+`game-design.md` (gameplay) and `websocket-events.md` (protocol) — the source
+of truth. Tunables live in `game-config.json`, mounted at runtime.
 
-## Repo layout
+Repo layout: `backend/` (Go WebSocket server), `frontend/` (React SPA behind
+nginx), `assets/puzzle-sources/` (puzzle images), `trivia/` (question pools).
 
-```
-canvas-conundrum/
-├── game-design.md            # Gameplay spec — the source of truth
-├── websocket-events.md       # WebSocket event protocol
-├── game-config.json          # Tunable game balance values (mounted at runtime)
-│
-├── backend/                  # Go WebSocket server
-│   └── Dockerfile
-├── frontend/                 # SPA
-│   ├── Dockerfile
-│   └── nginx.conf            # Reverse-proxies /ws and /api to backend
-│
-├── assets/
-│   └── puzzle-sources/       # Source puzzle images (committed)
-│       └── nature_image.png
-│
-├── trivia/                   # Open Trivia DB content (CC-BY-SA)
-│   └── {category}/{difficulty}.json
-│
-├── docker-compose.yml            # Production
-└── docker-compose.override.yml   # Development (hot reload + bind mounts)
-```
+## Run
 
-## Prerequisites
-
-- Docker with Compose v2 (`docker compose ...`, not the legacy `docker-compose`).
-- `pre-commit` (install via your package manager or `pip install pre-commit`),
-  then run `pre-commit install` once in the repo.
-
-## Running
+Requires Docker with Compose v2.
 
 ```bash
 # Development (hot reload)
@@ -45,13 +21,20 @@ docker compose -f docker-compose.yml up --build
 
 | URL | Purpose |
 |---|---|
-| `http://localhost:8080/` (prod) or `http://localhost:5173/` (dev) | Player frontend |
-| `http://localhost:8080/host` (prod) or `http://localhost:5173/host` (dev) | Host interface |
-| `http://localhost:8081/` (dev only) | Backend exposed directly for debugging |
+| `http://localhost:5173/` (dev) / `http://localhost:8080/` (prod) | Players |
+| same origin + `/host` | Host console |
+| `http://localhost:8081/` (dev only) | Backend directly, for debugging |
 
-In dev, the Vite server proxies `/ws` and `/api` to the backend container
-(`vite.config` `server.proxy`), mirroring prod nginx — the browser sees a
-single origin in both environments.
+The host console asks for the host UUID — copy it from the backend log line
+`host connection URL generated` (a fresh UUID is printed on every server
+start).
+
+## Tests
+
+```bash
+cd backend && go test ./...    # unit + full-game integration tests
+cd frontend && npm test        # unit tests for the pure client logic
+```
 
 ## Attribution
 

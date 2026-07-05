@@ -403,15 +403,22 @@ func (e *Engine) resourceTimeRemaining() time.Duration {
 func (e *Engine) enterPuzzlePreparation() {
 	e.phase = protocol.PhasePuzzlePreparation
 
-	thresholds := e.currentThresholds()
+	// Freeze the puzzle geometry and threshold effects for the rest of the
+	// game: the player set is fixed, so grid size and bonuses are final.
 	gridSize := e.gridSize()
+	thresholds := e.currentThresholds()
+	e.puzzle = puzzleState{
+		gridSize:   gridSize,
+		thresholds: thresholds,
+		effects:    e.bonusEffects(thresholds, gridSize),
+	}
 
 	e.broadcastPlayers(protocol.ResourceToClientPhaseComplete, protocol.ResourcePhaseComplete{
 		Phase:                 protocol.PhaseResourceGathering,
 		NextPhase:             protocol.PhasePuzzlePreparation,
 		FinalTokenTotals:      e.tokens,
 		ThresholdAchievements: thresholds,
-		BonusEffects:          e.bonusEffects(thresholds, gridSize),
+		BonusEffects:          e.puzzle.effects,
 	})
 	e.sendHost(protocol.ResourceToHostPhaseComplete, e.buildHostResourcePhaseComplete())
 

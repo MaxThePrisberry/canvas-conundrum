@@ -73,6 +73,30 @@ type cmdTimer struct {
 	gen  uint64
 }
 
+// cmdTilesReady posts the result of background tile generation.
+type cmdTilesReady struct {
+	tiles   map[string][]byte
+	preview []byte
+	err     error
+}
+
+// cmdAssetQuery asks the engine for an HTTP asset authorization verdict
+// (and, when granted, the immutable bytes to serve).
+type cmdAssetQuery struct {
+	token     string
+	segmentID string // "" for the full preview
+	preview   bool
+	reply     chan<- AssetVerdict
+}
+
+// AssetVerdict is the engine's answer to an asset request.
+type AssetVerdict struct {
+	Status  int // HTTP status; 200 means serve Bytes
+	Code    protocol.ErrorCode
+	Message string
+	Bytes   []byte
+}
+
 func (cmdHostConnect) isCommand()   {}
 func (cmdPlayerConnect) isCommand() {}
 func (cmdPlayerFrame) isCommand()   {}
@@ -80,3 +104,5 @@ func (cmdHostFrame) isCommand()     {}
 func (cmdPlayerClosed) isCommand()  {}
 func (cmdHostClosed) isCommand()    {}
 func (cmdTimer) isCommand()         {}
+func (cmdTilesReady) isCommand()    {}
+func (cmdAssetQuery) isCommand()    {}

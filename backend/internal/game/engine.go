@@ -47,6 +47,11 @@ type Engine struct {
 
 	tokens   protocol.TeamTokens
 	resource resourceState
+	puzzle   puzzleState
+
+	// resetOccurred distinguishes post-reset asset requests (NOT_FOUND)
+	// from never-generated ones (FORBIDDEN_PHASE).
+	resetOccurred bool
 
 	// lastRolesSig detects role-availability changes so
 	// SETUP_TO_PLAYER_ROLES_AVAILABLE is only broadcast when it changed.
@@ -149,6 +154,10 @@ func (e *Engine) handle(cmd command) {
 		if e.timers.consume(c) {
 			e.handleTimer(c.name)
 		}
+	case cmdTilesReady:
+		e.handleTilesReady(c)
+	case cmdAssetQuery:
+		e.handleAssetQuery(c)
 	}
 }
 
@@ -168,6 +177,8 @@ func (e *Engine) handlePhaseTimer(name string) {
 	switch e.phase {
 	case protocol.PhaseResourceGathering:
 		e.handleResourceTimer(name)
+	case protocol.PhasePuzzleAssembly:
+		e.handleAssemblyTimer(name)
 	}
 }
 
@@ -223,6 +234,8 @@ func (e *Engine) handleHostFrame(c cmdHostFrame) {
 		})
 	case protocol.StartGame:
 		e.handleStartGame()
+	case protocol.PuzzleStart:
+		e.handlePuzzlePhaseStart()
 	default:
 		e.sendHostError(protocol.ErrorTypeGameState, protocol.ErrForbiddenPhase,
 			"event not valid now", string(c.event)+" is not accepted in phase "+e.phase)
@@ -273,6 +286,8 @@ func (e *Engine) replayHostState() {
 		e.sendHost(protocol.SetupToHostPlayerRoster, e.buildRoster())
 	case protocol.PhaseResourceGathering:
 		e.replayHostResourceState()
+	case protocol.PhasePuzzlePreparation:
+		e.replayHostPrepState()
 	}
 }
 
@@ -371,6 +386,8 @@ func (e *Engine) replayPlayerState(p *Player) {
 		}
 	case protocol.PhaseResourceGathering:
 		e.replayPlayerResourceState(p)
+	case protocol.PhasePuzzlePreparation:
+		e.replayPlayerPrepState(p)
 	}
 }
 

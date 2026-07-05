@@ -42,6 +42,8 @@ func New(engine *game.Engine, opts Options) *Server {
 	})
 	s.mux.HandleFunc("GET /ws", s.handlePlayer)
 	s.mux.HandleFunc("GET /ws/host/{uuid}", s.handleHost)
+	s.mux.HandleFunc("GET /api/segments/{segmentId}", s.handleSegment)
+	s.mux.HandleFunc("GET /api/preview/full", s.handlePreview)
 	return s
 }
 

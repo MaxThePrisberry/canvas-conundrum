@@ -165,3 +165,29 @@ func (p *Player) ExpectAnswerResult() protocol.AnswerResult {
 	p.t.Helper()
 	return payloadAs[protocol.AnswerResult](p.t, p.Expect(protocol.ResourceToPlayerAnswerResult))
 }
+
+// PlayResource plays every resource round with all players answering
+// correctly. scans maps player index → station hash, scanned during the
+// silent pre-round wait. Returns the phase-complete payload.
+func PlayResource(t *testing.T, host *Host, players []*Player, rounds int, scans map[int]string) protocol.ResourcePhaseComplete {
+	t.Helper()
+	for idx, hash := range scans {
+		players[idx].Expect(protocol.ResourceToClientPhaseStart)
+		players[idx].Scan(hash)
+	}
+	for round := 1; round <= rounds; round++ {
+		for _, p := range players {
+			q := p.ExpectQuestion()
+			p.Answer(q, true)
+		}
+	}
+	return payloadAs[protocol.ResourcePhaseComplete](t, players[0].Expect(protocol.ResourceToClientPhaseComplete))
+}
+
+// StartPuzzle sends the host's puzzle start signal and waits for its
+// PHASE_START confirmation.
+func (host *Host) StartPuzzle() protocol.HostPuzzlePhaseStart {
+	host.t.Helper()
+	host.Send(string(protocol.PuzzleToServerPhaseStart), host.UUID, struct{}{})
+	return payloadAs[protocol.HostPuzzlePhaseStart](host.t, host.Expect(protocol.PuzzleToHostPhaseStart))
+}

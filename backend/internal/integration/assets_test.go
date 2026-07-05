@@ -75,6 +75,7 @@ func assertPNG(t *testing.T, resp *http.Response, body []byte, wantSide int) {
 }
 
 func TestSegmentEndpointGating(t *testing.T) {
+	t.Parallel()
 	h := Start(t, noSpecialty, nil)
 	host, players := JoinConfigured(t, h, 2)
 	a, b := players[0], players[1]
@@ -118,6 +119,7 @@ func TestSegmentEndpointGating(t *testing.T) {
 }
 
 func TestPreviewWindow(t *testing.T) {
+	t.Parallel()
 	h := Start(t, noSpecialty, nil)
 	host, players := JoinConfigured(t, h, 2)
 	a := players[0]
@@ -147,6 +149,7 @@ func TestPreviewWindow(t *testing.T) {
 // With zero clarity thresholds no window ever opens: the phase-start
 // broadcast says so and the endpoint stays 403 the whole phase.
 func TestPreviewZeroThresholds(t *testing.T) {
+	t.Parallel()
 	h := Start(t, noSpecialty, nil)
 	host, players := JoinConfigured(t, h, 2)
 	a := players[0]

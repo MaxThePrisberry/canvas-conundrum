@@ -9,6 +9,7 @@ import (
 )
 
 func TestSegmentCompletionAndProportionalReveal(t *testing.T) {
+	t.Parallel()
 	h := Start(t, noSpecialty, nil)
 	host, players := ReachAssembly(t, h, 2, 2, nil)
 	a, b := players[0], players[1]
@@ -77,6 +78,7 @@ func TestSegmentCompletionAndProportionalReveal(t *testing.T) {
 }
 
 func TestMovesSwapsAndCooldowns(t *testing.T) {
+	t.Parallel()
 	h := Start(t, func(c *config.Config) { noSpecialty(c); c.MinPlayers = 3 }, nil)
 	_, players := ReachAssembly(t, h, 3, 2, nil)
 	a, b, c := players[0], players[1], players[2]
@@ -186,6 +188,7 @@ func TestMovesSwapsAndCooldowns(t *testing.T) {
 // The "every involved fragment" cooldown rule: a swap is rejected when only
 // the partner fragment is cooling down.
 func TestSwapRequiresBothFragmentsOffCooldown(t *testing.T) {
+	t.Parallel()
 	h := Start(t, noSpecialty, nil)
 	_, players := ReachAssembly(t, h, 2, 2, nil)
 	a, b := players[0], players[1]
@@ -234,6 +237,7 @@ func TestSwapRequiresBothFragmentsOffCooldown(t *testing.T) {
 }
 
 func TestVictoryBySolvingGrid(t *testing.T) {
+	t.Parallel()
 	h := Start(t, func(c *config.Config) {
 		noSpecialty(c)
 		c.PuzzleBaseTime = config.Seconds(30 * time.Second) // roomy deadline for the solver
@@ -274,6 +278,7 @@ func TestVictoryBySolvingGrid(t *testing.T) {
 }
 
 func TestTimeoutEndsGameAsLoss(t *testing.T) {
+	t.Parallel()
 	h := Start(t, func(c *config.Config) {
 		noSpecialty(c)
 		c.PuzzleBaseTime = config.Seconds(700 * time.Millisecond)
@@ -306,6 +311,7 @@ func TestTimeoutEndsGameAsLoss(t *testing.T) {
 // A 2A player disconnecting mid-assembly is auto-solved into an unassigned
 // fragment; a 2B player's fragment becomes unassigned in place.
 func TestDisconnectFragmentHandling(t *testing.T) {
+	t.Parallel()
 	h := Start(t, func(c *config.Config) { noSpecialty(c); c.MinPlayers = 3 }, nil)
 	host, players := ReachAssembly(t, h, 3, 2, nil)
 	a, b, c := players[0], players[1], players[2]
@@ -351,6 +357,7 @@ func TestDisconnectFragmentHandling(t *testing.T) {
 // Players still disconnected when the host starts the timer are auto-solved
 // at that moment.
 func TestDisconnectedAtTimerStartAutoSolved(t *testing.T) {
+	t.Parallel()
 	h := Start(t, func(c *config.Config) { noSpecialty(c); c.MinPlayers = 3 }, nil)
 	host, players := JoinConfigured(t, h, 3)
 	host.StartGame()

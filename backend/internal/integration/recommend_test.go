@@ -51,6 +51,7 @@ func (p *Player) recommend(target *Player, from, to, reasoning string) {
 }
 
 func TestRecommendationAcceptExecutesSwap(t *testing.T) {
+	t.Parallel()
 	_, _, a, b, unassigned, bFrag := recSetup(t, nil)
 
 	a.recommend(b, unassigned.SegmentID, bFrag.SegmentID, "swap these")
@@ -93,6 +94,7 @@ func TestRecommendationAcceptExecutesSwap(t *testing.T) {
 }
 
 func TestRecommendationRejectDoesNotSwap(t *testing.T) {
+	t.Parallel()
 	_, _, a, b, unassigned, bFrag := recSetup(t, nil)
 
 	a.recommend(b, unassigned.SegmentID, bFrag.SegmentID, "please?")
@@ -108,6 +110,7 @@ func TestRecommendationRejectDoesNotSwap(t *testing.T) {
 }
 
 func TestRecommendationCooldownGates(t *testing.T) {
+	t.Parallel()
 	_, _, a, b, unassigned, bFrag := recSetup(t, nil)
 
 	// Creation gate: move the from-fragment first, then recommend while it
@@ -163,6 +166,7 @@ func TestRecommendationCooldownGates(t *testing.T) {
 }
 
 func TestRecommendationTimeoutNotifiesBothParties(t *testing.T) {
+	t.Parallel()
 	_, _, a, b, unassigned, bFrag := recSetup(t, nil)
 
 	a.recommend(b, unassigned.SegmentID, bFrag.SegmentID, "ignore me")
@@ -181,6 +185,7 @@ func TestRecommendationTimeoutNotifiesBothParties(t *testing.T) {
 }
 
 func TestRecommendationExpiresOnDisconnect(t *testing.T) {
+	t.Parallel()
 	_, host, a, b, unassigned, bFrag := recSetup(t, nil)
 
 	a.recommend(b, unassigned.SegmentID, bFrag.SegmentID, "leaving soon")
@@ -198,6 +203,7 @@ func TestRecommendationExpiresOnDisconnect(t *testing.T) {
 // A recommendation must target a fragment the target player owns, from a
 // fragment the sender controls.
 func TestRecommendationOwnershipValidation(t *testing.T) {
+	t.Parallel()
 	_, _, a, b, unassigned, bFrag := recSetup(t, nil)
 
 	// From-fragment owned by B: sender doesn't control it.

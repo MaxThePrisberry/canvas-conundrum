@@ -7,6 +7,7 @@ import (
 )
 
 func TestSetupDisconnectUpdatesCountsAndNotifiesHost(t *testing.T) {
+	t.Parallel()
 	h := Start(t, nil, nil)
 	host, _ := ConnectHost(t, h)
 	a := ConnectNewPlayer(t, h)
@@ -45,6 +46,7 @@ func TestSetupDisconnectUpdatesCountsAndNotifiesHost(t *testing.T) {
 }
 
 func TestSetupReconnectRestoresConfiguration(t *testing.T) {
+	t.Parallel()
 	h := Start(t, nil, nil)
 	host, _ := ConnectHost(t, h)
 	a := ConnectNewPlayer(t, h)
@@ -75,6 +77,7 @@ func TestSetupReconnectRestoresConfiguration(t *testing.T) {
 // If the reconnecting player's role slot was taken while they were away, the
 // role (and ready state) is dropped and they must reselect.
 func TestSetupReconnectRoleSlotLost(t *testing.T) {
+	t.Parallel()
 	h := Start(t, nil, nil)
 	a := ConnectNewPlayer(t, h)
 	a.Expect(protocol.SetupToPlayerRolesAvailable)
@@ -130,6 +133,7 @@ func TestSetupReconnectRoleSlotLost(t *testing.T) {
 // A new connection presenting the valid host UUID supersedes the old host
 // socket, which is closed with 1000 (the no-auto-reconnect code).
 func TestHostSupersede(t *testing.T) {
+	t.Parallel()
 	h := Start(t, nil, nil)
 	host1, confirmed1 := ConnectHost(t, h)
 	if confirmed1.IsReconnection {
@@ -155,6 +159,7 @@ func TestHostSupersede(t *testing.T) {
 }
 
 func TestHostDisconnectNotifiesPlayers(t *testing.T) {
+	t.Parallel()
 	h := Start(t, nil, nil)
 	host, _ := ConnectHost(t, h)
 	p := ConnectNewPlayer(t, h)

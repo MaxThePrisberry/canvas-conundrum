@@ -9,6 +9,7 @@ import (
 )
 
 func TestPingPongEcho(t *testing.T) {
+	t.Parallel()
 	h := Start(t, nil, nil)
 	p := ConnectNewPlayer(t, h)
 
@@ -31,6 +32,7 @@ func TestPingPongEcho(t *testing.T) {
 // while a pinging client survives. Reconnection with the same token works
 // afterwards.
 func TestHeartbeatSilenceDisconnects(t *testing.T) {
+	t.Parallel()
 	h := Start(t, nil, func(o *app.Options) { o.DisconnectAfter = 250 * time.Millisecond })
 	host, _ := ConnectHost(t, h)
 	host.StartPinger(h.HostUUID, 50*time.Millisecond)

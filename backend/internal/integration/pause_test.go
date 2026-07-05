@@ -12,6 +12,7 @@ import (
 // puzzle actions, recommendation timeouts, and fragment cooldowns; host
 // reconnection resumes with the deadline extended by the pause duration.
 func TestHostDisconnectPausesAssembly(t *testing.T) {
+	t.Parallel()
 	h := Start(t, func(c *config.Config) {
 		noSpecialty(c)
 		c.PuzzleBaseTime = config.Seconds(1200 * time.Millisecond)

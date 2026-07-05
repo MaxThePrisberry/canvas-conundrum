@@ -54,6 +54,11 @@ type Engine struct {
 	// from never-generated ones (FORBIDDEN_PHASE).
 	resetOccurred bool
 
+	// Phase boundary timestamps for the host report's timeline analysis.
+	setupStartedAt    time.Time
+	resourceStartedAt time.Time
+	prepStartedAt     time.Time
+
 	// lastRolesSig detects role-availability changes so
 	// SETUP_TO_PLAYER_ROLES_AVAILABLE is only broadcast when it changed.
 	lastRolesSig string
@@ -69,15 +74,16 @@ func New(cfg *config.Config, bank *trivia.Bank, opts Options) *Engine {
 		opts.Logger = slog.Default()
 	}
 	e := &Engine{
-		cmds:    make(chan command, 256),
-		cfg:     cfg,
-		bank:    bank,
-		deck:    trivia.NewDeck(bank),
-		rng:     rand.New(rand.NewPCG(rand.Uint64(), rand.Uint64())),
-		log:     opts.Logger,
-		opts:    opts,
-		phase:   protocol.PhaseSetup,
-		players: map[string]*Player{},
+		cmds:           make(chan command, 256),
+		cfg:            cfg,
+		bank:           bank,
+		deck:           trivia.NewDeck(bank),
+		rng:            rand.New(rand.NewPCG(rand.Uint64(), rand.Uint64())),
+		log:            opts.Logger,
+		opts:           opts,
+		phase:          protocol.PhaseSetup,
+		players:        map[string]*Player{},
+		setupStartedAt: time.Now(),
 	}
 	e.timers = newTimerService(func(c cmdTimer) { e.post(c) })
 	return e
@@ -245,6 +251,8 @@ func (e *Engine) handleHostFrame(c cmdHostFrame) {
 		e.handleStartGame()
 	case protocol.PuzzleStart:
 		e.handlePuzzlePhaseStart()
+	case protocol.ResetGame:
+		e.handleResetGame()
 	default:
 		e.sendHostError(protocol.ErrorTypeGameState, protocol.ErrForbiddenPhase,
 			"event not valid now", string(c.event)+" is not accepted in phase "+e.phase)
@@ -310,6 +318,8 @@ func (e *Engine) replayHostState() {
 		e.replayHostPrepState()
 	case protocol.PhasePuzzleAssembly:
 		e.replayHostAssemblyState()
+	case protocol.PhaseAnalytics:
+		e.sendHost(protocol.AnalyticsToHostCompleteReport, e.analytics.hostReport)
 	}
 }
 
@@ -406,6 +416,8 @@ func (e *Engine) replayPlayerState(p *Player) {
 		e.replayPlayerResourceState(p)
 	case protocol.PhasePuzzlePreparation:
 		e.replayPlayerPrepState(p)
+	case protocol.PhaseAnalytics:
+		e.replayPlayerAnalyticsState(p)
 	}
 }
 

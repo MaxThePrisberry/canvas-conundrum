@@ -41,6 +41,7 @@ func (e *Engine) enterResourceGathering() {
 	}
 
 	e.phase = protocol.PhaseResourceGathering
+	e.resourceStartedAt = time.Now()
 	e.resource = resourceState{playersAtStart: len(e.players)}
 
 	e.broadcastPlayers(protocol.ResourceToClientPhaseStart, e.buildResourcePhaseStart())
@@ -193,6 +194,12 @@ func (e *Engine) closeAnswerWindow() {
 			}
 			p.Stats.countCategory(q.Q.Category, correct)
 			p.Stats.TokensEarned += earned
+			if earned > 0 {
+				if p.Stats.TokensByStation == nil {
+					p.Stats.TokensByStation = map[string]int{}
+				}
+				p.Stats.TokensByStation[p.Station] += earned
+			}
 			results.TokensAwarded += earned
 
 			perf.AnswerCorrect = correct
@@ -402,6 +409,7 @@ func (e *Engine) resourceTimeRemaining() time.Duration {
 // prep.go).
 func (e *Engine) enterPuzzlePreparation() {
 	e.phase = protocol.PhasePuzzlePreparation
+	e.prepStartedAt = time.Now()
 
 	// Freeze the puzzle geometry and threshold effects for the rest of the
 	// game: the player set is fixed, so grid size and bonuses are final.

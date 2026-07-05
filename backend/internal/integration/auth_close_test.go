@@ -14,12 +14,14 @@ import (
 // The upgrade must complete before an invalid host token is rejected, so
 // browser clients can read the 4001 close code.
 func TestHostConnectUnknownUUIDCloses4001(t *testing.T) {
+	t.Parallel()
 	h := Start(t, nil, nil)
 	c := DialHost(t, h, uuid.NewString())
 	c.ExpectClose(protocol.CloseUnauthorized)
 }
 
 func TestPlayerConnectFrameDeadline(t *testing.T) {
+	t.Parallel()
 	h := Start(t, nil, func(o *app.Options) { o.ConnectDeadline = 100 * time.Millisecond })
 	c := DialPlayer(t, h)
 	// Send nothing: the 10s (here 100ms) deadline must close with 4001.
@@ -27,6 +29,7 @@ func TestPlayerConnectFrameDeadline(t *testing.T) {
 }
 
 func TestPlayerFirstFrameMustBeConnect(t *testing.T) {
+	t.Parallel()
 	h := Start(t, nil, nil)
 	c := DialPlayer(t, h)
 	c.SendUnauthenticated(string(protocol.SystemPing), protocol.Ping{SequenceNumber: 1})
@@ -34,6 +37,7 @@ func TestPlayerFirstFrameMustBeConnect(t *testing.T) {
 }
 
 func TestPlayerReconnectUnknownTokenCloses4001(t *testing.T) {
+	t.Parallel()
 	h := Start(t, nil, nil)
 	c := DialPlayer(t, h)
 	c.Send(string(protocol.SetupToServerPlayerConnect), uuid.NewString(), struct{}{})
@@ -41,6 +45,7 @@ func TestPlayerReconnectUnknownTokenCloses4001(t *testing.T) {
 }
 
 func TestNewJoinAtMaxPlayersCloses4002(t *testing.T) {
+	t.Parallel()
 	h := Start(t, func(c *config.Config) { c.MaxPlayers = 2 }, nil)
 	ConnectNewPlayer(t, h)
 	ConnectNewPlayer(t, h)
@@ -51,6 +56,7 @@ func TestNewJoinAtMaxPlayersCloses4002(t *testing.T) {
 }
 
 func TestNewJoinPastSetupCloses4002(t *testing.T) {
+	t.Parallel()
 	h := Start(t, nil, nil)
 	host, _ := JoinConfigured(t, h, 2)
 	host.StartGame()
@@ -63,6 +69,7 @@ func TestNewJoinPastSetupCloses4002(t *testing.T) {
 // Frames above 8 KB get a MALFORMED_PAYLOAD error and the connection
 // survives (the spec forbids closing for this).
 func TestOversizedFrameRejectedConnectionSurvives(t *testing.T) {
+	t.Parallel()
 	h := Start(t, nil, nil)
 	p := ConnectNewPlayer(t, h)
 
@@ -80,6 +87,7 @@ func TestOversizedFrameRejectedConnectionSurvives(t *testing.T) {
 }
 
 func TestFrameWithoutAuthRejected(t *testing.T) {
+	t.Parallel()
 	h := Start(t, nil, nil)
 	p := ConnectNewPlayer(t, h)
 	p.SendUnauthenticated(string(protocol.SystemPing), protocol.Ping{SequenceNumber: 1})
@@ -90,6 +98,7 @@ func TestFrameWithoutAuthRejected(t *testing.T) {
 }
 
 func TestFrameWithWrongTokenRejected(t *testing.T) {
+	t.Parallel()
 	h := Start(t, nil, nil)
 	p := ConnectNewPlayer(t, h)
 	p.Send(string(protocol.SystemPing), uuid.NewString(), protocol.Ping{SequenceNumber: 1})
@@ -97,6 +106,7 @@ func TestFrameWithWrongTokenRejected(t *testing.T) {
 }
 
 func TestUnknownEventRejected(t *testing.T) {
+	t.Parallel()
 	h := Start(t, nil, nil)
 	p := ConnectNewPlayer(t, h)
 	p.Send("TOTALLY_MADE_UP_EVENT", p.ID, struct{}{})
@@ -104,6 +114,7 @@ func TestUnknownEventRejected(t *testing.T) {
 }
 
 func TestMalformedJSONRejected(t *testing.T) {
+	t.Parallel()
 	h := Start(t, nil, nil)
 	p := ConnectNewPlayer(t, h)
 	p.SendRaw([]byte(`{not json`))
@@ -111,6 +122,7 @@ func TestMalformedJSONRejected(t *testing.T) {
 }
 
 func TestPlayerNameLengthLimit(t *testing.T) {
+	t.Parallel()
 	h := Start(t, nil, nil)
 	p := ConnectNewPlayer(t, h)
 	p.Expect(protocol.SetupToPlayerRolesAvailable)

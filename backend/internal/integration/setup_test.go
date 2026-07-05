@@ -8,6 +8,7 @@ import (
 )
 
 func TestJoinHandshakeAndRolesAvailable(t *testing.T) {
+	t.Parallel()
 	h := Start(t, nil, nil)
 	p := ConnectNewPlayer(t, h)
 
@@ -42,6 +43,7 @@ func TestJoinHandshakeAndRolesAvailable(t *testing.T) {
 }
 
 func TestConfigurationUpdatesLobbyAndRoster(t *testing.T) {
+	t.Parallel()
 	h := Start(t, nil, nil)
 	host, _ := ConnectHost(t, h)
 	p := ConnectNewPlayer(t, h)
@@ -88,6 +90,7 @@ func TestConfigurationUpdatesLobbyAndRoster(t *testing.T) {
 }
 
 func TestInvalidRoleRejected(t *testing.T) {
+	t.Parallel()
 	h := Start(t, nil, nil)
 	p := ConnectNewPlayer(t, h)
 	p.Expect(protocol.SetupToPlayerRolesAvailable)
@@ -100,6 +103,7 @@ func TestInvalidRoleRejected(t *testing.T) {
 }
 
 func TestInvalidSpecialtiesRejected(t *testing.T) {
+	t.Parallel()
 	h := Start(t, nil, nil)
 	p := ConnectNewPlayer(t, h)
 	p.Expect(protocol.SetupToPlayerRolesAvailable)
@@ -124,6 +128,7 @@ func TestInvalidSpecialtiesRejected(t *testing.T) {
 // = 1): the first configuration to land wins, the loser gets ROLE_FULL and
 // succeeds with a different role.
 func TestRoleFullFirstWins(t *testing.T) {
+	t.Parallel()
 	h := Start(t, nil, nil)
 	a := ConnectNewPlayer(t, h)
 	b := ConnectNewPlayer(t, h)
@@ -157,6 +162,7 @@ func TestRoleFullFirstWins(t *testing.T) {
 }
 
 func TestConfigurationLockedOnceReady(t *testing.T) {
+	t.Parallel()
 	h := Start(t, nil, nil)
 	p := ConnectNewPlayer(t, h)
 	p.Expect(protocol.SetupToPlayerRolesAvailable)
@@ -169,6 +175,7 @@ func TestConfigurationLockedOnceReady(t *testing.T) {
 // With 5 connected players capacity is max(1,ceil(5/4)) = 2, so two players
 // can hold the same role.
 func TestRoleCapacityScalesWithPlayerCount(t *testing.T) {
+	t.Parallel()
 	h := Start(t, nil, nil)
 	players := make([]*Player, 5)
 	for i := range players {
@@ -192,6 +199,7 @@ func TestRoleCapacityScalesWithPlayerCount(t *testing.T) {
 }
 
 func TestStartGameGate(t *testing.T) {
+	t.Parallel()
 	h := Start(t, func(c *config.Config) { c.MinPlayers = 3 }, nil)
 	host, _ := ConnectHost(t, h)
 

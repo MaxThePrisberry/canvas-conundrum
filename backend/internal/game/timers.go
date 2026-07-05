@@ -16,6 +16,7 @@ import (
 type timerService struct {
 	post   func(cmdTimer)
 	timers map[string]*timerEntry
+	gen    uint64 // generation counter; touched only from the engine goroutine
 }
 
 type timerEntry struct {
@@ -27,8 +28,6 @@ type timerEntry struct {
 	timer     *time.Timer
 }
 
-var timerGen uint64
-
 func newTimerService(post func(cmdTimer)) *timerService {
 	return &timerService{post: post, timers: map[string]*timerEntry{}}
 }
@@ -36,8 +35,8 @@ func newTimerService(post func(cmdTimer)) *timerService {
 // Schedule (re)arms the named timer to fire after d.
 func (ts *timerService) Schedule(name string, d time.Duration, pausable bool) {
 	ts.Cancel(name)
-	timerGen++
-	gen := timerGen
+	ts.gen++
+	gen := ts.gen
 	entry := &timerEntry{
 		gen:      gen,
 		deadline: time.Now().Add(d),
@@ -96,8 +95,8 @@ func (ts *timerService) ResumeAll() {
 		if !e.paused {
 			continue
 		}
-		timerGen++
-		gen := timerGen
+		ts.gen++
+		gen := ts.gen
 		e.gen = gen
 		e.paused = false
 		e.deadline = time.Now().Add(e.remaining)

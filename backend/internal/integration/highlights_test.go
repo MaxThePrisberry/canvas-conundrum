@@ -11,6 +11,7 @@ import (
 // always containing the fragment's correct cell, immutable across ticks,
 // private per player, and delivered only to 2B players.
 func TestGuideHighlights(t *testing.T) {
+	t.Parallel()
 	h := Start(t, noSpecialty, nil)
 	host, players := JoinConfigured(t, h, 2)
 	a, b := players[0], players[1] // b: detective (guide bonus)
@@ -80,6 +81,7 @@ func TestGuideHighlights(t *testing.T) {
 
 // With zero guide thresholds the personal state carries an empty array.
 func TestGuideHighlightsEmptyWithoutThresholds(t *testing.T) {
+	t.Parallel()
 	h := Start(t, noSpecialty, nil)
 	_, players := ReachAssembly(t, h, 2, 2, nil)
 	a := players[0]

@@ -42,7 +42,8 @@ var playerDecoders = map[protocol.EventType]decoder{
 
 // hostDecoders routes every client→server event the host may send.
 var hostDecoders = map[protocol.EventType]decoder{
-	protocol.SystemPing:               payload[protocol.Ping](),
-	protocol.SetupToServerStartGame:   payload[protocol.StartGame](),
-	protocol.PuzzleToServerPhaseStart: payload[protocol.PuzzleStart](),
+	protocol.SystemPing:                 payload[protocol.Ping](),
+	protocol.SetupToServerStartGame:     payload[protocol.StartGame](),
+	protocol.PuzzleToServerPhaseStart:   payload[protocol.PuzzleStart](),
+	protocol.AnalyticsToServerResetGame: payload[protocol.ResetGame](),
 }

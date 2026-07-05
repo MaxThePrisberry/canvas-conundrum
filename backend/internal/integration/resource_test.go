@@ -13,6 +13,7 @@ import (
 func noSpecialty(c *config.Config) { c.MediumSpecialtyProbability = 0 }
 
 func TestResourcePhaseStartAndSilentWait(t *testing.T) {
+	t.Parallel()
 	h := Start(t, noSpecialty, nil)
 	host, players := JoinConfigured(t, h, 2)
 	host.StartGame()
@@ -57,6 +58,7 @@ func TestResourcePhaseStartAndSilentWait(t *testing.T) {
 // station-on-record at window close, thresholds, and both PHASE_COMPLETE
 // payloads.
 func TestTokenEconomyAcrossRounds(t *testing.T) {
+	t.Parallel()
 	h := Start(t, noSpecialty, nil)
 	host, players := JoinConfigured(t, h, 2)
 	a, b := players[0], players[1] // a: art_enthusiast (clarity), b: detective (guide)
@@ -167,6 +169,7 @@ func TestTokenEconomyAcrossRounds(t *testing.T) {
 // one difficulty above base (capped hard), drawn from the player's own
 // specialties, and worth the specialty multiplier.
 func TestSpecialtyQuestionsForced(t *testing.T) {
+	t.Parallel()
 	h := Start(t, func(c *config.Config) { c.MediumSpecialtyProbability = 1.0 }, nil)
 	host, players := JoinConfigured(t, h, 2)
 	a := players[0]
@@ -198,6 +201,7 @@ func TestSpecialtyQuestionsForced(t *testing.T) {
 }
 
 func TestInvalidStationHash(t *testing.T) {
+	t.Parallel()
 	h := Start(t, noSpecialty, nil)
 	host, players := JoinConfigured(t, h, 2)
 	a := players[0]
@@ -220,6 +224,7 @@ func TestInvalidStationHash(t *testing.T) {
 }
 
 func TestAnswerResubmissionLastCounts(t *testing.T) {
+	t.Parallel()
 	h := Start(t, noSpecialty, nil)
 	host, players := JoinConfigured(t, h, 2)
 	a := players[0]
@@ -235,6 +240,7 @@ func TestAnswerResubmissionLastCounts(t *testing.T) {
 }
 
 func TestUnansweredAndLateAnswers(t *testing.T) {
+	t.Parallel()
 	h := Start(t, noSpecialty, nil)
 	host, players := JoinConfigured(t, h, 2)
 	a := players[0]
@@ -259,6 +265,7 @@ func TestUnansweredAndLateAnswers(t *testing.T) {
 // incorrect in team accuracy, and they keep receiving phase events after
 // reconnecting.
 func TestDisconnectedPlayerAccounting(t *testing.T) {
+	t.Parallel()
 	h := Start(t, func(c *config.Config) {
 		noSpecialty(c)
 		c.MinPlayers = 3
@@ -308,6 +315,7 @@ func TestDisconnectedPlayerAccounting(t *testing.T) {
 // A player who received a question, dropped, and reconnected mid-round gets
 // the same question replayed with its original deadline and can still answer.
 func TestReconnectMidRoundReplaysQuestion(t *testing.T) {
+	t.Parallel()
 	h := Start(t, func(c *config.Config) {
 		noSpecialty(c)
 		c.TriviaAnswerTime = config.Seconds(time.Second) // roomy answer window
@@ -341,6 +349,7 @@ func TestReconnectMidRoundReplaysQuestion(t *testing.T) {
 // Host reconnection mid-phase replays the dashboard and the latest round
 // analytics.
 func TestHostReconnectDuringResource(t *testing.T) {
+	t.Parallel()
 	h := Start(t, func(c *config.Config) {
 		noSpecialty(c)
 		c.ResourceGatheringRounds = 4

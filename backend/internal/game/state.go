@@ -55,6 +55,7 @@ type PlayerStats struct {
 	SpecialtyCorrect     int
 	SpecialtyBonusTokens int
 	TokensEarned         int
+	TokensByStation      map[string]int
 	TotalResponseTime    float64 // seconds, over answered questions
 	CorrectByCategory    map[string]int
 	QuestionsByCategory  map[string]int

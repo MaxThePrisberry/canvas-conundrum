@@ -9,6 +9,7 @@ import (
 // Full preparation flow: PREPARING → READY → PHASE_LOAD to host and
 // players, then the host start signal opens puzzle assembly.
 func TestPrepFlowAndPhaseLoad(t *testing.T) {
+	t.Parallel()
 	h := Start(t, noSpecialty, nil)
 	host, players := JoinConfigured(t, h, 2)
 	a, b := players[0], players[1]
@@ -63,6 +64,7 @@ func TestPrepFlowAndPhaseLoad(t *testing.T) {
 
 // Chronos thresholds extend the authoritative totalTime.
 func TestChronosBonusExtendsTotalTime(t *testing.T) {
+	t.Parallel()
 	h := Start(t, noSpecialty, nil)
 	host, players := JoinConfigured(t, h, 3)
 	host.StartGame()
@@ -88,6 +90,7 @@ func TestChronosBonusExtendsTotalTime(t *testing.T) {
 }
 
 func TestPuzzleStartRejectedOutsidePrep(t *testing.T) {
+	t.Parallel()
 	h := Start(t, noSpecialty, nil)
 	host, _ := JoinConfigured(t, h, 2)
 	host.StartGame()
@@ -98,6 +101,7 @@ func TestPuzzleStartRejectedOutsidePrep(t *testing.T) {
 }
 
 func TestDuplicatePuzzleStartRejected(t *testing.T) {
+	t.Parallel()
 	h := Start(t, noSpecialty, nil)
 	host, players := JoinConfigured(t, h, 2)
 	host.StartGame()
@@ -111,6 +115,7 @@ func TestDuplicatePuzzleStartRejected(t *testing.T) {
 
 // Reconnections during preparation replay the load state on the new socket.
 func TestPrepReconnectReplays(t *testing.T) {
+	t.Parallel()
 	h := Start(t, noSpecialty, nil)
 	host, players := JoinConfigured(t, h, 2)
 	a := players[0]

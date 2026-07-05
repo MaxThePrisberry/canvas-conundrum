@@ -34,7 +34,8 @@ RUN CGO_ENABLED=0 GOOS=linux go build \
 # Stage 3: dev image with hot reload (used only by docker-compose.override)
 # ──────────────────────────────────────────────────────────────────────────
 FROM deps AS dev
-RUN go install github.com/air-verse/air@latest
+# Pinned: newer air releases require a newer Go toolchain than this image.
+RUN go install github.com/air-verse/air@v1.52.3
 WORKDIR /src
 EXPOSE 8080
 # Source is bind-mounted at runtime; entrypoint comes from compose `command`.

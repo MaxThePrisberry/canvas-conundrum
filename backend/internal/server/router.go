@@ -32,6 +32,8 @@ func payload[T interface{ Validate() error }]() decoder {
 var playerDecoders = map[protocol.EventType]decoder{
 	protocol.SystemPing:                       payload[protocol.Ping](),
 	protocol.SetupToServerPlayerConfiguration: payload[protocol.PlayerConfiguration](),
+	protocol.ResourceToServerLocationVerified: payload[protocol.LocationVerified](),
+	protocol.ResourceToServerTriviaAnswer:     payload[protocol.TriviaAnswer](),
 }
 
 // hostDecoders routes every client→server event the host may send.

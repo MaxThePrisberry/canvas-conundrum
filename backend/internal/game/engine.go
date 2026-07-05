@@ -8,6 +8,7 @@ import (
 
 	"github.com/MaxThePrisberry/canvas-conundrum/backend/internal/config"
 	"github.com/MaxThePrisberry/canvas-conundrum/backend/internal/protocol"
+	"github.com/MaxThePrisberry/canvas-conundrum/backend/internal/puzzle"
 	"github.com/MaxThePrisberry/canvas-conundrum/backend/internal/trivia"
 	"github.com/google/uuid"
 )
@@ -44,11 +45,17 @@ type Engine struct {
 	hostEverConnected bool
 	hostLastActivity  time.Time
 
-	tokens protocol.TeamTokens
+	tokens   protocol.TeamTokens
+	resource resourceState
 
 	// lastRolesSig detects role-availability changes so
 	// SETUP_TO_PLAYER_ROLES_AVAILABLE is only broadcast when it changed.
 	lastRolesSig string
+}
+
+// gridSize is the central grid dimension for this game's player count.
+func (e *Engine) gridSize() int {
+	return puzzle.GridSize(len(e.players))
 }
 
 func New(cfg *config.Config, bank *trivia.Bank, opts Options) *Engine {
@@ -182,6 +189,10 @@ func (e *Engine) handlePlayerFrame(c cmdPlayerFrame) {
 		})
 	case protocol.PlayerConfiguration:
 		e.handleConfiguration(p, payload)
+	case protocol.LocationVerified:
+		e.handleLocationVerified(p, payload)
+	case protocol.TriviaAnswer:
+		e.handleTriviaAnswer(p, payload)
 	default:
 		e.handlePhasePlayerFrame(p, c.event, c.payload)
 	}

@@ -2,9 +2,12 @@ package integration
 
 import (
 	"testing"
+	"time"
 
 	"github.com/MaxThePrisberry/canvas-conundrum/backend/internal/protocol"
 )
+
+func nowStamp() string { return protocol.Timestamp(time.Now()) }
 
 // Player couples a live client with its server-issued identity.
 type Player struct {
@@ -106,4 +109,59 @@ func (host *Host) StartGame() protocol.GameStarted {
 	host.t.Helper()
 	host.Send(string(protocol.SetupToServerStartGame), host.UUID, struct{}{})
 	return payloadAs[protocol.GameStarted](host.t, host.Expect(protocol.SetupToHostGameStarted))
+}
+
+// ── Resource-phase helpers ─────────────────────────────────────────────────
+
+// Scan submits a station QR hash and waits for the confirmation.
+func (p *Player) Scan(hash string) string {
+	p.t.Helper()
+	p.Send(string(protocol.ResourceToServerLocationVerified), p.ID, protocol.LocationVerified{
+		StationHash:   hash,
+		ScanTimestamp: nowStamp(),
+	})
+	confirmed := payloadAs[protocol.LocationConfirmed](p.t, p.Expect(protocol.ResourceToPlayerLocationConfirmed))
+	return confirmed.NewLocation
+}
+
+// ExpectQuestion waits for this round's trivia question.
+func (p *Player) ExpectQuestion() protocol.TriviaQuestion {
+	p.t.Helper()
+	return payloadAs[protocol.TriviaQuestion](p.t, p.Expect(protocol.ResourceToPlayerTriviaQuestion))
+}
+
+// fixtureAnswerIndex locates the correct option ("4" or "yes" in every
+// fixture pool) and returns its index, or a wrong index when correct=false.
+func fixtureAnswerIndex(t *testing.T, q protocol.TriviaQuestion, correct bool) int {
+	t.Helper()
+	correctIdx := -1
+	for i, o := range q.Options {
+		if o == "4" || o == "yes" {
+			correctIdx = i
+			break
+		}
+	}
+	if correctIdx < 0 {
+		t.Fatalf("no known correct option in %v", q.Options)
+	}
+	if correct {
+		return correctIdx
+	}
+	return (correctIdx + 1) % len(q.Options)
+}
+
+// Answer submits an answer to q, correct or deliberately wrong.
+func (p *Player) Answer(q protocol.TriviaQuestion, correct bool) {
+	p.t.Helper()
+	p.Send(string(protocol.ResourceToServerTriviaAnswer), p.ID, protocol.TriviaAnswer{
+		QuestionID:  q.QuestionID,
+		AnswerIndex: fixtureAnswerIndex(p.t, q, correct),
+		TimeElapsed: 0.05,
+	})
+}
+
+// ExpectAnswerResult waits for the end-of-window marking result.
+func (p *Player) ExpectAnswerResult() protocol.AnswerResult {
+	p.t.Helper()
+	return payloadAs[protocol.AnswerResult](p.t, p.Expect(protocol.ResourceToPlayerAnswerResult))
 }
